@@ -1,6 +1,6 @@
 {
 	"client_id": "https://keeb.thatsit.app/.well-known/oauth-client/client-metadata.json",
-	"client_name": "Keeb",
+	"client_name": "keeb",
 	"client_uri": "https://keeb.thatsit.app",
 	"homepage_uri": "https://keeb.thatsit.app",
 	"logo_uri": "https://keeb.thatsit.app/icons/icon-512.png",

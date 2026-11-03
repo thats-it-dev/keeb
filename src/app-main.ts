@@ -395,7 +395,7 @@ export class AppMain extends LitElement {
 		return html`
 			<main>
 				<div class="head">
-					<h1>${__APP_TITLE__}</h1>
+					<h1>${__APP_HEADING__}</h1>
 					<button class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
 				</div>
 				<dialog @close=${() => (this.settingsOpen = false)} @click=${this.#onDialogClick} aria-label="Settings">

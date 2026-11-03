@@ -1,8 +1,13 @@
-# Keeb
+# keeb, that's it.
 
 A touch-typing trainer for real keyboards, including splits. It times every key you press, works out
 which keys are slowing you down, and generates lessons from the most frequent English words that use
 those keys. Your layout and progress live in your own atproto repository, not on our server.
+
+The name lives in `app.config.json`: `title` ("keeb") is what the tab and the installed app's short
+label say, `heading` ("keeb, that's it.") is what the page header and the install name say, and `name`
+("keeb") is the repository, the Pages project and the storage prefix. `heading` is optional — most apps
+want one string in both places.
 
 Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/keeb>
 
@@ -147,6 +152,12 @@ which board it belongs to — and the files above already describe the board.
 
 ## Notes for whoever picks this up
 
+- The icon is generated, not stored art: `npm run icons` draws the Lucide `keyboard` glyph analytically
+  (capsules and a rounded-rect ring, one pixel of antialiasing) into the same five PNG sizes plus
+  `icon.svg`, on the pi-web approach — a small PNG encoder in the script, no canvas, sharp or rasterizer
+  dependency. The Lucide package is a build-time read of `dist/esm/icons/keyboard.mjs` and is *not* a
+  dependency; the path data in the script came from it and `icon.svg` mirrors the same shapes. The old
+  dot artefacts were committed and the regenerated ones are staged — check the image before shipping.
 - It was called TouchType until M4. The name lives in `app.config.json` (which also picks the Cloudflare
   Pages project, so the preview subdomain) and in the OAuth client id, which is a URL on the deployed
   origin. Progress is stored per *origin*, so the rename to `keeb.thatsit.app` started a fresh device

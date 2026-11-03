@@ -11,8 +11,12 @@ beforeAll(() => {
 }, 60_000);
 
 describe("vite build", () => {
-	it("emits a manifest with the title", () => {
-		expect(JSON.parse(dist("manifest.webmanifest")).name).toBe(loadConfig().title);
+	it("emits a manifest naming the app by its heading, labelled short", () => {
+		const m = JSON.parse(dist("manifest.webmanifest")) as { name: string; short_name: string };
+		const c = loadConfig();
+		// name is the install label and may be the long form; short_name is what sits under the icon.
+		expect(m.name).toBe(c.heading ?? c.title);
+		expect(m.short_name).toBe(c.title);
 	});
 
 	it("fills in index.html", () => {

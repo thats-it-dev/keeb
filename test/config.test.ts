@@ -13,6 +13,13 @@ describe("parseConfig", () => {
 	it("rejects an empty title", () => {
 		expect(() => parseConfig({ ...ok, title: "" })).toThrow(/title/);
 	});
+	it("keeps heading optional and rejects a blank one", () => {
+		// heading is what the page says its name is; title is what the tab says. Most apps set only title.
+		expect(parseConfig(ok).heading).toBeUndefined();
+		expect(parseConfig({ ...ok, heading: "keeb, that's it." }).heading).toBe("keeb, that's it.");
+		expect(() => parseConfig({ ...ok, heading: "" })).toThrow(/heading/);
+		expect(() => parseConfig({ ...ok, heading: 7 })).toThrow(/heading/);
+	});
 	it.each(["red", "#FFF", "#GGGGGG", "FFAA00"])("rejects color %s", (color) => {
 		expect(() => parseConfig({ ...ok, color })).toThrow(/color/);
 	});

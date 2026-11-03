@@ -12,7 +12,9 @@ export function manifestFor(c: AppConfig): object {
 	const icon = (src: string, size: number, purpose: string) => ({ src, sizes: `${size}x${size}`, type: "image/png", purpose });
 	return {
 		id: "/",
-		name: c.title,
+		// name is the install label, so it gets the long form; short_name is the tile under the icon,
+		// which has a few characters of room and wants the plain name.
+		name: c.heading ?? c.title,
 		short_name: c.title,
 		description: c.description,
 		start_url: "/",
@@ -48,6 +50,7 @@ export function thatsitApp(): Plugin[] {
 			config: () => ({
 				define: {
 					__APP_TITLE__: JSON.stringify(config.title),
+					__APP_HEADING__: JSON.stringify(config.heading ?? config.title),
 					__APP_NAME__: JSON.stringify(config.name),
 					__GATEWAY_URL__: JSON.stringify(gatewayUrl(config, process.env.GATEWAY_URL)),
 				},
