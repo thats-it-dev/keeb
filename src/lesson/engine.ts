@@ -20,6 +20,9 @@ export type KeyResult = {
 	// False when the learner hit the wrong key; the engine then repeats it.
 	accepted: boolean;
 	targetId: string;
+	// The key that was actually pressed, which is what the keyboard should light up. Falls back to the
+	// expected key when the character is not on this board.
+	pressedId: string;
 	elapsedMs: number;
 	// True when this keystroke finished the run.
 	finished: boolean;
@@ -41,12 +44,14 @@ export function press(e: Engine, r: Resolved, typed: string, now: number, target
 	const stat = correct ? bump(e.stats[id] ?? emptyStat(), elapsedMs) : markError(e.stats[id] ?? emptyStat());
 	const stats = { ...e.stats, [id]: stat };
 	const index = correct ? e.index + 1 : e.index;
+	// Highlighting follows the fingers, not the lesson: the key that was struck is the one that glows.
+	const pressedId = idOf(r, typed) || targetId;
 	const advanced: Engine = { ...e, stats, index, ladder: e.ladder };
 	if (index >= [...e.text].length) {
 		// A new run. `stamp` resets to 0 so the pause between runs is never charged to a key.
-		return { engine: { ...place(r, advanced, targetCpm), stamp: 0 }, accepted: correct, targetId: id, elapsedMs, finished: true };
+		return { engine: { ...place(r, advanced, targetCpm), stamp: 0 }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: true };
 	}
-	return { engine: { ...advanced, pending: idOf(r, [...e.text][index] ?? ""), stamp: now }, accepted: correct, targetId: id, elapsedMs, finished: false };
+	return { engine: { ...advanced, pending: idOf(r, [...e.text][index] ?? ""), stamp: now }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: false };
 }
 
 function want(e: Engine): string {

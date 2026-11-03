@@ -45,13 +45,18 @@ export class TtPractice extends LitElement {
 	key(typed: string, now: number): string | undefined {
 		if (!this.engine || !this.resolved) return undefined;
 		const before = this.cursor;
+		// Compare against the line that was on screen: after press() this.engine.text is the *next* run.
+		const expected = [...this.engine.text][before] ?? "";
 		const res = press(this.engine, this.resolved, typed, now, this.targetCpm);
 		this.engine = res.engine;
 		if (res.elapsedMs > 0) this.instantCpm = cpmFrom(res.elapsedMs);
-		if (typed !== [...this.engine.text][before]) this.wrong.add(before);
+		// Marks belong to a line. When a run ends the line is replaced, so its colours go with it;
+		// a mistype inside the current line stays red where it happened.
+		if (res.finished) this.wrong = new Set();
+		else if (typed !== expected) this.wrong.add(before);
 		this.cursor = this.engine.index;
 		this.requestUpdate();
-		return res.targetId;
+		return res.pressedId || undefined;
 	}
 
 	get done(): boolean {
