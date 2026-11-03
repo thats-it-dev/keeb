@@ -4,10 +4,11 @@ A touch-typing trainer for real keyboards, including splits. It times every key 
 which keys are slowing you down, and generates lessons from the most frequent English words that use
 those keys. Your layout and progress live in your own atproto repository, not on our server.
 
-The name lives in `app.config.json`: `title` ("keeb") is what the tab and the installed app's short
-label say, `heading` ("keeb, that's it.") is what the page header and the install name say, and `name`
-("keeb") is the repository, the Pages project and the storage prefix. `heading` is optional — most apps
-want one string in both places.
+The name lives in `app.config.json`: `title` ("keeb, that's it.") is the app's name — the browser tab, the
+manifest install label, and the name on the atproto consent screen; `heading` ("keeb") is the wordmark —
+the `<h1>` on the page and the short label a launcher puts under the icon; `name` ("keeb") is the
+identifier — the repo, the Pages project, the storage prefix and the client id's hostname. `heading` is
+optional because most apps want one string everywhere.
 
 Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/keeb>
 

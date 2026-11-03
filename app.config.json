@@ -1,7 +1,7 @@
 {
 	"name": "keeb",
-	"title": "keeb",
-	"heading": "keeb, that's it.",
+	"title": "keeb, that's it.",
+	"heading": "keeb",
 	"description": "Touch typing trainer for split and columnar keyboards, with progress stored on atproto",
 	"color": "#FFAA00"
 }

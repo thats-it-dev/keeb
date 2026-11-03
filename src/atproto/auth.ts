@@ -24,7 +24,7 @@ export const REDIRECT_URIS: [string, ...string[]] = ["https://keeb.thatsit.app/"
 // free to drift from the hosted document, and the authorization server is the one that notices.
 export const CLIENT_METADATA = {
 	client_id: CLIENT_ID,
-	client_name: "keeb",
+	client_name: "keeb, that's it.",
 	client_uri: "https://keeb.thatsit.app",
 	redirect_uris: REDIRECT_URIS,
 	scope: SCOPES,
