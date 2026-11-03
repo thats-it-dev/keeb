@@ -63,5 +63,24 @@ export const KEYMAPS: Keymap[] = [
 ];
 
 export function keymapById(id: string): Keymap {
-	return KEYMAPS.find((k) => k.id === id) ?? KEYMAPS[0];
+	return allKeymaps().find((k) => k.id === id) ?? KEYMAPS[0];
+}
+
+// Layout files the learner imported, kept apart from the five we checked by hand.
+const imported: Keymap[] = [];
+
+export function allKeymaps(): Keymap[] {
+	return [...KEYMAPS, ...imported];
+}
+
+// A duplicate id would quietly replace the other keymap in the picker, so the caller is told.
+export function registerKeymap(k: Keymap): boolean {
+	if (allKeymaps().some((o) => o.id === k.id)) return false;
+	imported.push(k);
+	return true;
+}
+
+export function forgetKeymap(id: string): void {
+	const at = imported.findIndex((k) => k.id === id);
+	if (at >= 0) imported.splice(at, 1);
 }
