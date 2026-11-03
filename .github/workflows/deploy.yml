@@ -67,15 +67,6 @@ jobs:
           # Production only from main; any other branch (including a manual run) is a preview.
           if [ "$EVENT" = "pull_request" ]; then BRANCH="$HEAD_REF"; else BRANCH="$REF_NAME"; fi
           npm run build
-          # `pages deploy` will not create a project. app.config.json names the
-          # Pages project (and so the preview subdomain), so a rename fails its
-          # first deploy with "project does not exist" until it is made here.
-          if ! npx wrangler@4.149.0 pages project list --json \
-            | jq -e --arg n "$NAME" '.[] | select(.name == $n)' > /dev/null
-          then
-            npx wrangler@4.149.0 pages project create "$NAME" \
-              --production-branch main
-          fi
           npx wrangler@4.149.0 pages deploy dist --project-name "$NAME" --branch "$BRANCH" | tee deploy.log
           URL=$(node scripts/preview-url.ts < deploy.log)
           echo "url=$URL" >> "$GITHUB_OUTPUT"
