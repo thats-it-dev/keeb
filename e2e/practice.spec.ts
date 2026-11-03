@@ -29,6 +29,17 @@ const tap = (page: Page, ch: string) => page.locator("tt-practice").press(keyNam
 
 const keysTyped = (page: Page) => page.evaluate(() => Object.keys((document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { stats: object } }).engine.stats).length);
 
+// Which key a character lives on, read from the resolved board rather than from app-main's highlight
+// state: a test that asks the highlight where the highlight is will always agree with it.
+const idFor = (page: Page, ch: string) =>
+	page.evaluate(
+		(c) => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { resolved: { byChar: Map<string, string> } }).resolved.byChar.get(c) ?? "",
+		ch,
+	);
+
+const cursorOf = (page: Page) =>
+	page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
+
 test("the first line is already real words", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
@@ -119,6 +130,31 @@ test("a wrong key does not move the cursor", async ({ page }) => {
 	const after = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
 	expect(after).toBe(before);
 	await expect(key(page, await page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId))).toHaveClass(/\bon\b/);
+});
+
+test("the board lights the key that was struck, not the one the lesson wanted", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const want = await wanted(page);
+	const struck = want === "z" ? "q" : "z";
+	expect(await idFor(page, struck)).not.toBe(await idFor(page, want)); // two different keys, or the test proves nothing
+	await tap(page, struck);
+	await expect(key(page, await idFor(page, struck))).toHaveClass(/\bon\b/);
+	await expect(key(page, await idFor(page, want))).not.toHaveClass(/\bon\b/);
+});
+
+test("a finished line starts clean", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const text = (await line(page).getAttribute("data-text")) ?? "";
+	expect(text.length).toBeGreaterThan(3);
+	const want = await wanted(page);
+	await tap(page, want === "z" ? "q" : "z"); // leave one red letter behind
+	await expect(page.locator("tt-practice .bad")).not.toHaveCount(0);
+	for (const ch of [...text]) await tap(page, ch);
+	expect(await cursorOf(page)).toBe(0); // a fresh line is on screen
+	await expect(page.locator("tt-practice .bad")).toHaveCount(0); // and none of its letters are red
+	await expect(page.locator("tt-practice .line .now")).not.toHaveCount(0);
 });
 
 test("progress survives a reload", async ({ page }) => {

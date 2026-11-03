@@ -59,6 +59,19 @@ describe("lesson engine", () => {
 		expect((bad.engine.stats[bad.targetId] ?? emptyStat()).errors).toBeGreaterThanOrEqual(1);
 	});
 
+	// The keyboard lights what the fingers hit; the statistics still blame the key being drilled.
+	it("separates the key pressed from the key wanted", () => {
+		const e = start(r, {}, TARGET);
+		const want = [...e.text][e.index];
+		const straight = press(e, r, want, 5000, TARGET);
+		expect(straight.pressedId).toBe(straight.targetId);
+		const other = want === "q" ? "z" : "q";
+		const slip = press(e, r, other, 5000, TARGET);
+		expect(slip.pressedId).toBe(r.byChar.get(other));
+		expect(slip.pressedId).not.toBe(slip.targetId);
+		expect(slip.targetId).toBe(e.pending);
+	});
+
 	it("measures the slow key as slow", () => {
 		// Feed a fixed speed per character straight into the stats, then read the numbers back.
 		let engine = start(r, {}, TARGET);
