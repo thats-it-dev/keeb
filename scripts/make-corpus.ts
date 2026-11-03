@@ -4,8 +4,12 @@ import { dirname } from "node:path";
 // Rebuilds src/lesson/corpus.ts from an MIT-licensed frequency dump.
 // Usage: npx tsx scripts/make-corpus.ts [path-to-en_50k.txt]
 // Source: github.com/hermitdave/FrequencyWords content/2016/en/en_50k.txt
-const MIN_COUNT = 500; // ignore hapax-like noise
+const MIN_COUNT = 1000; // drop rare forms and the typos that pollute the long tail
 const MAX_WORDS = 4000; // keeps the bundle small; the tail barely matters for typing practice
+// Words that are common in the raw dump but have no business in a typing lesson, plus the
+// abbreviations and dialect forms that read as noise next to real vocabulary.
+const BLOCKED = new Set(["ass", "asshole", "bastard", "bitch", "bollocks", "bullshit", "cock", "cum", "damn", "dick", "crap", "fag", "fuck", "horseshit", "jesus", "nigga", "piss", "shit", "twat", "wank", "whore", "poo", "pee", "boob", "boobs", "nude", "porn", "sex"]);
+const hasVowel = (w: string) => /[aeiouy]/.test(w);
 
 const file = process.argv[2] ?? "/tmp/en_50k.txt";
 const rows = readFileSync(file, "utf8")
@@ -21,6 +25,7 @@ for (const [word, count] of rows) {
 	const w = word.toLowerCase();
 	if (w !== word || w.length < 2 || !/^[a-z]+$/.test(w) || seen.has(w)) continue;
 	if (Number(count) < MIN_COUNT) continue;
+	if (BLOCKED.has(w) || !hasVowel(w)) continue;
 	seen.add(w);
 	picked.push(w);
 }

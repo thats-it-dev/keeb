@@ -4,6 +4,7 @@
 import type { Page } from "@playwright/test";
 import { loadConfig } from "../vite/config.ts";
 import { expect, test } from "./csp.ts";
+import { keyName } from "./keys.ts";
 
 const { title } = loadConfig();
 
@@ -49,13 +50,13 @@ test("marks the keys a keymap does not claim", async ({ page }) => {
 test("highlights the physical key of the character you typed", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
-	const wanted = await page.evaluate(() => {
+	const first = await page.evaluate(() => {
 		const p = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { text: string; pending: string } };
-		return [...p.engine.text][0];
+		return { ch: [...p.engine.text][0], id: p.engine.pending };
 	});
-	await page.locator("tt-practice").press(`Key${wanted.toUpperCase()}`);
-	await expect(key(page, `L_C2R3`)).toHaveClass(/\bon\b/); // the key the engine said was pending
-	await expect(page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId)).resolves.toBe("L_C2R3");
+	await page.locator("tt-practice").press(keyName(first.ch));
+	await expect(key(page, first.id)).toHaveClass(/\bon\b/); // the key the engine said was pending
+	await expect(page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId)).resolves.toBe(first.id);
 });
 
 test("the same board re-maps when the keymap changes", async ({ page }) => {
@@ -63,8 +64,14 @@ test("the same board re-maps when the keymap changes", async ({ page }) => {
 	await ready(page);
 	await page.locator("select").nth(1).selectOption("colemak-dh");
 	await expect(key(page, "L_C4R3")).toContainText("R"); // the key that used to be S
-	await page.locator("tt-practice").press("KeyD");
-	await expect(key(page, "L_C2R3")).toHaveClass(/\bon\b/);
+	const wanted = await page.evaluate(() => {
+		const p = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { text: string; pending: string } };
+		return { ch: [...p.engine.text][0], id: p.engine.pending };
+	});
+	await page.locator("tt-practice").press(keyName(wanted.ch));
+	await expect(key(page, wanted.id)).toHaveClass(/\bon\b/);
+	// Under Colemak-DH the first character of the line lives somewhere else on the board.
+	await expect(key(page, wanted.id)).toContainText(wanted.ch.toUpperCase());
 });
 
 test("another keyboard means another geometry, same keymap", async ({ page }) => {
@@ -73,8 +80,12 @@ test("another keyboard means another geometry, same keymap", async ({ page }) =>
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(60);
 	await pickBoard(page, "corne");
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(42);
-	await page.locator("tt-practice").press("KeyF");
-	await expect(key(page, "L1-4")).toHaveClass(/\bon\b/); // home row, left index
+	const first = await page.evaluate(() => {
+		const p = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { text: string; pending: string } };
+		return { ch: [...p.engine.text][0], id: p.engine.pending };
+	});
+	await page.locator("tt-practice").press(keyName(first.ch));
+	await expect(key(page, first.id)).toHaveClass(/\bon\b/); // the corne id scheme: row 1, column 4 is the left index home key
 });
 
 test("remembers the choice on the next visit", async ({ page }) => {

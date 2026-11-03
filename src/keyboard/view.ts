@@ -13,7 +13,7 @@ export class TtKeyboard extends LitElement {
 		.unt text { opacity: 0.4; }
 		.on rect { fill: var(--primary); stroke: var(--primary); }
 		.on text { fill: var(--bg); }
-		.missed rect { fill: var(--danger, #c00); stroke: var(--danger, #c00); }
+		.missed rect { fill: var(--accent); stroke: var(--accent); }
 	`;
 	resolved?: Resolved;
 	active = "";

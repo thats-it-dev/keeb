@@ -34,14 +34,18 @@ const LETTERS = Object.keys(SPEED);
 const SPEED_KEYS = LETTERS.length;
 
 describe("lesson engine", () => {
-	it("starts a brand new learner on the two index keys", () => {
+	it("starts a brand new learner on the home row, with real words", () => {
 		const e = start(r, {}, TARGET);
-		expect([...e.text].filter((c) => c !== " ").length).toBeGreaterThan(10);
 		expect(e.pending).not.toBe("");
-		// The first line uses f and j only; the space that separates them is a thumb key the
-		// learner has not touched yet, so it is not counted as a taught character.
-		expect([...new Set([...e.text].filter((c) => c !== " "))].sort().join("")).toBe("fj");
-		expect(e.ladder.next && r.byId.get(e.ladder.next)?.char.toLowerCase()).toBe("d");
+		// Every touched key of the home row is the starting group: 10 keys, and that is the point
+		// where English words exist. Nothing else may appear in the first line.
+		// Home row letters, punctuation excluded: a s d f g | h j k l.
+		expect(e.ladder.unlocked.map((id) => r.byId.get(id)?.char).sort().join("")).toBe("adfghjkls");
+		const words = e.text.split(" ");
+		expect(words.length).toBeGreaterThan(6);
+		expect(words.every((w) => /^[a-z]+$/.test(w))).toBe(true);
+		expect(words.filter((w) => w.length > 1).length).toBeGreaterThan(4);
+		expect(WORDS.some((w) => w === words[0])).toBe(true);
 	});
 
 	it("records one sample per keystroke and one error per mistake", () => {

@@ -1,14 +1,11 @@
-// M2: the practice loop. Typing a line, the next key highlighted, speed readout, and the choice of
-// keys growing as the slow ones get faster.
+// M2: the practice loop. Real words from the first line, the next key highlighted on the board,
+// and the key set growing as the slow keys speed up.
 import type { Page } from "@playwright/test";
 import { loadConfig } from "../vite/config.ts";
 import { expect, test } from "./csp.ts";
+import { keyName } from "./keys.ts";
 
 const { title } = loadConfig();
-
-// How many distinct keys have accumulated stats, read from the stored engine.
-const keysTyped = (page: Page) =>
-	page.evaluate(() => Object.keys((document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { stats: object } }).engine.stats).length);
 
 const line = (page: Page) => page.locator("tt-practice .line");
 const key = (page: Page, id: string) => page.locator(`tt-keyboard g[data-id="${id}"]`);
@@ -21,50 +18,48 @@ const ready = async (page: Page) => {
 
 const wanted = async (page: Page): Promise<string> => {
 	const text = (await line(page).getAttribute("data-text")) ?? "";
-	const index = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
-	return [...text][index] ?? "";
+	const cursor = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
+	return [...text][cursor] ?? "";
 };
 
-// A keystroke has to reach the element's window listener, so wait for the practice pane to exist.
-const tap = async (page: Page, ch: string) => {
-	const p = page.locator("tt-practice");
-	if (ch === " ") await p.press("Space");
-	else await p.press(ch === "z" ? "KeyZ" : `Key${ch.toUpperCase()}`);
-};
+const tap = (page: Page, ch: string) => page.locator("tt-practice").press(keyName(ch));
 
-test("starts the first lesson on the two index keys", async ({ page }) => {
+const keysTyped = (page: Page) => page.evaluate(() => Object.keys((document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { stats: object } }).engine.stats).length);
+
+test("the first line is already real words", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
-	const chars = await page.evaluate(() => {
-		const p = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { text: string } };
-		return [...new Set([...p.engine.text])].filter((c) => c !== " ").sort().join("");
-	});
-	expect(chars).toBe("fj");
+	const text = (await line(page).getAttribute("data-text")) ?? "";
+	const words = text.split(" ");
+	expect(words.length).toBeGreaterThan(6);
+	expect(words.filter((w) => w.length > 2).length).toBeGreaterThan(3);
 });
 
-test("types a whole line and shows speed", async ({ page }) => {
+test("the lesson is text, not a field you type into", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	await expect(page.locator("tt-practice input, tt-practice textarea, tt-practice [contenteditable]")).toHaveCount(0);
+	await expect(page.locator("tt-practice .now")).toBeVisible(); // one highlighted letter, keybr-style
+});
+
+test("types a whole line and reports a plausible speed", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
 	for (let i = 0; i < 40; i += 1) {
 		const ch = await wanted(page);
 		if (ch === "") break;
 		await tap(page, ch);
-		await page.waitForTimeout(12);
 	}
 	await expect(page.locator("main")).toContainText("cpm");
-	const done = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
-	expect(done).toBeGreaterThan(10);
+	const cursor = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
+	expect(cursor).toBeGreaterThan(10);
 });
 
 test("highlights the key the next character lives on", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
-	const ch = await wanted(page);
-	await tap(page, ch);
-	const id = await page.evaluate(() => {
-		const app = document.querySelector("app-main")! as unknown as { lastId: string };
-		return app.lastId;
-	});
+	await tap(page, await wanted(page));
+	const id = await page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId);
 	await expect(key(page, id)).toHaveClass(/\bon\b/);
 });
 
@@ -76,7 +71,7 @@ test("a wrong key does not move the cursor", async ({ page }) => {
 	await tap(page, ch === "z" ? "q" : "z");
 	const after = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
 	expect(after).toBe(before);
-	await expect(line(page)).toContainText("");
+	await expect(key(page, await page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId))).toHaveClass(/\bon\b/);
 });
 
 test("progress survives a reload", async ({ page }) => {
@@ -86,11 +81,25 @@ test("progress survives a reload", async ({ page }) => {
 		const ch = await wanted(page);
 		if (ch === "") break;
 		await tap(page, ch);
-		await page.waitForTimeout(10);
 	}
 	const before = await keysTyped(page);
+	expect(before).toBeGreaterThan(2);
 	await page.reload();
 	await ready(page);
 	const after = await keysTyped(page);
-	expect(after).toBeGreaterThanOrEqual(Math.min(before, 2));
+	expect(after).toBe(before);
+});
+
+test("the unlocked set grows as the keys speed up", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const start = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { ladder: { unlocked: string[] } } }).engine.ladder.unlocked.length);
+	// Practise at the goal pace, so every key should clear it.
+	for (let i = 0; i < 900; i += 1) {
+		const ch = await wanted(page);
+		if (ch === "") break;
+		await tap(page, ch);
+	}
+	const now = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { ladder: { unlocked: string[] } } }).engine.ladder.unlocked.length);
+	expect(now).toBeGreaterThan(start);
 });

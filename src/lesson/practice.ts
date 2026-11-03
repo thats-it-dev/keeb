@@ -8,10 +8,12 @@ import type { Resolved } from "../keyboard/resolve.ts";
 export class TtPractice extends LitElement {
 	static properties = { resolved: { type: Object }, targetCpm: { type: Number }, stats: { type: Object }, cursor: { state: true } };
 	static styles = css`
-		.line { font-size: 1.2rem; line-height: 2; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg); word-break: break-word; }
-		.done { color: var(--text-muted); }
-		.now { background: var(--primary); color: var(--bg); border-radius: var(--radius); padding: 1px 2px; }
-		.bad { color: var(--danger, #b00); text-decoration: underline; }
+		/* keybr-style line: plain text, no box, no caret. Colour carries what is typed, wrong, next. */
+		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; word-break: break-word; }
+		.hit { color: var(--text-secondary); }
+		.todo { color: var(--text-muted); }
+		.now { background: var(--primary); color: var(--bg); border-radius: var(--radius); padding: 2px 3px; }
+		.bad { color: var(--accent); }
 		.read { display: flex; gap: 14px; flex-wrap: wrap; }
 	`;
 	resolved?: Resolved;
@@ -77,14 +79,14 @@ export class TtPractice extends LitElement {
 				<span class="label">avg</span><span>${this.avgMs} ms/key</span>
 				<span class="label">goal</span><span>${this.targetCpm} cpm</span>
 			</div>
-			${this.done ? html`<p class="done">Line done — keep going.</p>` : html``}
+			${this.done ? html`<p class="todo">Line done — keep going.</p>` : html``}
 		`;
 	}
 
 	#cell(c: string, i: number) {
-		if (i < this.cursor) return this.wrong.has(i) ? html`<span class="bad">${c}</span>` : html`<span>${c}</span>`;
 		if (i === this.cursor) return html`<span class="now">${c}</span>`;
-		return html`<span class="done">${c}</span>`;
+		if (i < this.cursor) return html`<span class=${this.wrong.has(i) ? "bad" : "hit"}>${c}</span>`;
+		return html`<span class="todo">${c}</span>`;
 	}
 }
 
