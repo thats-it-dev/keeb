@@ -1,0 +1,18 @@
+{
+	"client_id": "https://touchtype.thatsit.app/.well-known/oauth-client/client-metadata.json",
+	"client_name": "TouchType",
+	"client_uri": "https://touchtype.thatsit.app",
+	"homepage_uri": "https://touchtype.thatsit.app",
+	"logo_uri": "https://touchtype.thatsit.app/icons/icon-512.png",
+	"redirect_uris": [
+		"https://touchtype.thatsit.app/",
+		"https://m4-atproto.touchtype.pages.dev/",
+		"http://localhost:5173/"
+	],
+	"grant_types": ["authorization_code", "refresh_token"],
+	"response_types": ["code"],
+	"token_endpoint_auth_method": "none",
+	"application_type": "web",
+	"dpop_bound_access_tokens": true,
+	"scope": "atproto offline_access repo:app.thatsit.typing.settings repo:app.thatsit.typing.progress repo:app.thatsit.typing.session repo:app.thatsit.typing.layout"
+}

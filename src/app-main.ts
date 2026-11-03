@@ -2,7 +2,11 @@ import { LitElement, html, css, nothing } from "https://kit.thatsit.app/lit.js";
 import { sharedStyles } from "https://kit.thatsit.app/kit.js";
 import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeometry } from "./data/geometries.ts";
 import { KEYMAPS, allKeymaps, forgetKeymap, keymapById, registerKeymap } from "./data/keymaps.ts";
-import { deleteBoard, deleteMap, layoutKey, loadBoards, loadMaps, loadSettings, loadStats, saveBoard, saveMap, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { deleteBoard, deleteMap, layoutKey, loadBoards, loadMaps, loadSettings, loadStats, loadSyncState, saveBoard, saveMap, saveSettings, saveStats, saveSyncState, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { auth } from "./atproto/auth.ts";
+import { Sync, type SyncState } from "./atproto/sync.ts";
+import { mergeProgress } from "./atproto/records.ts";
+import { cpmFrom, timeToTypeMs, type StatMap } from "./stats/stats.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
@@ -27,8 +31,26 @@ function saved(): { g: string; k: string } {
 	return { g: GEOMETRIES[0].id, k: KEYMAPS[0].id };
 }
 
+// Summing per-key samples gives the session totals without double-counting a repeated key.
+function totals(stats: StatMap): { chars: number; errors: number } {
+	let chars = 0;
+	let errors = 0;
+	for (const s of Object.values(stats)) {
+		chars += s.samples;
+		errors += s.errors;
+	}
+	return { chars, errors };
+}
+
+// SyncState lives in IndexedDB with everything else that has to survive a reload.
+const syncStore = {
+	load: () => loadSyncState(),
+	// The store keeps one row; the spread is what makes it that row rather than a second one.
+	save: async (s: SyncState) => saveSyncState(s),
+};
+
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -62,6 +84,9 @@ export class AppMain extends LitElement {
 			.full { grid-column: 1 / -1; }
 			.board { display: flex; align-items: center; gap: 10px; }
 			.problems { margin: 0; padding-left: 1.1em; color: var(--accent); font-size: 0.85rem; }
+			/* Sign-in is one line of the panel, not a section: it is optional and rarely touched. */
+			.sync { display: flex; gap: 8px; align-items: center; }
+			.sync input { width: 100%; max-width: 12rem; }
 		`,
 	];
 
@@ -72,11 +97,24 @@ export class AppMain extends LitElement {
 	boards: Geometry[] = [];
 	maps: Keymap[] = [];
 	importProblems: string[] = [];
+	// Signed-in account, and the one line the sync layer is allowed to say out loud.
+	did = "";
+	syncNote = "";
+	#sync: Sync | undefined;
+	#handle = "";
+	// What the counters read when the current session started, so a session record holds a delta.
+	#baseline = { chars: 0, errors: 0 };
+	#startedAt = 0;
+	#idleTimer: number | undefined;
 	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
 	ready = false;
 	lastId = "";
+	// Speed of the last keystroke. The practice pane knows it first, but the numbers above the line have
+	// to render from parent state: reading them off the child element means asking the DOM for a node that
+	// this very render pass is what creates, and after a reload the row would sit on "loading" forever.
+	nowCpm = 0;
 	targetCpm = DEFAULT_SETTINGS.targetCpm;
-	stats = {};
+	stats: StatMap = {};
 	settings: Settings = DEFAULT_SETTINGS;
 	#cache: { g: string; k: string; r: Resolved } | undefined;
 	#bound = false;
@@ -98,7 +136,23 @@ export class AppMain extends LitElement {
 			this.keymapId = sel.k;
 			// updated() reloads when an id changed; when nothing moved this is the only place that loads.
 			if (!moved) void this.#load(sel);
+			void this.#bootSync();
+			// Closing the tab ends a practice session; the browser gets one last look at it.
+			window.addEventListener("pagehide", () => void this.#endSession());
 		});
+	}
+
+	// Restore a session if this browser has one, and finish a sign-in redirect if one is in flight.
+	async #bootSync(): Promise<void> {
+		try {
+			const s = await auth.session();
+			if (!s) return;
+			this.did = s.did;
+			this.#sync = new Sync(s, syncStore);
+			await this.#syncNow(false);
+		} catch (err) {
+			this.syncNote = (err as Error).message;
+		}
 	}
 
 	override disconnectedCallback(): void {
@@ -164,8 +218,37 @@ export class AppMain extends LitElement {
 		const p = this.#practice;
 		if (!p) return;
 		const engine = p.engine;
+		if (!this.#startedAt) this.#startSession();
+		this.#armIdle();
 		this.lastId = p.key(ch, performance.now()) ?? "";
+		this.nowCpm = p.instantCpm;
 		if (engine) await this.#flushStats(engine); // one write per keystroke, deduped inside
+	}
+
+	// A session is the span between two silences, which is what the record is named for: it ends when the
+	// learner walks away, and what they left behind becomes one row on their repo.
+	#startSession(): void {
+		this.#startedAt = Date.now();
+		this.#baseline = totals(this.stats);
+	}
+
+	#armIdle(): void {
+		if (this.#idleTimer !== undefined) window.clearTimeout(this.#idleTimer);
+		this.#idleTimer = window.setTimeout(() => void this.#endSession(), 120_000);
+	}
+
+	async #endSession(): Promise<void> {
+		if (!this.#startedAt) return;
+		if (this.#idleTimer !== undefined) window.clearTimeout(this.#idleTimer);
+		this.#idleTimer = undefined;
+		const now = totals(this.stats);
+		const chars = now.chars - this.#baseline.chars;
+		const errors = now.errors - this.#baseline.errors;
+		const ms = Date.now() - this.#startedAt;
+		this.#startedAt = 0;
+		if (chars <= 0 || !this.#sync) return; // offline-first: the practice data is already in IndexedDB
+		const res = await this.#sync.pushSession(layoutKey(this.geometryId, this.keymapId), { chars, errors, ms, stats: this.stats }, Date.now());
+		this.syncNote = res.error ?? (res.sent ? `synced ${chars} characters` : "");
 	}
 
 	async #flush(p: TtPractice): Promise<void> {
@@ -193,6 +276,56 @@ export class AppMain extends LitElement {
 	#goal(e: Event): void {
 		const v = Number((e.target as HTMLInputElement).value);
 		if (Number.isFinite(v) && v >= 40 && v <= 600) this.targetCpm = Math.round(v);
+	}
+
+	// Bring the account and this browser into line, in whichever direction each piece is newer.
+	async #syncNow(adapt = true): Promise<void> {
+		if (!this.#sync) return;
+		this.syncNote = "";
+		const key = layoutKey(this.geometryId, this.keymapId);
+		const { settings, progress } = await this.#sync.pull();
+		const remote = progress[key];
+		if (remote) {
+			const merged = mergeProgress(this.stats, remote);
+			await saveStats(key, merged);
+			this.stats = merged;
+			// The engine holds its own copy; rebuilding the lesson is what makes the merged speed count.
+			void this.#load({ g: this.geometryId, k: this.keymapId });
+		}
+		// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
+		// over on a quiet page: at boot, or when they press Sync.
+		if (adapt && (settings.geometry || settings.keymap || settings.targetCpm)) {
+			const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : this.geometryId;
+			const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : this.keymapId;
+			if (settings.targetCpm) this.targetCpm = settings.targetCpm;
+			if (g !== this.geometryId || k !== this.keymapId) {
+				this.geometryId = g;
+				this.keymapId = k;
+			} else void this.#load({ g, k });
+		}
+		await this.#sync.pushSettings({ geometry: this.geometryId, keymap: this.keymapId, targetCpm: this.targetCpm, unlocked: [] }, Date.now());
+		const queued = await this.#sync.flush(Date.now());
+		this.syncNote = queued.error ?? (queued.sent ? `${queued.sent} session(s) sent` : "up to date");
+	}
+
+	async #signIn(): Promise<void> {
+		this.syncNote = "";
+		try {
+			// One call, one authorisation request: asking twice would replace the PKCE state in storage and
+			// the callback would no longer match the URL the browser was sent to.
+			const url = await auth.authorizeUrl(this.#handle);
+			location.assign(url);
+		} catch (err) {
+			this.syncNote = (err as Error).message;
+		}
+	}
+
+	async #signOut(): Promise<void> {
+		await this.#endSession();
+		await auth.signOut();
+		this.did = "";
+		this.#sync = undefined;
+		this.syncNote = "signed out; progress stays on this device";
 	}
 
 	// Read a layout file the learner picked. Two shapes arrive here: a keyboard-layout-editor
@@ -259,7 +392,6 @@ export class AppMain extends LitElement {
 	override render() {
 		const r = this.#resolved;
 		const geo = geometryById(this.geometryId);
-		const p = this.#practice;
 		return html`
 			<main>
 				<div class="head">
@@ -280,6 +412,20 @@ export class AppMain extends LitElement {
 							</select></label>
 						<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
 						<label><span class="label">layout file</span><input type="file" accept=".json,application/json" @change=${this.#upload} /></label>
+						<div class="full sync">
+							${this.did
+								? html`<span class="label">${this.did}</span>
+										<button class="btn ghost" @click=${() => void this.#syncNow()}>Sync now</button>
+										<button class="x" aria-label="Sign out" @click=${() => void this.#signOut()}>${iconX}</button>`
+								: html`<input
+										aria-label="atproto handle"
+										placeholder="you.bsky.social"
+										.value=${this.#handle}
+										@input=${(e: Event) => (this.#handle = (e.target as HTMLInputElement).value)}
+									/>
+									<button class="btn" @click=${() => void this.#signIn()}>Sign in</button>`}
+						</div>
+						${this.syncNote ? html`<p class="full warn">${this.syncNote}</p>` : nothing}
 						${this.boards.length
 							? html`<div class="full">${this.boards.map((b) => html`<div class="board"><span>${b.name}</span> <span class="label">${b.keys.length} keys</span> <button class="x" aria-label=${`Remove ${b.name}`} @click=${() => this.#removeBoard(b.id)}>${iconTrash}</button></div>`)}</div>`
 							: nothing}
@@ -290,7 +436,7 @@ export class AppMain extends LitElement {
 					</div>
 				</dialog>
 				<div class="col">
-					${p ? this.#readout(p) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
+					${this.ready ? this.#readout() : html`<div class="read"><span class="label">loading your progress…</span></div>`}
 					${this.ready
 						? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
 						: nothing}
@@ -305,16 +451,18 @@ export class AppMain extends LitElement {
 		`;
 	}
 
-	// Numbers above the line, where the eyes already are. They read from the practice element, whose
-	// fields are reactive, so every keystroke repaints this row. `?hidden` keeps the node alive.
-	#readout(p: TtPractice) {
+	// Numbers above the line, where the eyes already are. All four come from state the parent already
+	// keeps, so they are right on the first paint after a reload, before a single key is pressed.
+	#readout() {
 		const cell = (label: string, value: string) => html`<div class="metric"><span class="label">${label}</span><b>${value}</b></div>`;
+		const ids = Object.keys(this.stats);
+		const avgMs = ids.length ? Math.round(ids.reduce((s, id) => s + timeToTypeMs(this.stats[id]!), 0) / ids.length) : 0;
 		return html`
 			<div class="read">
-				${cell("now", `${p.instantCpm} cpm`)}
-				${cell("session", `${p.sessionCpm} cpm`)}
-				${cell("avg", `${p.avgMs} ms/key`)}
-				${cell("goal", `${p.targetCpm} cpm`)}
+				${cell("now", `${this.nowCpm} cpm`)}
+				${cell("session", `${avgMs ? cpmFrom(avgMs) : 0} cpm`)}
+				${cell("avg", `${avgMs} ms/key`)}
+				${cell("goal", `${this.targetCpm} cpm`)}
 			</div>
 		`;
 	}

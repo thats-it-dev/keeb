@@ -1,8 +1,12 @@
 # Cloudflare Pages headers. The CSP allows only this origin and the kit.
-# Apps that need more (atproto, a local model) add origins to connect-src.
-# atproto: bsky.social resolves handles, plc.directory resolves did:plc. A user's own PDS is added in M4.
+# atproto is the exception, and here is exactly why: a learner signs in at their own PDS, whose host is
+# whatever they chose. public.api.bsky.app resolves handles, plc.directory resolves did:plc, but the
+# token endpoint and every repo call go to a domain this app cannot know in advance. So connect-src
+# admits https endpoints, while script-src, form-action and base-uri stay shut - which is where the
+# exfiltration routes actually are. Narrowing this further means running the OAuth client inside the
+# service worker, where page CSP does not reach: deferred, not overlooked.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://kit.thatsit.app; style-src 'self' 'unsafe-inline' https://kit.thatsit.app; font-src https://kit.thatsit.app; img-src 'self' data: blob:; connect-src 'self' https://kit.thatsit.app https://bsky.social https://plc.directory; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://kit.thatsit.app; style-src 'self' 'unsafe-inline' https://kit.thatsit.app; font-src https://kit.thatsit.app; img-src 'self' data: blob:; connect-src 'self' https://kit.thatsit.app https://plc.directory https://public.api.bsky.app https:; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 
