@@ -58,8 +58,8 @@ floating point type, so the numbers that work in the browser are already the num
 | --- | --- |
 | M0 repo, CSP, PWA shell | shipped on `main` |
 | M1 geometry × keymap model, SVG keyboard view | shipped on `main` |
-| M2 lesson engine, word generator, IndexedDB, practice pane | in review, PR #2 |
-| M3 ZMK keymap importer — paste a `go60.keymap` and get a keymap | planned |
+| M2 lesson engine, word generator, IndexedDB, practice pane | shipped on `main` |
+| M3 layout import — upload a keyboard's `info.json` and get a board | in review, PR #3 |
 | M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | planned |
 | M5 publish the lexicons, DNS authority, stats screen | planned |
 
@@ -78,10 +78,27 @@ publishing repository. Custom lexicons are written with `validate: false`; PDSes
 
 No keystroke ever becomes a record. Records are per-session aggregates.
 
+## Importing your own board
+
+Settings → *layout file* takes a [keyboard-layout-editor](https://github.com/keyboard-layout/KLE-Parser)
+JSON file — the `info.json` inside a ZMK or QMK config — and turns it into a geometry: positions,
+size, rotation, and which half each key is on. It carries no characters, so the keymap stays a
+separate choice and an imported board pairs with all five layouts. Everything that could not be read
+is listed under the field rather than guessed at. Boards you import are saved in IndexedDB and appear
+in the keyboard picker; the same filename again replaces the earlier copy rather than adding a twin.
+
+Moergo labels (`L_C4R2`) are how a key's hand and column are worked out; without them the widest
+gap in the middle of the board is treated as the split. Keys outside the three typing rows keep
+whatever legend the file supplies, which for Moergo's own files means they render blank.
+
+This replaced an earlier plan to parse `.keymap` text. That was dropped on purpose: a `.keymap`
+makes position *implicit* in the whitespace alignment of each line, so importing one means guessing
+which board it belongs to — and the file that actually describes the board is already JSON.
+
 ## Notes for whoever picks this up
 
 - Lit nested templates need lit's `svg` tag or SVG children land in the HTML namespace and paint
-  nothing, silently. See `src/keyboard/view.ts`.
+  nothing, silently. See `src/keyboard/view.ts` and `src/ui/icons.ts`.
 - Compute derived render values inside `render()`, not in `updated()` writing to a private field —
   the latter never repaints on its own.
 - Playwright's `hasTouch` projects swallow synthetic keystrokes; the phone project runs without it.

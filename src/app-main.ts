@@ -1,11 +1,12 @@
 import { LitElement, html, css, nothing } from "https://kit.thatsit.app/lit.js";
 import { sharedStyles } from "https://kit.thatsit.app/kit.js";
-import { GEOMETRIES, geometryById } from "./data/geometries.ts";
+import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeometry } from "./data/geometries.ts";
 import { KEYMAPS, keymapById } from "./data/keymaps.ts";
-import { layoutKey, loadSettings, loadStats, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { deleteBoard, layoutKey, loadBoards, loadSettings, loadStats, saveBoard, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
-import { FINGER_NAME } from "./keyboard/types.ts";
-import { iconSettings, iconX } from "./ui/icons.ts";
+import { FINGER_NAME, type Geometry } from "./keyboard/types.ts";
+import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
+import { iconSettings, iconTrash, iconX } from "./ui/icons.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
@@ -16,7 +17,7 @@ const STORE = "touchtype:layout";
 function saved(): { g: string; k: string } {
 	try {
 		const v = JSON.parse(localStorage.getItem(STORE) ?? "") as { g?: string; k?: string };
-		if (typeof v.g === "string" && typeof v.k === "string" && GEOMETRIES.some((g) => g.id === v.g) && KEYMAPS.some((k) => k.id === v.k)) {
+		if (typeof v.g === "string" && typeof v.k === "string" && allGeometries().some((g) => g.id === v.g) && KEYMAPS.some((k) => k.id === v.k)) {
 			return { g: v.g, k: v.k };
 		}
 	} catch {
@@ -26,7 +27,7 @@ function saved(): { g: string; k: string } {
 }
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, boards: { state: true }, importProblems: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -57,12 +58,18 @@ export class AppMain extends LitElement {
 			.row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; justify-content: center; }
 			.hit { color: var(--primary); font-weight: 600; }
 			.warn { color: var(--text-muted); }
+			.full { grid-column: 1 / -1; }
+			.board { display: flex; align-items: center; gap: 10px; }
+			.problems { margin: 0; padding-left: 1.1em; color: var(--accent); font-size: 0.85rem; }
 		`,
 	];
 
 	geometryId = saved().g;
 	settingsOpen = false;
 	keymapId = saved().k;
+	// Layout files the learner imported, straight out of IndexedDB.
+	boards: Geometry[] = [];
+	importProblems: string[] = [];
 	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
 	ready = false;
 	lastId = "";
@@ -75,7 +82,13 @@ export class AppMain extends LitElement {
 	#pending: symbol | undefined;
 
 	override firstUpdated(): void {
-		void this.#load(saved());
+		// Boards have to be registered before the saved selection is read, or an imported board's id
+		// would fall back to the shipped default.
+		void loadBoards().then((boards) => {
+			this.boards = boards;
+			for (const b of boards) registerGeometry(b);
+			void this.#load(saved());
+		});
 	}
 
 	override disconnectedCallback(): void {
@@ -172,6 +185,33 @@ export class AppMain extends LitElement {
 		if (Number.isFinite(v) && v >= 40 && v <= 600) this.targetCpm = Math.round(v);
 	}
 
+	// Read a keyboard-layout JSON file the learner picked, and make it a board they can select.
+	async #upload(e: Event): Promise<void> {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		const id = importId(file.name);
+		try {
+			const { geometry, problems } = geometryFromLayout(JSON.parse(await file.text()), { id, name: importName(file.name), source: file.name });
+			this.importProblems = problems;
+			if (!geometry) return;
+			// Re-importing the same file replaces the earlier copy rather than piling up near-duplicates.
+			forgetGeometry(id);
+			registerGeometry(geometry);
+			await saveBoard(geometry);
+			this.boards = [...this.boards.filter((b) => b.id !== id), geometry];
+			this.geometryId = id;
+		} catch (err) {
+			this.importProblems = [`${file.name}: ${(err as Error).message}`];
+		}
+	}
+
+	async #removeBoard(id: string): Promise<void> {
+		forgetGeometry(id);
+		await deleteBoard(id);
+		this.boards = this.boards.filter((b) => b.id !== id);
+		if (this.geometryId === id) this.geometryId = GEOMETRIES[0].id;
+	}
+
 	#next(): void {
 		const p = this.#practice;
 		if (!p) return;
@@ -196,12 +236,17 @@ export class AppMain extends LitElement {
 					</div>
 					<div class="panel">
 						<label><span class="label">keyboard</span><select @change=${(e: Event) => this.#pick("g", (e.target as HTMLSelectElement).value)}>
-								${GEOMETRIES.map((g) => html`<option value=${g.id} ?selected=${g.id === this.geometryId}>${g.name}</option>`)}
+								${allGeometries().map((g) => html`<option value=${g.id} ?selected=${g.id === this.geometryId}>${g.name}</option>`)}
 							</select></label>
 						<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
 								${KEYMAPS.map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
 							</select></label>
 						<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
+						<label><span class="label">layout file</span><input type="file" accept=".json,application/json" @change=${this.#upload} /></label>
+						${this.boards.length
+							? html`<div class="full">${this.boards.map((b) => html`<div class="board"><span>${b.name}</span> <span class="label">${b.keys.length} keys</span> <button class="x" aria-label=${`Remove ${b.name}`} @click=${() => this.#removeBoard(b.id)}>${iconTrash}</button></div>`)}</div>`
+							: nothing}
+						${this.importProblems.length ? html`<ul class="full problems">${this.importProblems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
 					</div>
 				</dialog>
 				<div class="col">
@@ -214,7 +259,7 @@ export class AppMain extends LitElement {
 						<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 						${this.#status(r)}
 					</div>
-					${geo.verified ? nothing : html`<p class="warn row">Positions for ${geo.name} are our reconstruction, not the vendor's file.</p>`}
+					${this.#notice(geo)}
 				</div>
 			</main>
 		`;
@@ -238,6 +283,12 @@ export class AppMain extends LitElement {
 	#onDialogClick = (e: MouseEvent): void => {
 		if (e.target === this.renderRoot.querySelector("dialog")) this.settingsOpen = false;
 	};
+
+	// Imported boards are the user's own data, so they get a different note than our reconstructions.
+	#notice(geo: Geometry) {
+		if (geo.id.startsWith("import:")) return html`<p class="warn row">Positions came from ${geo.source}. Compare the drawing with your board before trusting it.</p>`;
+		return geo.verified ? nothing : html`<p class="warn row">Positions for ${geo.name} are our reconstruction, not the vendor's file.</p>`;
+	}
 
 	#status(r: Resolved) {
 		const key = r.byId.get(this.lastId);

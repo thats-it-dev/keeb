@@ -1,4 +1,5 @@
 import { mergeAll, type StatMap } from "../stats/stats.ts";
+import type { Geometry } from "../keyboard/types.ts";
 
 // Offline-first storage. Everything the learner does lands here immediately; atproto sync (M4)
 // reads and writes the same shape, so nothing here changes when the network arrives.
@@ -6,6 +7,7 @@ import { mergeAll, type StatMap } from "../stats/stats.ts";
 const DB = "touchtype";
 const STATS = "stats";
 const SETTINGS = "settings";
+const BOARDS = "boards"; // layout files the learner imported (M3)
 
 export type Settings = {
 	geometry: string;
@@ -22,10 +24,12 @@ let dbp: Promise<IDBDatabase> | undefined;
 
 function open(): Promise<IDBDatabase> {
 	dbp ??= new Promise((res, rej) => {
-		const req = indexedDB.open(DB, 1);
+		const req = indexedDB.open(DB, 2);
 		req.onupgradeneeded = () => {
 			req.result.createObjectStore(STATS, { keyPath: "layout" });
 			req.result.createObjectStore(SETTINGS, { keyPath: "layout" });
+			// v2: imported boards, keyed by their own id rather than by layout pair.
+			req.result.createObjectStore(BOARDS, { keyPath: "id" });
 		};
 		req.onsuccess = () => res(req.result);
 		req.onerror = () => rej(req.error);
@@ -83,7 +87,7 @@ export async function saveSettings(key: string, s: Settings): Promise<void> {
 
 export async function wipe(): Promise<void> {
 	const db = await open();
-	for (const store of [STATS, SETTINGS]) {
+	for (const store of [STATS, SETTINGS, BOARDS]) {
 		await new Promise<void>((res, rej) => {
 			const tx = db.transaction(store, "readwrite");
 			tx.objectStore(store).clear();
@@ -91,4 +95,34 @@ export async function wipe(): Promise<void> {
 			tx.onerror = () => rej(tx.error);
 		});
 	}
+}
+
+// Imported boards survive a reload, and the picker is built from them before the first lesson starts.
+export async function loadBoards(): Promise<Geometry[]> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const r = db.transaction(BOARDS).objectStore(BOARDS).getAll();
+		r.onsuccess = () => res((r.result as Geometry[]) ?? []);
+		r.onerror = () => rej(r.error);
+	});
+}
+
+export async function saveBoard(g: Geometry): Promise<void> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const tx = db.transaction(BOARDS, "readwrite");
+		tx.objectStore(BOARDS).put(g);
+		tx.oncomplete = () => res();
+		tx.onerror = () => rej(tx.error);
+	});
+}
+
+export async function deleteBoard(id: string): Promise<void> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const tx = db.transaction(BOARDS, "readwrite");
+		tx.objectStore(BOARDS).delete(id);
+		tx.oncomplete = () => res();
+		tx.onerror = () => rej(tx.error);
+	});
 }
