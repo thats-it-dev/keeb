@@ -9,17 +9,13 @@ export class TtPractice extends LitElement {
 	static properties = { resolved: { type: Object }, targetCpm: { type: Number }, stats: { type: Object }, cursor: { state: true } };
 	static styles = css`
 		/* keybr-style line: plain text, no box, no caret. Colour carries what is typed, wrong, next. */
-		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; overflow-wrap: break-word; isolation: isolate; }
+		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; overflow-wrap: break-word; }
 		.hit { color: var(--text-secondary); }
 		.todo { color: var(--text-muted); }
 		.bad { color: var(--accent); }
-		/*
-		 * The cursor plate is painted by an out-of-flow pseudo-element. Padding on the span would make
-		 * the current letter wider than every other copy of it, so the line would shift sideways on
-		 * each keystroke.
-		 */
-		.now { position: relative; color: var(--bg); }
-		.now::before { content: ""; position: absolute; z-index: -1; inset: 0.06em -0.1em; background: var(--primary); border-radius: 0.25em; }
+		/* The cursor is the current letter's colour, not a box behind it: nothing about layout changes
+		 * as it moves, so the letters after it cannot shift sideways. */
+		.now { color: var(--primary); }
 		.read { display: flex; gap: 14px; flex-wrap: wrap; }
 	`;
 	resolved?: Resolved;
