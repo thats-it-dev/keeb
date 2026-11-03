@@ -1,20 +1,25 @@
-# TouchType
+# Keeb
 
 A touch-typing trainer for real keyboards, including splits. It times every key you press, works out
 which keys are slowing you down, and generates lessons from the most frequent English words that use
 those keys. Your layout and progress live in your own atproto repository, not on our server.
 
-Live: <https://touchtype.thatsit.app> · Repo: <https://github.com/thats-it-dev/touchtype>
+Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/touchtype> (the repo keeps the old name; the app does not)
 
 ## Run it
 
 ```sh
 npm ci
-npm run dev        # http://localhost:5173
+npm run dev        # open it as http://127.0.0.1:5173, not localhost — see below
 npm run typecheck && npm test && npm run e2e
 ```
 
 `npm run e2e` builds and previews locally; `BASE_URL=https://… npm run e2e` tests a deployed site.
+
+Sign-in only works from an origin listed in `REDIRECT_URIS` (`src/atproto/auth.ts`) and in the hosted
+`public/.well-known/oauth-client/client-metadata.json`. For development that is `http://127.0.0.1:5173/`:
+the OAuth library rejects a `localhost` redirect outright (RFC 8252 prefers the loopback IP), and the two
+copies of the document are checked against each other by `test/oauth-client.test.ts`.
 
 ## How it fits together
 
@@ -59,14 +64,16 @@ floating point type, so the numbers that work in the browser are already the num
 | M0 repo, CSP, PWA shell | shipped on `main` |
 | M1 geometry × keymap model, SVG keyboard view | shipped on `main` |
 | M2 lesson engine, word generator, IndexedDB, practice pane | shipped on `main` |
-| M3 layout import — upload a keyboard's `info.json` and get a board | in review, PR #3 |
-| M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | planned |
+| M3 layout import — a keyboard's `info.json` or a layout editor export | shipped on `main` |
+| M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | in review |
 | M5 publish the lexicons, DNS authority, stats screen | planned |
 
-## Data model (M4+)
+## Data model
 
 Namespace `app.thatsit.typing.*`, authority a `_lexicon.thatsit.app` DNS TXT record pointing at the
-publishing repository. Custom lexicons are written with `validate: false`; PDSes fail open on them.
+publishing repository (that publication is M5). Records are written with `validate: false`, because a
+PDS cannot fetch a lexicon that is not published yet — so the shapes are enforced by `test/lexicons.test.ts`
+instead, which runs the real DRISL validator over the same objects in `src/atproto/lexicons.ts`.
 
 | NSID | Key | Holds |
 | --- | --- | --- |
@@ -77,6 +84,36 @@ publishing repository. Custom lexicons are written with `validate: false`; PDSes
 | `app.thatsit.typing.session` | `tid` | one practice session, oldest pruned past ~50 |
 
 No keystroke ever becomes a record. Records are per-session aggregates.
+
+## Signing in and sync (M4)
+
+Offline is still the default: signing in is one optional row in Settings, and nothing in the practice
+loop waits for a network. What sync does, and why:
+
+- **A session is the span between two silences.** It ends after two minutes without a keystroke, or when
+  the tab closes. One record per session, keyed by its own tid.
+- **Progress merges, it does not conflict.** `merge` adds the sample counts and weights each mean by its
+  own count, so two devices can drift apart for a week and still combine without a coordinator. Two
+  progress records for one layout is a normal accident (two browsers, both first runs): the newest wins
+  outright rather than being averaged with a stale one.
+- **Settings are adopted only on a quiet page.** Pulling a remote board in mid-lesson would yank the
+  keyboard out from under the learner, so that merge happens at boot or when you press Sync.
+- **Failures queue.** An unreachable PDS leaves the session in an IndexedDB outbox; the next session, or
+  the next Sync, tries again. Nothing is ever dropped because a server was having a moment.
+
+The OAuth client is a first-party web app: `client_metadata.json` is served from
+`/.well-known/oauth-client/`, the token flow is PKCE with DPoP and no client secret, and the library
+keeps its keys and tokens in IndexedDB. The redirect URIs in that file have to match
+`REDIRECT_URIS` in `src/atproto/auth.ts` — including any branch preview that wants to test a real login.
+
+One consequence of `client_id` being a URL: the authorization server fetches it from **production**, so a
+preview deploy cannot complete a login until the build that adds `/.well-known/oauth-client/` has landed
+on `main`. Test sign-in after merging, not before — a preview's own copy of the document is never read.
+
+`connect-src` in `public/_headers` admits `https:` for this one feature: a learner's PDS is whatever host
+they chose, so it cannot be named in advance. `script-src`, `form-action` and `base-uri` stay shut. The
+alternative — running the OAuth client inside the service worker, where page CSP does not reach — is
+still open.
 
 ## Importing your own board
 
@@ -105,6 +142,10 @@ which board it belongs to — and the files above already describe the board.
 
 ## Notes for whoever picks this up
 
+- It was called TouchType until M4. The name lives in `app.config.json` (which also picks the Cloudflare
+  Pages project, so the preview subdomain) and in the OAuth client id, which is a URL on the deployed
+  origin. Progress is stored per *origin*, so the rename to `keeb.thatsit.app` started a fresh device
+  record: anything practised on the old subdomain stays there until sync brings it across.
 - Lit nested templates need lit's `svg` tag or SVG children land in the HTML namespace and paint
   nothing, silently. See `src/keyboard/view.ts` and `src/ui/icons.ts`.
 - Anything imported must be registered *before* the saved selection is resolved: `saved()` runs in the
