@@ -38,8 +38,9 @@ export type Geometry = {
 	id: string;
 	name: string;
 	source: string;
-	// True when positions come from the vendor's own layout file, false when they are derived.
 	verified: boolean;
+	// True when the two halves are physically separate, so their key boxes must not overlap.
+	split: boolean;
 	// Physical row index -> what that row is for.
 	rowRoles: RowRole[];
 	keys: Key[];

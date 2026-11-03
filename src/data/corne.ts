@@ -9,6 +9,7 @@ export const CORNE = geometry({
 	name: "Corne (CRKBD)",
 	source: "qmk/qmk_firmware keyboards/crkbd",
 	verified: true,
+	split: true,
 	rowRoles: ["upper", "home", "lower", "thumb"],
 	keys: columnarKeys({
 		colOffset: [30, 30, 10, 0, 10, 20],

@@ -8,6 +8,7 @@ export const GO60 = geometry({
 	name: "Moergo Go60",
 	source: "moergo-keyboards/go60-zmk-config",
 	verified: true,
+	split: true,
 	rowRoles: ["number", "upper", "home", "lower", "extra", "thumb"],
 	keys: [
 		["L_C6R1", "l", 0, 0, 0, 50, "="],

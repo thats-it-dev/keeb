@@ -9,7 +9,7 @@ export function key(t: KeyTuple): Key {
 	return { id: t[0], hand: t[1], row: t[2], col: t[3], x: t[4], y: t[5], label: t[6], rot: t[7] ?? 0, w: t[8] ?? U, h: t[9] ?? U };
 }
 
-export type GeometryOpts = { id: string; name: string; source: string; verified: boolean; rowRoles: RowRole[]; keys: KeyTuple[] };
+export type GeometryOpts = Omit<Geometry, "keys"> & { keys: KeyTuple[] };
 
 export function geometry(opts: GeometryOpts): Geometry {
 	return { ...opts, keys: opts.keys.map(key) };
@@ -24,7 +24,8 @@ const FINGER_BY_COL = ["p", "p", "r", "m", "i", "i"] as const;
 
 export function fingerOf(g: Geometry, k: Key): Finger {
 	if (roleOf(g, k.row) === "thumb") return k.hand === "l" ? "lt" : "rt";
-	return `${k.hand}${FINGER_BY_COL[Math.min(k.col, 5)]}` as Finger;
+	// Negative columns are keys beyond the outer edge (ANSI's ] \ Enter); they are pinky reach.
+	return `${k.hand}${FINGER_BY_COL[Math.max(0, Math.min(5, k.col))]}` as Finger;
 }
 
 export function bounds(keys: Key[]): { width: number; height: number } {
@@ -47,7 +48,7 @@ export function geometryProblems(g: Geometry): string[] {
 		for (const [field, value] of [["x", k.x], ["y", k.y], ["w", k.w], ["h", k.h], ["rot", k.rot]] as const) {
 			if (!Number.isInteger(value)) out.push(`${k.id}: ${field} must be an integer, got ${value}`);
 		}
-		if (k.col < 0 || k.col > 6) out.push(`${k.id}: column ${k.col} outside 0..6`);
+		if (k.col < -4 || k.col > 6) out.push(`${k.id}: column ${k.col} outside -4..6`);
 		if (roleOf(g, k.row) === "extra" && /^[A-Za-z]$/.test(k.label)) out.push(`${k.id}: letter "${k.label}" sits on an untaught row ${k.row}`);
 	}
 	const hands = new Set(g.keys.map((k) => k.hand));

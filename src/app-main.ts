@@ -89,7 +89,7 @@ export class AppMain extends LitElement {
 						</select></label>
 				</div>
 				<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
-				${this.#status(r)} ${geo.verified ? html`` : html`<p class="warn"><span class="label">note</span>Positions for ${geo.name} are our reconstruction, not the vendor's file.</p>`}
+				${this.#status(r)} ${geo.verified ? html`` : html`<p class="warn row"><span class="label">note</span><span>Positions for ${geo.name} are our reconstruction, not the vendor's file.</span></p>`}
 			</main>
 		`;
 	}

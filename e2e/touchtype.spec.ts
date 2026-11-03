@@ -18,6 +18,15 @@ test("draws the 60 keys of a Go60", async ({ page }) => {
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(60);
 });
 
+test("paints the whole board before anything is clicked", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const svg = await page.locator("tt-keyboard svg").boundingBox();
+	const far = await key(page, "R_C6R3").boundingBox(); // the right-hand outer column
+	expect(far && svg && far.x > svg.x + svg.width * 0.5).toBe(true);
+	expect(far!.x + far!.width).toBeLessThanOrEqual(svg!.x + svg!.width + 1);
+});
+
 test("marks the keys a keymap does not claim", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);

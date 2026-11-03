@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing, svg, type PropertyValues } from "https://kit.thatsit.app/lit.js";
+import { LitElement, html, css, nothing, svg } from "https://kit.thatsit.app/lit.js";
 import type { Resolved } from "./resolve.ts";
 import type { RenderKey } from "./types.ts";
 
@@ -18,19 +18,12 @@ export class TtKeyboard extends LitElement {
 	resolved?: Resolved;
 	active = "";
 	missed = "";
-	#box = "0 0 100 100";
-
-	// Lit only re-renders on identity change, so keep the viewBox in sync with the object we were given.
-	updated(changed: PropertyValues) {
-		if (changed.has("resolved") && this.resolved) {
-			const v = this.resolved.viewBox;
-			this.#box = `${v.x} ${v.y} ${v.width} ${v.height}`;
-		}
-	}
 
 	override render() {
 		if (!this.resolved) return html``;
-		return html`<svg viewBox=${this.#box} role="img" aria-label=${this.resolved.keys.length + " keys"}>
+		const v = this.resolved.viewBox; // computed here, not in updated(): a private field set after the first
+		// render never repaints, so the board loaded cropped to a 1x1 key until you touched a select.
+		return html`<svg viewBox=${`${v.x} ${v.y} ${v.width} ${v.height}`} role="img" aria-label=${this.resolved.keys.length + " keys"}>
 			${this.resolved.keys.map((k) => this.#key(k))}
 		</svg>`;
 	}

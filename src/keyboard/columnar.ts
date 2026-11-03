@@ -26,7 +26,8 @@ export function columnarKeys(o: ColumnarOpts): KeyTuple[] {
 	o.rows.forEach((row, i) => {
 		if (row.role === "thumb") return;
 		for (let col = 0; col < row.left.length; col += 1) {
-			out.push([`L${i}-${col}`, "l", i, col, o.leftInnerX - col * 100, rowY(o.rows, i, col, o.colOffset), row.left[col] ?? ""]);
+			// Column 0 is the outer edge of each hand, so the left hand counts rightward from its inner column.
+			out.push([`L${i}-${col}`, "l", i, col, o.leftInnerX - (row.left.length - 1 - col) * 100, rowY(o.rows, i, col, o.colOffset), row.left[col] ?? ""]);
 		}
 		for (let col = 0; col < row.right.length; col += 1) {
 			out.push([`R${i}-${col}`, "r", i, col, o.rightInnerX + (row.right.length - 1 - col) * 100, rowY(o.rows, i, col, o.colOffset), row.right[col] ?? ""]);
