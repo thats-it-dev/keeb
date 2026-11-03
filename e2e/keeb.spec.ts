@@ -6,7 +6,10 @@ import { loadConfig } from "../vite/config.ts";
 import { expect, test } from "./csp.ts";
 import { keyName } from "./keys.ts";
 
-const { title } = loadConfig();
+const cfg = loadConfig();
+// The h1 carries the heading (app.config.json's "heading", falling back to title); the tab carries the
+// title. Asserting h1 against title would pass for the wrong app and fail for this one.
+const heading = cfg.heading ?? cfg.title;
 
 const key = (page: Page, id: string) => page.locator(`tt-keyboard g[data-id="${id}"]`);
 
@@ -25,7 +28,7 @@ const pickBoard = async (page: Page, id: string) => {
 test("draws the 60 keys of a Go60", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
-	await expect(page.locator("h1")).toHaveText(title);
+	await expect(page.locator("h1")).toHaveText(heading);
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(60);
 });
 

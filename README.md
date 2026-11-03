@@ -1,25 +1,36 @@
-# Keeb
+# keeb, that's it.
 
 A touch-typing trainer for real keyboards, including splits. It times every key you press, works out
 which keys are slowing you down, and generates lessons from the most frequent English words that use
 those keys. Your layout and progress live in your own atproto repository, not on our server.
 
-Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/touchtype> (the repo keeps the old name; the app does not)
+The name lives in `app.config.json`: `title` ("keeb, that's it.") is the app's name — the browser tab, the
+manifest install label, and the name on the atproto consent screen; `heading` ("keeb") is the wordmark —
+the `<h1>` on the page and the short label a launcher puts under the icon; `name` ("keeb") is the
+identifier — the repo, the Pages project, the storage prefix and the client id's hostname. `heading` is
+optional because most apps want one string everywhere.
+
+Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/keeb>
 
 ## Run it
 
 ```sh
 npm ci
-npm run dev        # open it as http://127.0.0.1:5173, not localhost — see below
+npm run dev        # no sign-in here: the OAuth server only accepts https redirects
 npm run typecheck && npm test && npm run e2e
 ```
 
 `npm run e2e` builds and previews locally; `BASE_URL=https://… npm run e2e` tests a deployed site.
 
-Sign-in only works from an origin listed in `REDIRECT_URIS` (`src/atproto/auth.ts`) and in the hosted
-`public/.well-known/oauth-client/client-metadata.json`. For development that is `http://127.0.0.1:5173/`:
-the OAuth library rejects a `localhost` redirect outright (RFC 8252 prefers the loopback IP), and the two
-copies of the document are checked against each other by `test/oauth-client.test.ts`.
+Sign-in can only be exercised on a deploy whose origin is listed in `REDIRECT_URIS`
+(`src/atproto/auth.ts`) and in the hosted `public/.well-known/oauth-client/client-metadata.json`. Two
+rules the authorization server, not this repo, enforces: the client is `application_type: "web"`, so a
+loopback (`http://127.0.0.1:…`) redirect is refused — it is allowed only for native apps; and a
+loopback-shaped redirect must never use the `localhost` hostname (RFC 8252). Both are checked by
+`test/oauth-client.test.ts`, because the library's own schema is more permissive than the server.
+
+The server also fetches `client_id` — a URL on the production origin — so a branch preview cannot
+complete a login until the build that ships `/.well-known/oauth-client/` has landed on `main`.
 
 ## How it fits together
 
@@ -142,6 +153,12 @@ which board it belongs to — and the files above already describe the board.
 
 ## Notes for whoever picks this up
 
+- The icon is generated, not stored art: `npm run icons` draws the Lucide `keyboard` glyph analytically
+  (capsules and a rounded-rect ring, one pixel of antialiasing) into the same five PNG sizes plus
+  `icon.svg`, on the pi-web approach — a small PNG encoder in the script, no canvas, sharp or rasterizer
+  dependency. The Lucide package is a build-time read of `dist/esm/icons/keyboard.mjs` and is *not* a
+  dependency; the path data in the script came from it and `icon.svg` mirrors the same shapes. The old
+  dot artefacts were committed and the regenerated ones are staged — check the image before shipping.
 - It was called TouchType until M4. The name lives in `app.config.json` (which also picks the Cloudflare
   Pages project, so the preview subdomain) and in the OAuth client id, which is a URL on the deployed
   origin. Progress is stored per *origin*, so the rename to `keeb.thatsit.app` started a fresh device

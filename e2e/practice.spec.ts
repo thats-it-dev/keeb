@@ -5,7 +5,8 @@ import { loadConfig } from "../vite/config.ts";
 import { expect, test } from "./csp.ts";
 import { keyName } from "./keys.ts";
 
-const { title } = loadConfig();
+const cfg = loadConfig();
+const heading = cfg.heading ?? cfg.title; // the h1 shows the heading; the tab shows the title
 
 const line = (page: Page) => page.locator("tt-practice .line");
 const key = (page: Page, id: string) => page.locator(`tt-keyboard g[data-id="${id}"]`);
@@ -13,7 +14,7 @@ const key = (page: Page, id: string) => page.locator(`tt-keyboard g[data-id="${i
 // Wait for IndexedDB to answer, or the practice pane has no lesson yet.
 const ready = async (page: Page) => {
 	await expect(line(page)).toBeVisible();
-	await expect(page.locator("h1")).toHaveText(title);
+	await expect(page.locator("h1")).toHaveText(heading);
 	// The kit's faces are font-display: swap, so glyphs reflow when they land. A test that measures
 	// text twice must not straddle that swap.
 	await page.evaluate(() => document.fonts.ready);

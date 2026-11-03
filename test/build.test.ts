@@ -11,8 +11,12 @@ beforeAll(() => {
 }, 60_000);
 
 describe("vite build", () => {
-	it("emits a manifest with the title", () => {
-		expect(JSON.parse(dist("manifest.webmanifest")).name).toBe(loadConfig().title);
+	it("emits a manifest named by title, labelled short by heading", () => {
+		const m = JSON.parse(dist("manifest.webmanifest")) as { name: string; short_name: string };
+		const c = loadConfig();
+		// name is the app's full name; short_name is the wordmark a launcher shows under the icon.
+		expect(m.name).toBe(c.title);
+		expect(m.short_name).toBe(c.heading ?? c.title);
 	});
 
 	it("fills in index.html", () => {
@@ -23,6 +27,16 @@ describe("vite build", () => {
 		expect(html).toContain("https://kit.thatsit.app/kit.css");
 		expect(html).toContain('src="https://kit.thatsit.app/theme-init.js"');
 		expect(html).toContain('data-key="app:theme"');
+	});
+
+	it("puts the full name in the tab and the wordmark in the short labels", () => {
+		// The distinction exists because the two get truncated in opposite ways: a tab shows the name in
+		// full, a launcher tile cuts it at about a dozen characters. Swapping them reads as a bug.
+		const c = loadConfig();
+		const html = dist("index.html");
+		expect(html).toContain(`<title>${c.title}</title>`);
+		expect(html).toContain(`<meta name="apple-mobile-web-app-title" content="${c.heading ?? c.title}"`);
+		if (c.heading !== undefined) expect(html).not.toContain(`<meta name="apple-mobile-web-app-title" content="${c.title}"`);
 	});
 
 	it("does not bundle a second Lit", () => {
