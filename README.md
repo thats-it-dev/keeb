@@ -10,11 +10,16 @@ Live: <https://touchtype.thatsit.app> · Repo: <https://github.com/thats-it-dev/
 
 ```sh
 npm ci
-npm run dev        # http://localhost:5173
+npm run dev        # open it as http://127.0.0.1:5173, not localhost — see below
 npm run typecheck && npm test && npm run e2e
 ```
 
 `npm run e2e` builds and previews locally; `BASE_URL=https://… npm run e2e` tests a deployed site.
+
+Sign-in only works from an origin listed in `REDIRECT_URIS` (`src/atproto/auth.ts`) and in the hosted
+`public/.well-known/oauth-client/client-metadata.json`. For development that is `http://127.0.0.1:5173/`:
+the OAuth library rejects a `localhost` redirect outright (RFC 8252 prefers the loopback IP), and the two
+copies of the document are checked against each other by `test/oauth-client.test.ts`.
 
 ## How it fits together
 

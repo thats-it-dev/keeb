@@ -14,7 +14,9 @@ export const CLIENT_ID = "https://touchtype.thatsit.app/.well-known/oauth-client
 
 // Every origin this app can be signed in from. A preview deploy is a different origin, so a branch that
 // wants to test the real flow adds its own URL here and to the hosted file.
-export const REDIRECT_URIS: [string, ...string[]] = ["https://touchtype.thatsit.app/", "https://m4-atproto.touchtype.pages.dev/", "http://localhost:5173/"];
+// The dev entry uses the loopback IP, not "localhost": the OAuth library rejects that hostname outright
+// (RFC 8252), so `npm run dev` has to be opened as http://127.0.0.1:5173/ to get a callback that lands.
+export const REDIRECT_URIS: [string, ...string[]] = ["https://touchtype.thatsit.app/", "https://m4-atproto.touchtype.pages.dev/", "http://127.0.0.1:5173/"];
 
 const METADATA = {
 	client_id: CLIENT_ID,
