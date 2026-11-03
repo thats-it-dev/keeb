@@ -14,6 +14,9 @@ const key = (page: Page, id: string) => page.locator(`tt-keyboard g[data-id="${i
 const ready = async (page: Page) => {
 	await expect(line(page)).toBeVisible();
 	await expect(page.locator("h1")).toHaveText(title);
+	// The kit's faces are font-display: swap, so glyphs reflow when they land. A test that measures
+	// text twice must not straddle that swap.
+	await page.evaluate(() => document.fonts.ready);
 };
 
 const wanted = async (page: Page): Promise<string> => {
