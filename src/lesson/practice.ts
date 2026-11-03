@@ -9,11 +9,17 @@ export class TtPractice extends LitElement {
 	static properties = { resolved: { type: Object }, targetCpm: { type: Number }, stats: { type: Object }, cursor: { state: true } };
 	static styles = css`
 		/* keybr-style line: plain text, no box, no caret. Colour carries what is typed, wrong, next. */
-		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; word-break: break-word; }
+		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; overflow-wrap: break-word; isolation: isolate; }
 		.hit { color: var(--text-secondary); }
 		.todo { color: var(--text-muted); }
-		.now { background: var(--primary); color: var(--bg); border-radius: var(--radius); padding: 2px 3px; }
 		.bad { color: var(--accent); }
+		/*
+		 * The cursor plate is painted by an out-of-flow pseudo-element. Padding on the span would make
+		 * the current letter wider than every other copy of it, so the line would shift sideways on
+		 * each keystroke.
+		 */
+		.now { position: relative; color: var(--bg); }
+		.now::before { content: ""; position: absolute; z-index: -1; inset: 0.06em -0.1em; background: var(--primary); border-radius: 0.25em; }
 		.read { display: flex; gap: 14px; flex-wrap: wrap; }
 	`;
 	resolved?: Resolved;
@@ -70,9 +76,8 @@ export class TtPractice extends LitElement {
 
 	override render() {
 		const text = this.engine?.text ?? "";
-		const chars = [...text];
 		return html`
-			<p class="line" aria-live="polite" data-text=${text}>${chars.map((c, i) => this.#cell(c, i))}</p>
+			<p class="line" aria-live="polite" data-text=${text}>${this.#runs(text)}</p>
 			<div class="read">
 				<span class="label">speed</span><span>${this.instantCpm} cpm</span>
 				<span class="label">session</span><span>${this.sessionCpm} cpm</span>
@@ -83,10 +88,25 @@ export class TtPractice extends LitElement {
 		`;
 	}
 
-	#cell(c: string, i: number) {
-		if (i === this.cursor) return html`<span class="now">${c}</span>`;
-		if (i < this.cursor) return html`<span class=${this.wrong.has(i) ? "bad" : "hit"}>${c}</span>`;
-		return html`<span class="todo">${c}</span>`;
+	// One span per character would disable kerning and shaping at every span boundary, which is what
+	// made the line look badly spaced. Group adjacent characters that share a state instead.
+	#runs(text: string) {
+		const chars = [...text];
+		const out: ReturnType<typeof html>[] = [];
+		for (let i = 0; i < chars.length; ) {
+			const state = this.#state(i);
+			let j = i + 1;
+			if (state !== "now") while (j < chars.length && this.#state(j) === state) j += 1;
+			out.push(html`<span class=${state}>${chars.slice(i, j).join("")}</span>`);
+			i = j;
+		}
+		return out;
+	}
+
+	#state(i: number): "now" | "hit" | "bad" | "todo" {
+		if (i === this.cursor) return "now";
+		if (i < this.cursor) return this.wrong.has(i) ? "bad" : "hit";
+		return "todo";
 	}
 }
 

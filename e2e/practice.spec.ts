@@ -42,6 +42,23 @@ test("the lesson is text, not a field you type into", async ({ page }) => {
 	await expect(page.locator("tt-practice .now")).toBeVisible(); // one highlighted letter, keybr-style
 });
 
+const geometry = (page: Page) =>
+	page.evaluate(() => {
+		const line = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice")!.shadowRoot!.querySelector(".line")!;
+		const last = line.lastElementChild!.getBoundingClientRect();
+		return { width: Math.round(line.getBoundingClientRect().width), right: Math.round(last.x + last.width) };
+	});
+
+// The cursor plate must be painted out of flow. A padded span made the current letter wider than
+// every other copy of it, so the whole line slid sideways on each keystroke.
+test("letters stay in the same place as the cursor moves", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const before = await geometry(page);
+	for (let i = 0; i < 8; i += 1) await tap(page, await wanted(page));
+	expect(await geometry(page)).toEqual(before);
+});
+
 test("types a whole line and reports a plausible speed", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
