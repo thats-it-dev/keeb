@@ -5,6 +5,7 @@ import { KEYMAPS, keymapById } from "./data/keymaps.ts";
 import { layoutKey, loadSettings, loadStats, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME } from "./keyboard/types.ts";
+import { iconSettings, iconX } from "./ui/icons.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
@@ -25,7 +26,7 @@ function saved(): { g: string; k: string } {
 }
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -35,10 +36,13 @@ export class AppMain extends LitElement {
 			.col { display: grid; gap: 14px; width: 100%; justify-items: center; }
 			/* The svg inside is width:100% of its host, and an inline host has no width of its own. */
 			tt-keyboard, tt-practice { display: block; width: 100%; }
-			.settings { position: relative; }
-			.settings summary { list-style: none; }
-			.settings summary::-webkit-details-marker { display: none; }
-			.settings[open] .panel { margin-top: 8px; display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg); box-shadow: 0 4px 14px var(--shadow-color); }
+			/* Settings is a modal dialog: centred by the UA, and ::backdrop is the tint over the page. */
+			dialog { border: 1px solid var(--border-color); border-radius: calc(var(--radius) * 2); background: var(--bg); color: var(--text-primary); padding: 0; box-shadow: 0 18px 50px var(--shadow-color); width: min(24rem, calc(100vw - 2rem)); }
+			dialog::backdrop { background: color-mix(in srgb, var(--text-primary), transparent 62%); backdrop-filter: blur(3px); }
+			.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
+			.icon-btn { display: inline-flex; padding: 6px; border-radius: var(--radius); color: var(--text-secondary); }
+			.icon-btn:hover { background: var(--code-bg); color: var(--text-primary); }
+			.panel { display: grid; gap: 12px; padding: 16px 14px; }
 			.panel label { display: grid; gap: 4px; justify-items: start; }
 			.read { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; }
 			.metric { display: grid; gap: 2px; justify-items: center; font-variant-numeric: tabular-nums; }
@@ -50,6 +54,7 @@ export class AppMain extends LitElement {
 	];
 
 	geometryId = saved().g;
+	settingsOpen = false;
 	keymapId = saved().k;
 	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
 	ready = false;
@@ -74,10 +79,19 @@ export class AppMain extends LitElement {
 
 	override updated(changed: Map<string, unknown>): void {
 		if (changed.has("geometryId") || changed.has("keymapId")) void this.#load({ g: this.geometryId, k: this.keymapId });
+		if (changed.has("settingsOpen")) this.#syncDialog();
 		if (this.ready && !this.#bound) {
 			window.addEventListener("keydown", this.#onKey);
 			this.#bound = true;
 		}
+	}
+
+	// showModal() and close() are imperative, so the reactive flag drives them once per update.
+	#syncDialog(): void {
+		const dlg = this.renderRoot.querySelector("dialog") as HTMLDialogElement | null;
+		if (!dlg || dlg.open === this.settingsOpen) return;
+		if (this.settingsOpen) dlg.showModal();
+		else dlg.close();
 	}
 
 	async #load(sel: { g: string; k: string }): Promise<void> {
@@ -108,6 +122,7 @@ export class AppMain extends LitElement {
 	}
 
 	#onKey = (e: KeyboardEvent): void => {
+		if (this.settingsOpen) return; // the modal owns the keyboard while it is up
 		const t = e.target as HTMLElement | null;
 		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
 		if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
@@ -165,19 +180,25 @@ export class AppMain extends LitElement {
 			<main>
 				<div class="head">
 					<h1>${__APP_TITLE__}</h1>
-					<details class="settings">
-						<summary class="btn ghost" @click=${() => p?.focus()}>Settings</summary>
-						<div class="panel">
-							<label><span class="label">keyboard</span><select @change=${(e: Event) => this.#pick("g", (e.target as HTMLSelectElement).value)}>
-									${GEOMETRIES.map((g) => html`<option value=${g.id} ?selected=${g.id === this.geometryId}>${g.name}</option>`)}
-								</select></label>
-							<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
-									${KEYMAPS.map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
-								</select></label>
-							<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
-						</div>
-					</details>
+					<button class="btn ghost" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>
+						${iconSettings}<span>Settings</span>
+					</button>
 				</div>
+				<dialog @close=${() => (this.settingsOpen = false)} @click=${this.#onDialogClick} aria-label="Settings">
+					<div class="modal-head">
+						<span class="label">settings</span>
+						<button class="icon-btn" aria-label="Close settings" @click=${() => (this.settingsOpen = false)}>${iconX}</button>
+					</div>
+					<div class="panel">
+						<label><span class="label">keyboard</span><select @change=${(e: Event) => this.#pick("g", (e.target as HTMLSelectElement).value)}>
+								${GEOMETRIES.map((g) => html`<option value=${g.id} ?selected=${g.id === this.geometryId}>${g.name}</option>`)}
+							</select></label>
+						<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
+								${KEYMAPS.map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
+							</select></label>
+						<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
+					</div>
+				</dialog>
 				<div class="col">
 					${p ? this.#readout(p) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
 					${this.ready
@@ -207,6 +228,11 @@ export class AppMain extends LitElement {
 			</div>
 		`;
 	}
+
+	// Clicks on the ::backdrop land on the dialog element itself, not on its children.
+	#onDialogClick = (e: MouseEvent): void => {
+		if (e.target === this.renderRoot.querySelector("dialog")) this.settingsOpen = false;
+	};
 
 	#status(r: Resolved) {
 		const key = r.byId.get(this.lastId);

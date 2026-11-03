@@ -56,9 +56,12 @@ test("stats sit above the line, settings start hidden", async ({ page }) => {
 		return { readBottom: read.bottom, lineTop: line.top };
 	});
 	expect(boxes.readBottom).toBeLessThanOrEqual(boxes.lineTop); // metrics above the phrase
-	await expect(page.locator(".panel")).toBeHidden(); // board/keymap behind the settings menu
-	await page.locator("summary").click();
-	await expect(page.locator(".panel")).toBeVisible();
+	await expect(page.locator("dialog")).toBeHidden(); // board/keymap behind the settings modal
+	await page.locator("app-main .head button").click();
+	await expect(page.locator("dialog")).toBeVisible();
+	await expect(page.locator("dialog .panel")).toBeVisible();
+	await page.locator("dialog [aria-label='Close settings']").click();
+	await expect(page.locator("dialog")).toBeHidden();
 });
 
 const geometry = (page: Page) =>
