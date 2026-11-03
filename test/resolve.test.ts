@@ -40,6 +40,14 @@ describe("resolve", () => {
 		}
 	});
 
+	it("separates the keys a keymap claims from the ones the board owns", () => {
+		const r = resolve(GO, keymapById("qwerty"));
+		expect(r.byId.get("L_C5R3")!.taught).toBe(true); // a
+		expect(r.byId.get("L_C6R2")!.taught).toBe(false); // Tab, the outer column
+		expect(r.byId.get("R_T2")!.taught).toBe(false); // space, a thumb key
+		expect(r.keys.filter((k) => k.taught)).toHaveLength(30);
+	});
+
 	it("gives the renderer a box that holds the whole board", () => {
 		const r = resolve(GO, keymapById("qwerty"));
 		expect(r.viewBox.width).toBeGreaterThan(Math.max(...r.keys.map((k) => k.x + k.w)));

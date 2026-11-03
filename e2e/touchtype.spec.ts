@@ -6,15 +6,25 @@ const { title } = loadConfig();
 const key = (page: import("@playwright/test").Page, id: string) => page.locator(`tt-keyboard g[data-id="${id}"]`);
 
 // The keydown listener only exists once the app module has run; pressing before that is a silent no-op.
-// <g> is not measurable by toBeVisible, so wait on attachment instead.
+// toBeVisible matters here: an SVG child built in the wrong namespace is in the DOM but paints nothing.
 const ready = async (page: import("@playwright/test").Page) => {
-	await expect(page.locator("tt-keyboard g.k").first()).toBeAttached();
+	await expect(page.locator("tt-keyboard g.k").first()).toBeVisible();
 };
 
 test("draws the 60 keys of a Go60", async ({ page }) => {
 	await page.goto("/");
+	await ready(page);
 	await expect(page.locator("h1")).toHaveText(title);
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(60);
+});
+
+test("marks the keys a keymap does not claim", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	await expect(key(page, "L_C6R2")).toHaveClass(/\bunt\b/); // the Tab column: on the board, not in the lesson
+	await expect(key(page, "L_C5R3")).not.toHaveClass(/\bunt\b/); // "a"
+	const box = await key(page, "L_C5R3").boundingBox();
+	expect(box && box.width).toBeGreaterThan(20); // and it actually occupies pixels
 });
 
 test("highlights the physical key behind the character you typed", async ({ page }) => {

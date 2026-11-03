@@ -31,13 +31,14 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 	const problems = [...geometryProblems(g)];
 	for (const k of g.keys) {
 		const char = charFor(g, kmap, k);
-		const rk: RenderKey = { ...k, char, finger: fingerOf(g, k) };
+		const rk: RenderKey = { ...k, char, finger: fingerOf(g, k), taught: false };
 		keys.push(rk);
 		byId.set(k.id, rk);
 		if ([...char].length === 1 && !taught(g, k)) byChar.set(char.toLowerCase(), k.id); // the keymap may overwrite these next
 	}
 	for (const k of keys) {
 		if (!taught(g, k) || [...k.char].length !== 1) continue;
+		k.taught = true;
 		const c = k.char.toLowerCase();
 		const other = byId.get(byChar.get(c) ?? "");
 		if (other && taught(g, other)) problems.push(`"${c}" is on two keys (${other.id} and ${k.id})`);

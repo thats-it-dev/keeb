@@ -55,4 +55,4 @@ export type Keymap = {
 	rows: Partial<Record<"upper" | "home" | "lower", { l: KeymapRow; r: KeymapRow }>>;
 };
 
-export type RenderKey = Key & { char: string; finger: Finger };
+export type RenderKey = Key & { char: string; finger: Finger; taught: boolean };
