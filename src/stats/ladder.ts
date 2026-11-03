@@ -12,7 +12,9 @@ export type Ladder = {
 	next?: string;
 };
 
-const MIN_SAMPLES = 4;
+// A key needs this many samples before it can gate the next unlock. It must be well above the
+// number of times each key appears in one lesson line, or the gate can never trip.
+const MIN_SAMPLES = 10;
 
 // Unlock strictly in teaching order: the next key opens when every key already unlocked is at the
 // goal speed. Before any practice this is the two index keys, so lesson one is f and j.
