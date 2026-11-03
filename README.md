@@ -106,6 +106,10 @@ The OAuth client is a first-party web app: `client_metadata.json` is served from
 keeps its keys and tokens in IndexedDB. The redirect URIs in that file have to match
 `REDIRECT_URIS` in `src/atproto/auth.ts` — including any branch preview that wants to test a real login.
 
+One consequence of `client_id` being a URL: the authorization server fetches it from **production**, so a
+preview deploy cannot complete a login until the build that adds `/.well-known/oauth-client/` has landed
+on `main`. Test sign-in after merging, not before — a preview's own copy of the document is never read.
+
 `connect-src` in `public/_headers` admits `https:` for this one feature: a learner's PDS is whatever host
 they chose, so it cannot be named in advance. `script-src`, `form-action` and `base-uri` stay shut. The
 alternative — running the OAuth client inside the service worker, where page CSP does not reach — is
