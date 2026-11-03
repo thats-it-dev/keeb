@@ -1,17 +1,23 @@
-import { LitElement, html, css } from "https://kit.thatsit.app/lit.js";
+import { LitElement, html, css, nothing } from "https://kit.thatsit.app/lit.js";
 import { sharedStyles } from "https://kit.thatsit.app/kit.js";
 import { GEOMETRIES, geometryById } from "./data/geometries.ts";
 import { KEYMAPS, keymapById } from "./data/keymaps.ts";
+import { layoutKey, loadSettings, loadStats, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME } from "./keyboard/types.ts";
 import "./keyboard/view.ts";
+import "./lesson/practice.ts";
+import type { TtPractice } from "./lesson/practice.ts";
 
+// Which board and which keymap, per browser. Progress itself lives in IndexedDB.
 const STORE = "touchtype:layout";
 
 function saved(): { g: string; k: string } {
 	try {
 		const v = JSON.parse(localStorage.getItem(STORE) ?? "") as { g?: string; k?: string };
-		if (typeof v.g === "string" && typeof v.k === "string") return { g: v.g, k: v.k };
+		if (typeof v.g === "string" && typeof v.k === "string" && GEOMETRIES.some((g) => g.id === v.g) && KEYMAPS.some((k) => k.id === v.k)) {
+			return { g: v.g, k: v.k };
+		}
 	} catch {
 		/* first run or junk in the slot */
 	}
@@ -19,14 +25,14 @@ function saved(): { g: string; k: string } {
 }
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, lastChar: { state: true }, lastId: { state: true }, typed: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
 			main { display: grid; gap: 14px; padding: 18px; max-width: 62rem; margin: 0 auto; }
 			.picks { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
 			.picks label { display: grid; gap: 4px; }
-			tt-keyboard { display: block; }
+			tt-keyboard, tt-practice { display: block; }
 			.row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 			.hit { color: var(--primary); font-weight: 600; }
 			.warn { color: var(--text-muted); }
@@ -35,10 +41,50 @@ export class AppMain extends LitElement {
 
 	geometryId = saved().g;
 	keymapId = saved().k;
-	lastChar = "";
+	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
+	ready = false;
 	lastId = "";
-	typed = 0;
+	targetCpm = DEFAULT_SETTINGS.targetCpm;
+	stats = {};
+	settings: Settings = DEFAULT_SETTINGS;
 	#cache: { g: string; k: string; r: Resolved } | undefined;
+	#bound = false;
+	// Identifies the newest layout load, so an old IndexedDB answer cannot overwrite a newer choice.
+	#pending: symbol | undefined;
+
+	override firstUpdated(): void {
+		void this.#load(saved());
+	}
+
+	override disconnectedCallback(): void {
+		if (this.#bound) window.removeEventListener("keydown", this.#onKey);
+		this.#bound = false;
+		super.disconnectedCallback();
+	}
+
+	override updated(changed: Map<string, unknown>): void {
+		if (changed.has("geometryId") || changed.has("keymapId")) void this.#load({ g: this.geometryId, k: this.keymapId });
+		if (this.ready && !this.#bound) {
+			window.addEventListener("keydown", this.#onKey);
+			this.#bound = true;
+		}
+	}
+
+	async #load(sel: { g: string; k: string }): Promise<void> {
+		this.#cache = undefined;
+		const key = layoutKey(sel.g, sel.k);
+		const token = Symbol("load");
+		this.#pending = token;
+		this.ready = false;
+		const [stored, settings] = await Promise.all([loadStats(key), loadSettings(key)]);
+		if (this.#pending !== token) return; // a newer selection won the race
+		this.settings = { ...DEFAULT_SETTINGS, ...settings, geometry: sel.g, keymap: sel.k };
+		localStorage.setItem(STORE, JSON.stringify(sel));
+		this.stats = stored;
+		this.targetCpm = this.settings.targetCpm;
+		this.#saved = JSON.stringify(stored);
+		this.ready = true;
+	}
 
 	get #resolved(): Resolved {
 		if (!this.#cache || this.#cache.g !== this.geometryId || this.#cache.k !== this.keymapId) {
@@ -47,14 +93,8 @@ export class AppMain extends LitElement {
 		return this.#cache.r;
 	}
 
-	override connectedCallback(): void {
-		super.connectedCallback();
-		window.addEventListener("keydown", this.#onKey);
-	}
-
-	override disconnectedCallback(): void {
-		window.removeEventListener("keydown", this.#onKey);
-		super.disconnectedCallback();
+	get #practice(): TtPractice | undefined {
+		return (this.renderRoot.querySelector("tt-practice") as TtPractice | null) ?? undefined;
 	}
 
 	#onKey = (e: KeyboardEvent): void => {
@@ -62,16 +102,49 @@ export class AppMain extends LitElement {
 		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
 		if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
 		e.preventDefault();
-		this.lastChar = e.key;
-		this.lastId = this.#resolved.byChar.get(e.key.toLowerCase()) ?? "";
-		this.typed += 1;
+		void this.#type(e.key);
 	};
+
+	async #type(ch: string): Promise<void> {
+		const p = this.#practice;
+		if (!p) return;
+		const engine = p.engine;
+		this.lastId = p.key(ch, performance.now()) ?? "";
+		if (engine) await this.#flushStats(engine); // one write per keystroke, deduped inside
+	}
+
+	async #flush(p: TtPractice): Promise<void> {
+		if (p.engine) await this.#flushStats(p.engine);
+	}
+
+	async #flushStats(engine: NonNullable<TtPractice["engine"]>): Promise<void> {
+		const key = layoutKey(this.geometryId, this.keymapId);
+		this.stats = { ...engine.stats };
+		const previous = this.#saved;
+		const now = JSON.stringify(engine.stats);
+		if (previous === now) return; // nothing moved: wrong key, or the line is already finished
+		this.#saved = now;
+		await saveStats(key, this.stats);
+		await saveSettings(key, { ...this.settings, geometry: this.geometryId, keymap: this.keymapId, targetCpm: this.targetCpm, unlocked: engine.ladder.unlocked });
+	}
+
+	#saved = "";
 
 	#pick(part: "g" | "k", value: string): void {
 		if (part === "g") this.geometryId = value;
 		else this.keymapId = value;
-		localStorage.setItem(STORE, JSON.stringify({ g: this.geometryId, k: this.keymapId }));
-		this.#cache = undefined;
+	}
+
+	#goal(e: Event): void {
+		const v = Number((e.target as HTMLInputElement).value);
+		if (Number.isFinite(v) && v >= 40 && v <= 600) this.targetCpm = Math.round(v);
+	}
+
+	#next(): void {
+		const p = this.#practice;
+		if (!p) return;
+		void this.#flush(p);
+		p.begin();
 	}
 
 	override render() {
@@ -87,18 +160,25 @@ export class AppMain extends LitElement {
 					<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
 							${KEYMAPS.map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
 						</select></label>
+					<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
 				</div>
+				${this.ready
+			? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
+			: html`<p class="row"><span class="label">status</span> Loading your progress…</p>`}
 				<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
-				${this.#status(r)} ${geo.verified ? html`` : html`<p class="warn row"><span class="label">note</span><span>Positions for ${geo.name} are our reconstruction, not the vendor's file.</span></p>`}
+				<div class="row">
+					<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
+					${this.#status(r)}
+				</div>
+				${geo.verified ? nothing : html`<p class="warn row"><span class="label">note</span><span>Positions for ${geo.name} are our reconstruction, not the vendor's file.</span></p>`}
 			</main>
 		`;
 	}
 
 	#status(r: Resolved) {
-		if (!this.lastChar) return html`<p class="row"><span class="label">status</span> Type to see which key you just pressed. ${r.keys.length} keys mapped.</p>`;
 		const key = r.byId.get(this.lastId);
-		if (!key) return html`<p class="row"><span class="label">last</span> <span class="hit">${this.lastChar}</span> is not on ${geometryById(this.geometryId).name}.</p>`;
-		return html`<p class="row"><span class="label">last</span> <span class="hit">${this.lastChar}</span> · ${key.id} · ${FINGER_NAME[key.finger]}</p>`;
+		if (!key) return html`<span class="label">keys</span> ${r.keys.length} mapped`;
+		return html`<span class="label">last</span> <span class="hit">${key.char}</span> · ${key.id} · ${FINGER_NAME[key.finger]}`;
 	}
 }
 customElements.define("app-main", AppMain);
