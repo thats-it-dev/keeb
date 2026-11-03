@@ -1,10 +1,10 @@
-# TouchType
+# Keeb
 
 A touch-typing trainer for real keyboards, including splits. It times every key you press, works out
 which keys are slowing you down, and generates lessons from the most frequent English words that use
 those keys. Your layout and progress live in your own atproto repository, not on our server.
 
-Live: <https://touchtype.thatsit.app> · Repo: <https://github.com/thats-it-dev/touchtype>
+Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/touchtype> (the repo keeps the old name; the app does not)
 
 ## Run it
 
@@ -138,6 +138,10 @@ which board it belongs to — and the files above already describe the board.
 
 ## Notes for whoever picks this up
 
+- It was called TouchType until M4. The name lives in `app.config.json` (which also picks the Cloudflare
+  Pages project, so the preview subdomain) and in the OAuth client id, which is a URL on the deployed
+  origin. Progress is stored per *origin*, so the rename to `keeb.thatsit.app` started a fresh device
+  record: anything practised on the old subdomain stays there until sync brings it across.
 - Lit nested templates need lit's `svg` tag or SVG children land in the HTML namespace and paint
   nothing, silently. See `src/keyboard/view.ts` and `src/ui/icons.ts`.
 - Anything imported must be registered *before* the saved selection is resolved: `saved()` runs in the

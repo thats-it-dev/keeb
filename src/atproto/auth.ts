@@ -10,18 +10,20 @@ import { SCOPES } from "./lexicons.ts";
 
 // The authorization server fetches the hosted copy of the metadata and compares it with what we send,
 // so public/.well-known/oauth-client/client-metadata.json has to agree with the object below.
-export const CLIENT_ID = "https://touchtype.thatsit.app/.well-known/oauth-client/client-metadata.json";
+export const CLIENT_ID = "https://keeb.thatsit.app/.well-known/oauth-client/client-metadata.json";
 
 // Every origin this app can be signed in from. A preview deploy is a different origin, so a branch that
 // wants to test the real flow adds its own URL here and to the hosted file.
 // The dev entry uses the loopback IP, not "localhost": the OAuth library rejects that hostname outright
 // (RFC 8252), so `npm run dev` has to be opened as http://127.0.0.1:5173/ to get a callback that lands.
-export const REDIRECT_URIS: [string, ...string[]] = ["https://touchtype.thatsit.app/", "https://m4-atproto.touchtype.pages.dev/", "http://127.0.0.1:5173/"];
+export const REDIRECT_URIS: [string, ...string[]] = ["https://keeb.thatsit.app/", "https://m4-atproto.keeb.pages.dev/", "http://127.0.0.1:5173/"];
 
-const METADATA = {
+// Exported so the test can validate this exact object rather than a copy of it: a private constant is
+// free to drift from the hosted document, and the authorization server is the one that notices.
+export const CLIENT_METADATA = {
 	client_id: CLIENT_ID,
-	client_name: "TouchType",
-	client_uri: "https://touchtype.thatsit.app",
+	client_name: "Keeb",
+	client_uri: "https://keeb.thatsit.app",
 	redirect_uris: REDIRECT_URIS,
 	scope: SCOPES,
 	grant_types: ["authorization_code", "refresh_token"] as ["authorization_code", "refresh_token"],
@@ -44,7 +46,7 @@ const originOf = (u: string): string => {
 const SELF_ORIGIN = originOf(CLIENT_ID);
 
 /** Where the library's own storage keeps nothing we care about; this is the pointer we keep. */
-const DID_KEY = "touchtype:atproto:did";
+const DID_KEY = "keeb:atproto:did";
 
 /** The part of a session this app depends on — one method, which is what makes sync.ts testable. */
 export type Session = {
@@ -63,7 +65,7 @@ export class Auth {
 		if (!clientPromise) {
 			clientPromise = import("@atproto/oauth-client-browser").then(({ BrowserOAuthClient }) =>
 				new BrowserOAuthClient({
-					clientMetadata: METADATA,
+					clientMetadata: CLIENT_METADATA,
 					responseMode: "query",
 					// Handles resolve through Bluesky's public AppView: a read-only lookup, and the only third
 					// party this app contacts beyond the learner's own PDS.

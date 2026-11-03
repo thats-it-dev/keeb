@@ -17,7 +17,7 @@ import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
 
 // Which board and which keymap, per browser. Progress itself lives in IndexedDB.
-const STORE = "touchtype:layout";
+const STORE = "keeb:layout";
 
 function saved(): { g: string; k: string } {
 	try {

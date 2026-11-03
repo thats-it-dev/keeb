@@ -1,12 +1,12 @@
 {
-	"client_id": "https://touchtype.thatsit.app/.well-known/oauth-client/client-metadata.json",
-	"client_name": "TouchType",
-	"client_uri": "https://touchtype.thatsit.app",
-	"homepage_uri": "https://touchtype.thatsit.app",
-	"logo_uri": "https://touchtype.thatsit.app/icons/icon-512.png",
+	"client_id": "https://keeb.thatsit.app/.well-known/oauth-client/client-metadata.json",
+	"client_name": "Keeb",
+	"client_uri": "https://keeb.thatsit.app",
+	"homepage_uri": "https://keeb.thatsit.app",
+	"logo_uri": "https://keeb.thatsit.app/icons/icon-512.png",
 	"redirect_uris": [
-		"https://touchtype.thatsit.app/",
-		"https://m4-atproto.touchtype.pages.dev/",
+		"https://keeb.thatsit.app/",
+		"https://m4-atproto.keeb.pages.dev/",
 		"http://127.0.0.1:5173/"
 	],
 	"grant_types": ["authorization_code", "refresh_token"],

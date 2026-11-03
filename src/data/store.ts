@@ -5,7 +5,7 @@ import type { Geometry, Keymap } from "../keyboard/types.ts";
 // Offline-first storage. Everything the learner does lands here immediately; atproto sync (M4)
 // reads and writes the same shape, so nothing here changes when the network arrives.
 
-const DB = "touchtype";
+const DB = "keeb";
 const STATS = "stats";
 const SETTINGS = "settings";
 const BOARDS = "boards"; // layout files the learner imported (M3)

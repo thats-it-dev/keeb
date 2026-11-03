@@ -17,7 +17,7 @@ const ready = async (page: Page) => {
 };
 
 const pickBoard = async (page: Page, id: string) => {
-	await page.evaluate((v) => localStorage.setItem("touchtype:layout", JSON.stringify({ g: v, k: "qwerty" })), id);
+	await page.evaluate((v) => localStorage.setItem("keeb:layout", JSON.stringify({ g: v, k: "qwerty" })), id);
 	await page.goto("/");
 	await ready(page);
 };
