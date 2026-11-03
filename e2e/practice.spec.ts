@@ -40,6 +40,25 @@ test("the lesson is text, not a field you type into", async ({ page }) => {
 	await ready(page);
 	await expect(page.locator("tt-practice input, tt-practice textarea, tt-practice [contenteditable]")).toHaveCount(0);
 	await expect(page.locator("tt-practice .now")).toBeVisible(); // one highlighted letter, keybr-style
+	// A mistyped character turns red and stays red, even under the cursor.
+	const ch = await wanted(page);
+	await tap(page, ch === "z" ? "y" : "z");
+	await expect(page.locator("tt-practice .bad")).toBeVisible();
+});
+
+test("stats sit above the line, settings start hidden", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const boxes = await page.evaluate(() => {
+		const root = document.querySelector("app-main")!.shadowRoot!;
+		const read = root.querySelector(".read")!.getBoundingClientRect();
+		const line = root.querySelector("tt-practice")!.shadowRoot.querySelector(".line")!.getBoundingClientRect();
+		return { readBottom: read.bottom, lineTop: line.top };
+	});
+	expect(boxes.readBottom).toBeLessThanOrEqual(boxes.lineTop); // metrics above the phrase
+	await expect(page.locator(".panel")).toBeHidden(); // board/keymap behind the settings menu
+	await page.locator("summary").click();
+	await expect(page.locator(".panel")).toBeVisible();
 });
 
 const geometry = (page: Page) =>

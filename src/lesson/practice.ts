@@ -9,14 +9,14 @@ export class TtPractice extends LitElement {
 	static properties = { resolved: { type: Object }, targetCpm: { type: Number }, stats: { type: Object }, cursor: { state: true } };
 	static styles = css`
 		/* keybr-style line: plain text, no box, no caret. Colour carries what is typed, wrong, next. */
-		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; overflow-wrap: break-word; }
-		.hit { color: var(--text-secondary); }
-		.todo { color: var(--text-muted); }
-		.bad { color: var(--accent); }
+		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; overflow-wrap: break-word; text-align: center; }
+		.hit { color: var(--text-primary); } /* completed: darkest grey, behind the cursor */
+		.todo { color: var(--text-muted); } /* upcoming */
+		.bad { color: var(--accent); } /* mistyped: red, and it outranks the cursor colour */
 		/* The cursor is the current letter's colour, not a box behind it: nothing about layout changes
 		 * as it moves, so the letters after it cannot shift sideways. */
 		.now { color: var(--primary); }
-		.read { display: flex; gap: 14px; flex-wrap: wrap; }
+		:host { display: block; }
 	`;
 	resolved?: Resolved;
 	targetCpm = 200;
@@ -74,12 +74,6 @@ export class TtPractice extends LitElement {
 		const text = this.engine?.text ?? "";
 		return html`
 			<p class="line" aria-live="polite" data-text=${text}>${this.#runs(text)}</p>
-			<div class="read">
-				<span class="label">speed</span><span>${this.instantCpm} cpm</span>
-				<span class="label">session</span><span>${this.sessionCpm} cpm</span>
-				<span class="label">avg</span><span>${this.avgMs} ms/key</span>
-				<span class="label">goal</span><span>${this.targetCpm} cpm</span>
-			</div>
 			${this.done ? html`<p class="todo">Line done — keep going.</p>` : html``}
 		`;
 	}
@@ -100,9 +94,9 @@ export class TtPractice extends LitElement {
 	}
 
 	#state(i: number): "now" | "hit" | "bad" | "todo" {
+		if (this.wrong.has(i)) return "bad";
 		if (i === this.cursor) return "now";
-		if (i < this.cursor) return this.wrong.has(i) ? "bad" : "hit";
-		return "todo";
+		return i < this.cursor ? "hit" : "todo";
 	}
 }
 

@@ -29,11 +29,21 @@ export class AppMain extends LitElement {
 	static styles = [
 		sharedStyles,
 		css`
-			main { display: grid; gap: 14px; padding: 18px; max-width: 62rem; margin: 0 auto; }
-			.picks { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
-			.picks label { display: grid; gap: 4px; }
-			tt-keyboard, tt-practice { display: block; }
-			.row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+			main { display: grid; gap: 18px; padding: 18px; max-width: 62rem; margin: 0 auto; justify-items: center; }
+			.head { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; }
+			.head h1 { margin: 0; }
+			.col { display: grid; gap: 14px; width: 100%; justify-items: center; }
+			/* The svg inside is width:100% of its host, and an inline host has no width of its own. */
+			tt-keyboard, tt-practice { display: block; width: 100%; }
+			.settings { position: relative; }
+			.settings summary { list-style: none; }
+			.settings summary::-webkit-details-marker { display: none; }
+			.settings[open] .panel { margin-top: 8px; display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--bg); box-shadow: 0 4px 14px var(--shadow-color); }
+			.panel label { display: grid; gap: 4px; justify-items: start; }
+			.read { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; }
+			.metric { display: grid; gap: 2px; justify-items: center; font-variant-numeric: tabular-nums; }
+			.metric b { font-weight: 600; font-size: 1.05rem; }
+			.row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; justify-content: center; }
 			.hit { color: var(--primary); font-weight: 600; }
 			.warn { color: var(--text-muted); }
 		`,
@@ -150,28 +160,51 @@ export class AppMain extends LitElement {
 	override render() {
 		const r = this.#resolved;
 		const geo = geometryById(this.geometryId);
+		const p = this.#practice;
 		return html`
 			<main>
-				<h1>${__APP_TITLE__}</h1>
-				<div class="picks">
-					<label><span class="label">keyboard</span><select @change=${(e: Event) => this.#pick("g", (e.target as HTMLSelectElement).value)}>
-							${GEOMETRIES.map((g) => html`<option value=${g.id} ?selected=${g.id === this.geometryId}>${g.name}</option>`)}
-						</select></label>
-					<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
-							${KEYMAPS.map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
-						</select></label>
-					<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
+				<div class="head">
+					<h1>${__APP_TITLE__}</h1>
+					<details class="settings">
+						<summary class="btn ghost" @click=${() => p?.focus()}>Settings</summary>
+						<div class="panel">
+							<label><span class="label">keyboard</span><select @change=${(e: Event) => this.#pick("g", (e.target as HTMLSelectElement).value)}>
+									${GEOMETRIES.map((g) => html`<option value=${g.id} ?selected=${g.id === this.geometryId}>${g.name}</option>`)}
+								</select></label>
+							<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
+									${KEYMAPS.map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
+								</select></label>
+							<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
+						</div>
+					</details>
 				</div>
-				${this.ready
-			? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
-			: html`<p class="row"><span class="label">status</span> Loading your progress…</p>`}
-				<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
-				<div class="row">
-					<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
-					${this.#status(r)}
+				<div class="col">
+					${p ? this.#readout(p) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
+					${this.ready
+						? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
+						: nothing}
+					<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
+					<div class="row">
+						<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
+						${this.#status(r)}
+					</div>
+					${geo.verified ? nothing : html`<p class="warn row">Positions for ${geo.name} are our reconstruction, not the vendor's file.</p>`}
 				</div>
-				${geo.verified ? nothing : html`<p class="warn row"><span class="label">note</span><span>Positions for ${geo.name} are our reconstruction, not the vendor's file.</span></p>`}
 			</main>
+		`;
+	}
+
+	// Numbers above the line, where the eyes already are. They read from the practice element, whose
+	// fields are reactive, so every keystroke repaints this row. `?hidden` keeps the node alive.
+	#readout(p: TtPractice) {
+		const cell = (label: string, value: string) => html`<div class="metric"><span class="label">${label}</span><b>${value}</b></div>`;
+		return html`
+			<div class="read">
+				${cell("now", `${p.instantCpm} cpm`)}
+				${cell("session", `${p.sessionCpm} cpm`)}
+				${cell("avg", `${p.avgMs} ms/key`)}
+				${cell("goal", `${p.targetCpm} cpm`)}
+			</div>
 		`;
 	}
 
