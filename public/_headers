@@ -1,7 +1,8 @@
 # Cloudflare Pages headers. The CSP allows only this origin and the kit.
 # Apps that need more (atproto, a local model) add origins to connect-src.
+# atproto: bsky.social resolves handles, plc.directory resolves did:plc. A user's own PDS is added in M4.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://kit.thatsit.app; style-src 'self' 'unsafe-inline' https://kit.thatsit.app; font-src https://kit.thatsit.app; img-src 'self' data: blob:; connect-src 'self' https://kit.thatsit.app; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://kit.thatsit.app; style-src 'self' 'unsafe-inline' https://kit.thatsit.app; font-src https://kit.thatsit.app; img-src 'self' data: blob:; connect-src 'self' https://kit.thatsit.app https://bsky.social https://plc.directory; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 

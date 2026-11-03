@@ -46,7 +46,7 @@ describe("gateway CSP", () => {
 	const cfg = { name: "a", title: "A", description: "d", color: "#FFAA00" };
 
 	it("adds the default gateway origin when gateway is true", () => {
-		expect(connect(gatewayHeaders(text, { ...cfg, gateway: true }, undefined))).toBe("'self' https://kit.thatsit.app https://spark-713a.tail9274fa.ts.net:9443");
+		expect(connect(gatewayHeaders(text, { ...cfg, gateway: true }, undefined))).toBe("'self' https://kit.thatsit.app https://bsky.social https://plc.directory https://spark-713a.tail9274fa.ts.net:9443");
 	});
 	it("uses the origin of GATEWAY_URL", () => {
 		expect(connect(gatewayHeaders(text, { ...cfg, gateway: true }, "https://spark-713a.tail9274fa.ts.net:9512/"))).toContain(" https://spark-713a.tail9274fa.ts.net:9512");
