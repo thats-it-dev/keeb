@@ -80,25 +80,36 @@ No keystroke ever becomes a record. Records are per-session aggregates.
 
 ## Importing your own board
 
-Settings → *layout file* takes a [keyboard-layout-editor](https://github.com/keyboard-layout/KLE-Parser)
-JSON file — the `info.json` inside a ZMK or QMK config — and turns it into a geometry: positions,
-size, rotation, and which half each key is on. It carries no characters, so the keymap stays a
-separate choice and an imported board pairs with all five layouts. Everything that could not be read
-is listed under the field rather than guessed at. Boards you import are saved in IndexedDB and appear
-in the keyboard picker; the same filename again replaces the earlier copy rather than adding a twin.
+Settings → *layout file* takes either kind of JSON a board's config produces, and says what it could
+not read rather than guessing:
 
-Moergo labels (`L_C4R2`) are how a key's hand and column are worked out; without them the widest
-gap in the middle of the board is treated as the split. Keys outside the three typing rows keep
-whatever legend the file supplies, which for Moergo's own files means they render blank.
+- **keyboard-layout-editor `info.json`** (inside a ZMK or QMK config) describes *positions*: x, y, size,
+  rotation, which half. It carries no characters, so the keymap stays a separate choice and an imported
+  board pairs with all five layouts. Moergo labels (`L_C4R2`) give the hand and column; a file without
+  them falls back to the widest gap in the middle.
+- **A MoErgo Layout Editor / keycap export** describes *characters*: a `keyboard` field names the board
+  and `layers[0]` lists bindings in that board's matrix order. It needs no positions, but it does need
+  to know the board, so the keyboard named has to be one we ship. `&kp LS(MINUS)` and `&mt ESC GRAVE`
+  resolve to the key underneath; macros, layer keys and mouse clicks type nothing.
+
+Because the second format's ordering is inferred, it is checked: the keys outside the typing rows (the
+number row and the outer column) are compared with what the board says they are, and an import where
+they disagree is refused rather than drawing a board that lies about your fingers.
+
+Boards and keymaps you import are saved in IndexedDB and appear in the pickers; importing the same
+filename again replaces that entry rather than adding a twin.
 
 This replaced an earlier plan to parse `.keymap` text. That was dropped on purpose: a `.keymap`
 makes position *implicit* in the whitespace alignment of each line, so importing one means guessing
-which board it belongs to — and the file that actually describes the board is already JSON.
+which board it belongs to — and the files above already describe the board.
 
 ## Notes for whoever picks this up
 
 - Lit nested templates need lit's `svg` tag or SVG children land in the HTML namespace and paint
   nothing, silently. See `src/keyboard/view.ts` and `src/ui/icons.ts`.
+- Anything imported must be registered *before* the saved selection is resolved: `saved()` runs in the
+  field initializers against an empty registry, so an imported id falls back to the shipped default
+  unless it is re-read after the IndexedDB load. Both halves of that are tested in `e2e/layout.spec.ts`.
 - Compute derived render values inside `render()`, not in `updated()` writing to a private field —
   the latter never repaints on its own.
 - Playwright's `hasTouch` projects swallow synthetic keystrokes; the phone project runs without it.

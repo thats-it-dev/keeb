@@ -1,11 +1,12 @@
 import { LitElement, html, css, nothing } from "https://kit.thatsit.app/lit.js";
 import { sharedStyles } from "https://kit.thatsit.app/kit.js";
 import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeometry } from "./data/geometries.ts";
-import { KEYMAPS, keymapById } from "./data/keymaps.ts";
-import { deleteBoard, layoutKey, loadBoards, loadSettings, loadStats, saveBoard, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { KEYMAPS, allKeymaps, forgetKeymap, keymapById, registerKeymap } from "./data/keymaps.ts";
+import { deleteBoard, deleteMap, layoutKey, loadBoards, loadMaps, loadSettings, loadStats, saveBoard, saveMap, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
-import { FINGER_NAME, type Geometry } from "./keyboard/types.ts";
+import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
+import { isKeycapFile, keymapFromKeycap, type KeycapFile } from "./layout/keycap.ts";
 import { iconSettings, iconTrash, iconX } from "./ui/icons.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
@@ -17,7 +18,7 @@ const STORE = "touchtype:layout";
 function saved(): { g: string; k: string } {
 	try {
 		const v = JSON.parse(localStorage.getItem(STORE) ?? "") as { g?: string; k?: string };
-		if (typeof v.g === "string" && typeof v.k === "string" && allGeometries().some((g) => g.id === v.g) && KEYMAPS.some((k) => k.id === v.k)) {
+		if (typeof v.g === "string" && typeof v.k === "string" && allGeometries().some((g) => g.id === v.g) && allKeymaps().some((k) => k.id === v.k)) {
 			return { g: v.g, k: v.k };
 		}
 	} catch {
@@ -27,7 +28,7 @@ function saved(): { g: string; k: string } {
 }
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, boards: { state: true }, importProblems: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -69,6 +70,7 @@ export class AppMain extends LitElement {
 	keymapId = saved().k;
 	// Layout files the learner imported, straight out of IndexedDB.
 	boards: Geometry[] = [];
+	maps: Keymap[] = [];
 	importProblems: string[] = [];
 	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
 	ready = false;
@@ -82,12 +84,20 @@ export class AppMain extends LitElement {
 	#pending: symbol | undefined;
 
 	override firstUpdated(): void {
-		// Boards have to be registered before the saved selection is read, or an imported board's id
-		// would fall back to the shipped default.
-		void loadBoards().then((boards) => {
+		// Stored boards and keymaps have to be registered before the saved selection is read, and the ids
+		// re-assigned afterwards: the field initializers called saved() against an empty registry, so they
+		// hold the shipped defaults even when the stored choice says otherwise.
+		void Promise.all([loadBoards(), loadMaps()]).then(([boards, maps]) => {
 			this.boards = boards;
+			this.maps = maps;
 			for (const b of boards) registerGeometry(b);
-			void this.#load(saved());
+			for (const m of maps) registerKeymap(m);
+			const sel = saved();
+			const moved = sel.g !== this.geometryId || sel.k !== this.keymapId;
+			this.geometryId = sel.g;
+			this.keymapId = sel.k;
+			// updated() reloads when an id changed; when nothing moved this is the only place that loads.
+			if (!moved) void this.#load(sel);
 		});
 	}
 
@@ -185,13 +195,17 @@ export class AppMain extends LitElement {
 		if (Number.isFinite(v) && v >= 40 && v <= 600) this.targetCpm = Math.round(v);
 	}
 
-	// Read a keyboard-layout JSON file the learner picked, and make it a board they can select.
+	// Read a layout file the learner picked. Two shapes arrive here: a keyboard-layout-editor
+	// info.json, which describes a board's positions, and a MoErgo Layout Editor export, which names a
+	// board and gives the characters. The same control takes either.
 	async #upload(e: Event): Promise<void> {
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
 		const id = importId(file.name);
 		try {
-			const { geometry, problems } = geometryFromLayout(JSON.parse(await file.text()), { id, name: importName(file.name), source: file.name });
+			const json: unknown = JSON.parse(await file.text());
+			if (isKeycapFile(json)) return void (await this.#importKeycap(json, file.name, id));
+			const { geometry, problems } = geometryFromLayout(json, { id, name: importName(file.name), source: file.name });
 			this.importProblems = problems;
 			if (!geometry) return;
 			// Re-importing the same file replaces the earlier copy rather than piling up near-duplicates.
@@ -203,6 +217,29 @@ export class AppMain extends LitElement {
 		} catch (err) {
 			this.importProblems = [`${file.name}: ${(err as Error).message}`];
 		}
+	}
+
+	// A layout editor export carries characters, not positions: the board it names has to be one we know.
+	// When it names something we don't have, it is checked against the board already on screen, and the
+	// resulting problem says so in terms of both.
+	async #importKeycap(file: KeycapFile, fileName: string, id: string): Promise<void> {
+		const named = String(file.keyboard ?? "").toLowerCase();
+		const base = allGeometries().find((g) => g.id === named) ?? geometryById(this.geometryId);
+		const { keymap, problems } = keymapFromKeycap(file, base, id, importName(fileName));
+		this.importProblems = problems;
+		if (!keymap) return;
+		forgetKeymap(id);
+		registerKeymap(keymap);
+		await saveMap(keymap);
+		this.maps = [...this.maps.filter((m) => m.id !== id), keymap];
+		this.keymapId = id;
+	}
+
+	async #removeMap(id: string): Promise<void> {
+		forgetKeymap(id);
+		await deleteMap(id);
+		this.maps = this.maps.filter((m) => m.id !== id);
+		if (this.keymapId === id) this.keymapId = KEYMAPS[0].id;
 	}
 
 	async #removeBoard(id: string): Promise<void> {
@@ -239,12 +276,15 @@ export class AppMain extends LitElement {
 								${allGeometries().map((g) => html`<option value=${g.id} ?selected=${g.id === this.geometryId}>${g.name}</option>`)}
 							</select></label>
 						<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
-								${KEYMAPS.map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
+								${allKeymaps().map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
 							</select></label>
 						<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
 						<label><span class="label">layout file</span><input type="file" accept=".json,application/json" @change=${this.#upload} /></label>
 						${this.boards.length
 							? html`<div class="full">${this.boards.map((b) => html`<div class="board"><span>${b.name}</span> <span class="label">${b.keys.length} keys</span> <button class="x" aria-label=${`Remove ${b.name}`} @click=${() => this.#removeBoard(b.id)}>${iconTrash}</button></div>`)}</div>`
+							: nothing}
+						${this.maps.length
+							? html`<div class="full">${this.maps.map((m) => html`<div class="board"><span>${m.name}</span> <span class="label">characters</span> <button class="x" aria-label=${`Remove ${m.name}`} @click=${() => this.#removeMap(m.id)}>${iconTrash}</button></div>`)}</div>`
 							: nothing}
 						${this.importProblems.length ? html`<ul class="full problems">${this.importProblems.map((p) => html`<li>${p}</li>`)}</ul>` : nothing}
 					</div>
