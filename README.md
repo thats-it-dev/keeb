@@ -10,16 +10,21 @@ Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/touch
 
 ```sh
 npm ci
-npm run dev        # open it as http://127.0.0.1:5173, not localhost — see below
+npm run dev        # no sign-in here: the OAuth server only accepts https redirects
 npm run typecheck && npm test && npm run e2e
 ```
 
 `npm run e2e` builds and previews locally; `BASE_URL=https://… npm run e2e` tests a deployed site.
 
-Sign-in only works from an origin listed in `REDIRECT_URIS` (`src/atproto/auth.ts`) and in the hosted
-`public/.well-known/oauth-client/client-metadata.json`. For development that is `http://127.0.0.1:5173/`:
-the OAuth library rejects a `localhost` redirect outright (RFC 8252 prefers the loopback IP), and the two
-copies of the document are checked against each other by `test/oauth-client.test.ts`.
+Sign-in can only be exercised on a deploy whose origin is listed in `REDIRECT_URIS`
+(`src/atproto/auth.ts`) and in the hosted `public/.well-known/oauth-client/client-metadata.json`. Two
+rules the authorization server, not this repo, enforces: the client is `application_type: "web"`, so a
+loopback (`http://127.0.0.1:…`) redirect is refused — it is allowed only for native apps; and a
+loopback-shaped redirect must never use the `localhost` hostname (RFC 8252). Both are checked by
+`test/oauth-client.test.ts`, because the library's own schema is more permissive than the server.
+
+The server also fetches `client_id` — a URL on the production origin — so a branch preview cannot
+complete a login until the build that ships `/.well-known/oauth-client/` has landed on `main`.
 
 ## How it fits together
 

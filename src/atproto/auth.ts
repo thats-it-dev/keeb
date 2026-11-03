@@ -14,9 +14,11 @@ export const CLIENT_ID = "https://keeb.thatsit.app/.well-known/oauth-client/clie
 
 // Every origin this app can be signed in from. A preview deploy is a different origin, so a branch that
 // wants to test the real flow adds its own URL here and to the hosted file.
-// The dev entry uses the loopback IP, not "localhost": the OAuth library rejects that hostname outright
-// (RFC 8252), so `npm run dev` has to be opened as http://127.0.0.1:5173/ to get a callback that lands.
-export const REDIRECT_URIS: [string, ...string[]] = ["https://keeb.thatsit.app/", "https://m4-atproto.keeb.pages.dev/", "http://127.0.0.1:5173/"];
+// All https, and that is not a preference: the client is application_type "web", and the authorization
+// server rejects a loopback redirect for anything but a native app ("Loopback redirect URIs are only
+// allowed for native apps"). An earlier entry of http://127.0.0.1:5173/ passed the library's own checks
+// and then failed at the server, so sign-in cannot be exercised on a dev server - use a deploy.
+export const REDIRECT_URIS: [string, ...string[]] = ["https://keeb.thatsit.app/", "https://m4-atproto.keeb.pages.dev/"];
 
 // Exported so the test can validate this exact object rather than a copy of it: a private constant is
 // free to drift from the hosted document, and the authorization server is the one that notices.

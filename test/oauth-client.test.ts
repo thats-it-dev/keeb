@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { oauthClientMetadataSchema } from "@atproto/oauth-types";
-import { CLIENT_ID, CLIENT_METADATA } from "../src/atproto/auth.ts";
+import { CLIENT_ID, CLIENT_METADATA, REDIRECT_URIS } from "../src/atproto/auth.ts";
 import { SCOPES } from "../src/atproto/lexicons.ts";
 import { loadConfig } from "../vite/config.ts";
 
@@ -44,6 +44,13 @@ describe("oauth client metadata", () => {
 	it("names the collections it asks permission for", () => {
 		// A scope that omits a collection means writes to it fail at the PDS, not here.
 		for (const nsid of ["settings", "progress", "session", "layout"]) expect(SCOPES).toContain(`repo:app.thatsit.typing.${nsid}`);
+	});
+
+	it("registers only https redirects, because the client is a web app", () => {
+		// The library's schema accepts an http loopback redirect and the authorization server then refuses
+		// the login: "Loopback redirect URIs are only allowed for native apps". Checked here because nothing
+		// else stands between committing such an entry and a failed sign-in in production.
+		for (const uri of REDIRECT_URIS) expect(new URL(uri).protocol).toBe("https:");
 	});
 
 	it("would catch the localhost dev redirect that the library rejects", () => {
