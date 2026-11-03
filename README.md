@@ -4,7 +4,7 @@ A touch-typing trainer for real keyboards, including splits. It times every key 
 which keys are slowing you down, and generates lessons from the most frequent English words that use
 those keys. Your layout and progress live in your own atproto repository, not on our server.
 
-Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/touchtype> (the repo keeps the old name; the app does not)
+Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/keeb>
 
 ## Run it
 
