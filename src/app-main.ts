@@ -40,10 +40,14 @@ export class AppMain extends LitElement {
 			dialog { border: 1px solid var(--border-color); border-radius: calc(var(--radius) * 2); background: var(--bg); color: var(--text-primary); padding: 0; box-shadow: 0 18px 50px var(--shadow-color); width: min(24rem, calc(100vw - 2rem)); }
 			dialog::backdrop { background: color-mix(in srgb, var(--text-primary), transparent 62%); backdrop-filter: blur(3px); }
 			.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
-			.icon-btn { display: inline-flex; padding: 6px; border-radius: var(--radius); color: var(--text-secondary); }
+			.icon-btn { display: inline-flex; padding: 6px; border: 0; background: none; border-radius: var(--radius); color: var(--text-secondary); }
 			.icon-btn:hover { background: var(--code-bg); color: var(--text-primary); }
-			.panel { display: grid; gap: 12px; padding: 16px 14px; }
-			.panel label { display: grid; gap: 4px; justify-items: start; }
+			/* Two columns: the label sits against the left edge, the control against the right. */
+			.panel { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; padding: 16px 14px; }
+			.panel label { display: contents; }
+			.panel label > .label { justify-self: start; }
+			.panel label > select,
+			.panel label > input { justify-self: end; width: 100%; max-width: 12rem; }
 			.read { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; }
 			.metric { display: grid; gap: 2px; justify-items: center; font-variant-numeric: tabular-nums; }
 			.metric b { font-weight: 600; font-size: 1.05rem; }
@@ -180,9 +184,7 @@ export class AppMain extends LitElement {
 			<main>
 				<div class="head">
 					<h1>${__APP_TITLE__}</h1>
-					<button class="btn ghost" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>
-						${iconSettings}<span>Settings</span>
-					</button>
+					<button class="btn ghost icon" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
 				</div>
 				<dialog @close=${() => (this.settingsOpen = false)} @click=${this.#onDialogClick} aria-label="Settings">
 					<div class="modal-head">
