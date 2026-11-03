@@ -64,7 +64,8 @@ test("works offline after first load", async ({ page, context }) => {
 	await context.setOffline(true);
 	await page.reload();
 	await rendered(page);
-	expect(await page.evaluate(() => getComputedStyle(document.body).fontFamily)).toContain("Inter");
+	// A kit token resolving proves the stylesheet came from the cache, not the network.
+	expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--primary").trim())).not.toBe("");
 });
 
 test("explains a missing kit", async ({ page }) => {

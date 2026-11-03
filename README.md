@@ -1,84 +1,92 @@
-# app-template
+# TouchType
 
-GitHub template for small static PWAs on [thatsit.app](https://thatsit.app), built on the shared kit and hosted on Cloudflare Pages. Vite + TypeScript, installable, works offline after the first visit.
+A touch-typing trainer for real keyboards, including splits. It times every key you press, works out
+which keys are slowing you down, and generates lessons from the most frequent English words that use
+those keys. Your layout and progress live in your own atproto repository, not on our server.
 
-## New app
+Live: <https://touchtype.thatsit.app> · Repo: <https://github.com/thats-it-dev/touchtype>
 
-1. Edit `app.config.json`: `name` is the Pages project and the subdomain (`<name>.thatsit.app`), plus `title`, `description` and the icon `color`.
-2. Run `npm run icons` to regenerate the icons from that color.
-3. Replace the starter in `src/app-main.ts` with your app (see [Layouts](#layouts)), and delete `e2e/starter.spec.ts` (it tests the starter shell and buttons).
+## Run it
 
-## Layouts
-
-`<html data-shell>` in `index.html` is the switch. The kit's `kit.css` uses it to pin `html` and `body` to `height: 100%` with `overflow: hidden` and no overscroll, so the document never scrolls or bounces (iOS would drag the header with it) and only the app's own panes scroll. Without it the page scrolls normally.
-
-- **Single page** (choose this for simple apps): remove `data-shell` from `index.html` and render content directly in `app-main`, with no `tk-shell` or `tk-header`. `tk-sheet`, `tk-toasts` and `sharedStyles` work as before.
-- **App with navigation**: keep `data-shell` and the `tk-shell` + `tk-header` structure from the starter.
-
-`app-main` must render into its shadow root (don't override `createRenderRoot`); the generic tests wait on that.
-
-`e2e/app.spec.ts` is layout-agnostic and stays in every app; the shell assertions live in `e2e/starter.spec.ts`, which you delete with the starter section.
-
-## Rules
-
-- Import the kit and Lit only by URL (`https://kit.thatsit.app/kit.js`, `https://kit.thatsit.app/lit.js`), never `from "lit"`: a second Lit copy breaks styles.
-- No custom colors, fonts or radii. Use the kit tokens. The one exception is the icon color in `app.config.json`.
-- Components and tokens are documented at https://kit.thatsit.app/.
-
-## Scripts
-
-`npm run dev`, `build`, `preview`, `typecheck` (tsc), `test` (vitest), `e2e` (Playwright, Chromium; set `BASE_URL` to test a deployed site instead of building locally), `icons`, `kit-types` (fetches the kit's `.d.ts` into `.kit/`; runs automatically before dev, build and typecheck).
-
-## Spark data (gateway)
-
-Apps can read system stats and keep their own small JSON store on spark-gateway, a backend reachable only from Michael's tailnet.
-
-1. Set `"gateway": true` in `app.config.json`. The build then defines `__GATEWAY_URL__` and adds the gateway origin to `connect-src` in `dist/_headers` (`public/_headers` stays as is). Without the flag nothing changes.
-2. Import the client: `import { kv, system, GatewayError, OffTailnetError } from "./gateway.ts"` and `import "./tailnet-only.ts"`. The store is your app's own (`/apps/<name>/kv/...`). Ids match `[A-Za-z0-9_-]{1,128}`, collections `[a-z0-9-]{1,64}`, values are JSON objects up to 256 KiB (50 MiB per app). Results (types exported from `gateway.ts`):
-   - `kv.get<T>(collection, id)` -> `KvGet<T>` `{ value, updatedAt }`. A missing id throws `GatewayError` with `status` 404: treat 404 as missing.
-   - `kv.put<T>(collection, id, value)` -> `{ updatedAt }`; `kv.del(collection, id)` -> `{ deleted: true }` (404 if missing).
-   - `kv.list<T>(collection, { limit?, cursor? })` -> `KvList<T>` `{ items: [{ id, value, updatedAt }], cursor? }`, newest first. `limit` defaults to 50, max 200; pass `cursor` back for the next page, it is absent on the last one.
-   - `system.models()` -> `Models` `{ models: [{ id, status, loaded, state? }] }`; `system.gpu()` -> `Gpu` `{ gpus: [{ name, utilizationPercent }], memory: { totalBytes, availableBytes } }` (`utilizationPercent` may be `null`); `system.sessions()` -> `Sessions` `{ sessions: [{ id, cwd, name?, model?, startedAt, lastActivityAt }] }`.
-   - Calling any of them without `"gateway": true` throws `set "gateway": true in app.config.json`.
-3. Catch `OffTailnetError` (the request never got an answer) and render `<tk-tailnet-only @retry=${...}>`. A `GatewayError` (has `status`) is a real HTTP error, not a connectivity problem (a 2xx that is not JSON also throws one, `invalid JSON from gateway`).
-
-```ts
-type Note = { title: string };
-try {
-	const { items, cursor } = await kv.list<Note>("notes"); // first 50; kv.list("notes", { cursor }) for more
-	this.notes = items.map((i) => i.value);
-	try {
-		this.pinned = (await kv.get<Note>("notes", "pinned")).value;
-	} catch (e) {
-		if (!(e instanceof GatewayError && e.status === 404)) throw e; // 404: no such note yet
-	}
-} catch (e) {
-	if (e instanceof OffTailnetError) this.offline = true;
-	else throw e;
-}
-// render(): this.offline ? html`<tk-tailnet-only @retry=${() => this.load()}></tk-tailnet-only>` : ...
+```sh
+npm ci
+npm run dev        # http://localhost:5173
+npm run typecheck && npm test && npm run e2e
 ```
 
-Tests never reach the gateway: stub it with `page.route("https://*.ts.net:*/**", ...)` (fulfill with JSON, or `abort()` for the off-tailnet state). `e2e/gateway.spec.ts` runs only when `gateway` is true.
+`npm run e2e` builds and previews locally; `BASE_URL=https://… npm run e2e` tests a deployed site.
 
-PR previews: add a line `Gateway: thats-it-dev/spark-gateway#<N>` (N from 1 to 499) to the PR body to build the preview against that gateway PR's preview (port 9500+N). The sticky comment then shows `Gateway preview: <url>`.
+## How it fits together
 
-## Deploys
+Two ideas carry the whole design.
 
-`.github/workflows/deploy.yml` runs typecheck, tests and e2e, then uploads `dist` with wrangler:
+**Geometry and keymap are separate.** A *geometry* is where the physical keys sit; a *keymap* is which
+character each position produces. Any geometry pairs with any keymap, so a Go60 running Colemak-DH is
+one selection, not a new layout file. Keystrokes are attributed by *character*, because on a board with
+remapped firmware `KeyboardEvent.code` says nothing useful about where your finger was.
 
-- Push to `main`: production deploy of the Pages project `<name>`. The deploy is skipped while `name` is still `app-template` in a repo other than the template itself, so edit `app.config.json` first.
-- Pull request: preview deploy of the branch. The link is posted as one sticky PR comment (updated on each push) and written to the job summary.
-- Fork PRs have no secrets, so they run the checks but skip the deploy.
+- geometries: `go60` (Moergo), `ansi60`, `corne`, `lily58` — in `src/data/`
+- keymaps: QWERTY, Colemak-DH, Workman, Dvorak, Norman — in `src/data/keymaps.ts`
 
-The org secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` supply the credentials.
+**Everything is an integer.** Key positions are 1/100 of a key unit, rotations are 1/10 of a degree,
+and a key's mean time-to-type is milliseconds × 16 fixed point (`ttMs16`). atproto's data model has no
+floating point type, so the numbers that work in the browser are already the numbers that get stored.
 
-## One-time setup per app
+| Path | What lives there |
+| --- | --- |
+| `src/keyboard/` | geometry model, char resolution, SVG view |
+| `src/stats/` | per-key samples, EWMA, confidence, the unlock ladder |
+| `src/lesson/` | word corpus, lesson generator, engine, practice pane |
+| `src/data/` | shipped layouts, keymaps, IndexedDB store |
+| `scripts/make-corpus.ts` | regenerates `src/lesson/corpus.ts` from a frequency dump |
 
-Use the `cf` CLI; find exact commands with `cf cli search "<task>"`.
+## The teaching model
 
-1. Create the project with production branch `main`: `cf pages create <name>`.
-2. Attach the custom domain `<name>.thatsit.app`: `cf pages domains create`.
-3. Add a proxied CNAME `<name>` pointing to the project's `subdomain` from the `cf pages create` output (usually `<name>.pages.dev`, but Cloudflare adds a suffix such as `<name>-930.pages.dev` when that name is taken): `cf dns records create`.
+1. Each keystroke records one sample per key: time since the previous key, and whether it was right.
+2. `confidence = goal time-per-key / your time-per-key`. 1.0 means you hit the goal on that key.
+3. The starting group is the whole home row, which is where real English words become possible.
+4. The next key unlocks when every key that has actually been practised is at the goal speed. Keys
+   never practised (the `j` and `k` that no home-row word contains) do not block, or the ladder
+   deadlocks.
+5. Word weight is `frequency × (1 + weakness)`, so weak keys come back without an obvious loop.
+6. Progress is written to IndexedDB on every keystroke, keyed `geometry+keymap`. Offline is the
+   default; sync is an add-on.
 
-This is how kit.thatsit.app was set up. The thatsit-app pi skill will do these steps automatically.
+## Progress
+
+| Milestone | State |
+| --- | --- |
+| M0 repo, CSP, PWA shell | shipped on `main` |
+| M1 geometry × keymap model, SVG keyboard view | shipped on `main` |
+| M2 lesson engine, word generator, IndexedDB, practice pane | in review, PR #2 |
+| M3 ZMK keymap importer — paste a `go60.keymap` and get a keymap | planned |
+| M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | planned |
+| M5 publish the lexicons, DNS authority, stats screen | planned |
+
+## Data model (M4+)
+
+Namespace `app.thatsit.typing.*`, authority a `_lexicon.thatsit.app` DNS TXT record pointing at the
+publishing repository. Custom lexicons are written with `validate: false`; PDSes fail open on them.
+
+| NSID | Key | Holds |
+| --- | --- | --- |
+| `app.thatsit.typing.defs` | — | shared objects: `#keyGeometry`, `#charMap`, `#keyStats` |
+| `app.thatsit.typing.layout` | `tid` | a shareable layout: geometry + character map |
+| `app.thatsit.typing.settings` | `literal:self` | active layout, target speed |
+| `app.thatsit.typing.progress` | `tid` per layout | per-key samples; additive, so two devices merge by summing |
+| `app.thatsit.typing.session` | `tid` | one practice session, oldest pruned past ~50 |
+
+No keystroke ever becomes a record. Records are per-session aggregates.
+
+## Notes for whoever picks this up
+
+- Lit nested templates need lit's `svg` tag or SVG children land in the HTML namespace and paint
+  nothing, silently. See `src/keyboard/view.ts`.
+- Compute derived render values inside `render()`, not in `updated()` writing to a private field —
+  the latter never repaints on its own.
+- Playwright's `hasTouch` projects swallow synthetic keystrokes; the phone project runs without it.
+- The corpus is MIT-licensed third-party data (`scripts/make-corpus.ts` says where it came from). It
+  is deliberately **not** the keybr corpus: keybr.com is AGPL-3.0 and this project only reimplements
+  its published behaviour.
+- Layout positions for `lily58` are our reconstruction, not a vendor file; the UI says so. Fix it from
+  a real `info.json` when someone has one.
