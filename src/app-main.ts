@@ -40,8 +40,11 @@ export class AppMain extends LitElement {
 			dialog { border: 1px solid var(--border-color); border-radius: calc(var(--radius) * 2); background: var(--bg); color: var(--text-primary); padding: 0; box-shadow: 0 18px 50px var(--shadow-color); width: min(24rem, calc(100vw - 2rem)); }
 			dialog::backdrop { background: color-mix(in srgb, var(--text-primary), transparent 62%); backdrop-filter: blur(3px); }
 			.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
-			.icon-btn { display: inline-flex; padding: 6px; border: 0; background: none; border-radius: var(--radius); color: var(--text-secondary); }
-			.icon-btn:hover { background: var(--code-bg); color: var(--text-primary); }
+			/* Borderless icon button. The kit's own dialogs use a class named .x with exactly this recipe,
+			 * but it lives in their component styles, not in sharedStyles, so it is declared here too.
+			 * (.btn.ghost is NOT borderless — it keeps border-color: var(--border-color).) */
+			.x { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; background: none; border-radius: var(--radius); color: var(--text-muted); }
+			.x:hover { color: var(--text-primary); background: var(--code-bg); }
 			/* Two columns: the label sits against the left edge, the control against the right. */
 			.panel { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; padding: 16px 14px; }
 			.panel label { display: contents; }
@@ -184,12 +187,12 @@ export class AppMain extends LitElement {
 			<main>
 				<div class="head">
 					<h1>${__APP_TITLE__}</h1>
-					<button class="btn ghost icon" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
+					<button class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
 				</div>
 				<dialog @close=${() => (this.settingsOpen = false)} @click=${this.#onDialogClick} aria-label="Settings">
 					<div class="modal-head">
 						<span class="label">settings</span>
-						<button class="icon-btn" aria-label="Close settings" @click=${() => (this.settingsOpen = false)}>${iconX}</button>
+						<button class="x" aria-label="Close settings" @click=${() => (this.settingsOpen = false)}>${iconX}</button>
 					</div>
 					<div class="panel">
 						<label><span class="label">keyboard</span><select @change=${(e: Event) => this.#pick("g", (e.target as HTMLSelectElement).value)}>

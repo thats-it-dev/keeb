@@ -67,8 +67,11 @@ test("stats sit above the line, settings start hidden", async ({ page }) => {
 const geometry = (page: Page) =>
 	page.evaluate(() => {
 		const line = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice")!.shadowRoot!.querySelector(".line")!;
+		const r = line.getBoundingClientRect();
 		const last = line.lastElementChild!.getBoundingClientRect();
-		return { width: Math.round(line.getBoundingClientRect().width), right: Math.round(last.x + last.width) };
+		// Measured against the line's own left edge, so a scroll between the two samples cannot be read
+		// as a layout shift.
+		return { width: Math.round(r.width), end: Math.round(last.x + last.width - r.left), text: line.dataset.text };
 	});
 
 // The cursor plate must be painted out of flow. A padded span made the current letter wider than
@@ -78,7 +81,9 @@ test("letters stay in the same place as the cursor moves", async ({ page }) => {
 	await ready(page);
 	const before = await geometry(page);
 	for (let i = 0; i < 8; i += 1) await tap(page, await wanted(page));
-	expect(await geometry(page)).toEqual(before);
+	const after = await geometry(page);
+	expect(after.text).toBe(before.text); // the same line, so the two samples are comparable
+	expect({ width: after.width, end: after.end }).toEqual({ width: before.width, end: before.end });
 });
 
 test("types a whole line and reports a plausible speed", async ({ page }) => {
