@@ -49,9 +49,14 @@ async function list(s: Session, collection: string): Promise<StoredRecord[]> {
 }
 
 /**
- * putRecord with `validate: false` in the body. A PDS cannot fetch a lexicon that is not published yet,
- * so without that flag every write of a custom record fails; the shapes are still checked, just by our
- * own tests, which run the real DRISL validator over the same lexicons this app ships.
+ * putRecord with `validate: false`. Publishing the lexicons did NOT make this optional, which surprised
+ * me: a Bluesky-hosted PDS only validates against schemas it has locally and does not fetch third-party
+ * lexicons on demand, so omitting the flag fails the write outright with "Unknown lexicon type". With the
+ * flag the record is stored and reported as validationStatus: "unknown", which is the accepted path for a
+ * custom namespace. The shapes are still checked, just not by the PDS: test/lexicons.test.ts and
+ * `goat lex validate` both run the real validator over these exact records.
+ *
+ * If you run your own PDS and add com.atproto.admin.importLexicons, this flag can go away.
  */
 const put = (s: Session, collection: string, rkey: string, record: unknown) =>
 	xrpc(s, "POST", "com.atproto.repo.putRecord", {}, { repo: s.did, collection, rkey, record, validate: false });

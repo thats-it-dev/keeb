@@ -99,7 +99,11 @@ describe("sync", () => {
 		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 2000, samples: 7, errors: 0 } });
 	});
 
-	it("writes a session and its progress without asking the PDS to validate", async () => {
+	it("writes a session and its progress with validate:false, the only way a hosted PDS accepts these", async () => {
+		// Publishing the lexicons did not change this. A Bluesky-hosted PDS validates only against schemas
+		// it holds locally and will not fetch a third-party lexicon on demand, so dropping the flag fails
+		// the write with "Unknown lexicon type". Asserting the flag is present, because a future reader
+		// tidyming it away would break every write and no other test would catch it.
 		const { session, calls, stored } = fake({ [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [] });
 		const store = memStore();
 		const sync = new Sync(session, store);
