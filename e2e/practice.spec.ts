@@ -114,6 +114,49 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 	expect(cursor).toBeGreaterThan(10);
 });
 
+test("progress screen shows per-key bars and never invents a speed for an untouched key", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	for (let i = 0; i < 14; i += 1) {
+		const ch = await wanted(page);
+		if (ch === "") break;
+		await tap(page, ch);
+	}
+	await page.locator("button", { hasText: "Progress" }).click();
+	const rows = page.locator(".krow");
+	// One row per key on the board, not one row per key with data: a missing key is the useful fact.
+	expect(await rows.count()).toBeGreaterThan(30);
+	const nums = await page.locator(".krow .num").allInnerTexts();
+	// A never-struck key must read as blank. If it inherited the 0 ms EWMA it would show "2400 wpm",
+	// which is the exact lie this screen exists to avoid.
+	expect(nums.some((n) => n.trim() === "—")).toBe(true);
+	expect(nums.some((n) => /2400|12000/.test(n))).toBe(false);
+	// The bar is a percentage width, so an untouched key must render 0%, not a full one.
+	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.width));
+	expect(widths.filter((w) => w === "0%").length).toBeGreaterThan(0);
+	expect(widths.some((w) => parseFloat(w) > 200)).toBe(false);
+	await expect(page.locator(".card").first()).toContainText("wpm");
+});
+
+test("switching keyboards cannot write the old layout's stats into the new layout's record", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	for (let i = 0; i < 6; i += 1) await tap(page, await wanted(page));
+	const engineKeys = () => page.evaluate(() => Object.keys((document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { stats: object } }).engine.stats));
+	const before = await engineKeys();
+	expect(before.length).toBeGreaterThan(0);
+	await page.locator("button[aria-label='Settings']").click();
+	await page.locator("select").first().selectOption("corne");
+	await ready(page);
+	// Switching layouts must not leave the child lesson holding the previous board's numbers: #flushStats
+	// writes whatever the engine holds under whichever layout is selected. What makes this safe is that
+	// `ready` is false for the whole load, which unmounts <tt-practice> so no keystroke can land in between.
+	expect((await engineKeys()).length).toBe(0);
+	// And typing on the new board must not resurrect a single key from the old one.
+	await tap(page, await wanted(page));
+	expect((await engineKeys()).length).toBeLessThanOrEqual(1);
+});
+
 test("highlights the key the next character lives on", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
@@ -156,6 +199,18 @@ test("a finished line starts clean", async ({ page }) => {
 	expect(await cursorOf(page)).toBe(0); // a fresh line is on screen
 	await expect(page.locator("tt-practice .bad")).toHaveCount(0); // and none of its letters are red
 	await expect(page.locator("tt-practice .line .now")).not.toHaveCount(0);
+});
+
+test("a single keystroke is enough to persist", async ({ page }) => {
+	// The first key after a load is the interesting one: #type used to read the engine reference before
+	// calling p.key(), and key() replaces the engine, so that first flush saw undefined and saved nothing.
+	// Typing a whole line hid it, because the second key saved everything. One key, then reload.
+	await page.goto("/");
+	await ready(page);
+	await tap(page, await wanted(page));
+	await page.reload();
+	await ready(page);
+	expect(await keysTyped(page)).toBe(1);
 });
 
 test("progress survives a reload", async ({ page }) => {
