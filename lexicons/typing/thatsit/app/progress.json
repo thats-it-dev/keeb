@@ -1,0 +1,32 @@
+{
+	"lexicon": 1,
+	"id": "app.thatsit.typing.progress",
+	"defs": {
+		"main": {
+			"description": "Per-key practice totals for one board+keymap pair. Additive: two devices merge by summing samples.",
+			"type": "record",
+			"key": "tid",
+			"record": {
+				"type": "object",
+				"required": [
+					"layout",
+					"stats",
+					"updatedAt"
+				],
+				"properties": {
+					"layout": {
+						"type": "string",
+						"maxGraphemes": 100
+					},
+					"stats": {
+						"type": "ref",
+						"ref": "app.thatsit.typing.defs#keyStats"
+					},
+					"updatedAt": {
+						"type": "integer"
+					}
+				}
+			}
+		}
+	}
+}

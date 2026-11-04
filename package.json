@@ -17,7 +17,8 @@
 		"typecheck": "tsc",
 		"test": "vitest run",
 		"e2e": "playwright test",
-		"icons": "node scripts/make-icons.ts"
+		"icons": "node scripts/make-icons.ts",
+		"lexicons": "node scripts/export-lexicons.ts"
 	},
 	"devDependencies": {
 		"@atproto/oauth-types": "^0.7.7",

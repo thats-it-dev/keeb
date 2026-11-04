@@ -1,0 +1,40 @@
+{
+	"lexicon": 1,
+	"id": "app.thatsit.typing.session",
+	"defs": {
+		"main": {
+			"description": "One practice session: the span between two silences. Keystrokes are never stored individually.",
+			"type": "record",
+			"key": "tid",
+			"record": {
+				"type": "object",
+				"required": [
+					"layout",
+					"chars",
+					"errors",
+					"ms",
+					"stats"
+				],
+				"properties": {
+					"layout": {
+						"type": "string",
+						"maxGraphemes": 100
+					},
+					"chars": {
+						"type": "integer"
+					},
+					"errors": {
+						"type": "integer"
+					},
+					"ms": {
+						"type": "integer"
+					},
+					"stats": {
+						"type": "ref",
+						"ref": "app.thatsit.typing.defs#keyStats"
+					}
+				}
+			}
+		}
+	}
+}

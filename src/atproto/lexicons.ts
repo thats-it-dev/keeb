@@ -84,6 +84,7 @@ export const settings = {
 	id: SETTINGS,
 	defs: {
 		main: {
+			description: "Which board and keymap this learner is practising, and how fast they want to be. One record per account.",
 			type: "record",
 			key: "literal:self",
 			record: {
@@ -108,6 +109,7 @@ export const progress = {
 	id: PROGRESS,
 	defs: {
 		main: {
+			description: "Per-key practice totals for one board+keymap pair. Additive: two devices merge by summing samples.",
 			type: "record",
 			key: "tid",
 			record: {
@@ -130,6 +132,7 @@ export const session = {
 	id: SESSION,
 	defs: {
 		main: {
+			description: "One practice session: the span between two silences. Keystrokes are never stored individually.",
 			type: "record",
 			key: "tid",
 			record: {
@@ -153,6 +156,7 @@ export const layout = {
 	id: LAYOUT,
 	defs: {
 		main: {
+			description: "A shareable layout: where the keys are, and what characters they produce.",
 			type: "record",
 			key: "tid",
 			record: {
