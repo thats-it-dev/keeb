@@ -77,7 +77,7 @@ floating point type, so the numbers that work in the browser are already the num
 | M2 lesson engine, word generator, IndexedDB, practice pane | shipped on `main` |
 | M3 layout import — a keyboard's `info.json` or a layout editor export | shipped on `main` |
 | M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | shipped on `main` |
-| M5 publish the lexicons, DNS authority, stats screen | lexicons published; stats screen in review |
+| M5 publish the lexicons, DNS authority, stats screen | shipped on `main` |
 | M6 shareable layouts — publish a `layout` record, browse and load one | planned |
 
 ## Data model
