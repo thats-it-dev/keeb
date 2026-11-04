@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { overview, wpm, type KeyInfo } from "../src/stats/overview.ts";
+import { overview, barWidth, wpm, type KeyInfo } from "../src/stats/overview.ts";
 import { emptyStat, type StatMap } from "../src/stats/stats.ts";
 
 const goalCpm = 240; // 250 ms per key
@@ -8,6 +8,30 @@ const ROW = ["a", "s", "d", "f", "g", "h", "j", "k", "l"].flatMap((c, i) => [key
 
 // A stat at exactly `ms`, with enough samples that the ladder would treat it as measured.
 const at = (ms: number, samples = 40, errors = 0) => ({ ttMs16: ms * 16, samples, errors });
+
+describe("barWidth", () => {
+	it("puts the goal in the middle and doubles and halves symmetrically", () => {
+		expect(barWidth(250, 250)).toBe(50);
+		expect(barWidth(500, 250)).toBe(25); // twice as slow
+		expect(barWidth(125, 250)).toBe(75); // twice as fast, same distance the other way
+	});
+
+	it("rises monotonically as the key gets faster, so a longer bar always means a quicker key", () => {
+		const ms = [900, 600, 400, 250, 150, 90, 40, 20];
+		const w = ms.map((m) => barWidth(m, 250));
+		expect([...w].sort((a, b) => a - b)).toEqual(w);
+	});
+
+	it("stays inside the track and leaves a trace of a bar at the extremes", () => {
+		for (const m of [1, 10, 250, 10_000, 100_000]) expect(barWidth(m, 250)).toBeGreaterThanOrEqual(2);
+		for (const m of [1, 10, 250, 10_000]) expect(barWidth(m, 250)).toBeLessThanOrEqual(100);
+	});
+
+	it("draws nothing for a key with no timing or no goal", () => {
+		expect(barWidth(0, 250)).toBe(0);
+		expect(barWidth(200, 0)).toBe(0);
+	});
+});
 
 describe("overview", () => {
 	it("puts the slowest practised key first", () => {
@@ -87,6 +111,22 @@ describe("overview", () => {
 		const o = overview({ a: at(200) }, 0, ROW, ["a"]);
 		expect(o.keys[0]?.conf).toBe(0);
 		expect(o.readyPct).toBe(0);
+	});
+
+	it("marks the next LETTER as next, not the next row of the board", () => {
+		// The ladder only gates on letter keys, so pointing the highlight at "9" would flag a key the
+		// lesson will never drill.
+		const keys = [key("1", "left"), key("9", "right"), key("a", "left"), key("q", "left")];
+		const o = overview({ a: at(200) }, goalCpm, keys, ["a"]);
+		expect(o.keys.find((r) => r.next)?.id).toBe("q");
+	});
+
+	it("splits keys into measured, unlocked-and-untried, and still locked", () => {
+		const keys = [key("a", "left"), key("s", "left"), key("q", "left"), key("1", "right")];
+		const o = overview({ a: at(200) }, goalCpm, keys, ["a", "s"]);
+		expect(o.measured.map((r) => r.id)).toEqual(["a"]);
+		expect(o.untried.map((r) => r.id)).toEqual(["s"]);
+		expect(o.waiting.map((r) => r.id).sort()).toEqual(["1", "q", "s"]);
 	});
 
 	it("converts ms per key to wpm at five characters to the word", () => {

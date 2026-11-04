@@ -7,7 +7,7 @@ import { auth } from "./atproto/auth.ts";
 import { Sync, type SyncState } from "./atproto/sync.ts";
 import { mergeProgress } from "./atproto/records.ts";
 import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
-import { overview, type KeyInfo } from "./stats/overview.ts";
+import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
@@ -106,6 +106,9 @@ export class AppMain extends LitElement {
 			.mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-muted); }
 			.next { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--radius); }
 			.empty { margin: 0; color: var(--text-muted); }
+			/* Keys with no data get a chip, not a row: 40 empty bars would bury the 20 that mean something. */
+			.chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+			.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
 		`,
 	];
 
@@ -519,20 +522,19 @@ export class AppMain extends LitElement {
 
 	#stats() {
 		const o = this.#overview();
-		// Bars share one scale so they are comparable, and the goal tick sits at the same x in every row.
-		// A key more than twice as fast as goal would overflow the track, so the scale caps there.
-		const cap = 2;
-		const width = (conf: number) => `${Math.max(2, Math.min(100, (Math.min(conf, cap) / cap) * 100))}%`;
 		const card = (label: string, value: string) => html`<div class="card"><span class="label">${label}</span><b>${value}</b></div>`;
+		const chips = (list: typeof o.keys) => html`<span class="chips">${list.map((k) => html`<span class="chip" title="no samples yet">${k.label}</span>`)}</span>`;
+		// One scale for every row, goal in the middle: the tick is at 50% here and in barWidth, and the two
+		// must not drift or the chart reads as "past the line" for keys that are not.
 		const row = (k: (typeof o.keys)[number]) => html`
 			<div class="krow ${k.next ? "next" : ""}">
 				<span class="cap">${k.label}</span>
-				<span class="track"><span class="bar ${k.conf < 1 ? "bad" : ""}" style="width:${k.samples ? width(k.conf) : "0%"}"></span><span class="mark" style="left:${100 / cap}%"></span></span>
-				<span class="num">${k.samples ? `${k.wpm} wpm · ${k.ms}ms` : "—"}</span>
+				<span class="track"><span class="bar ${k.conf < 1 ? "bad" : ""}" style="width:${barWidth(k.ms, this.#goalMs())}%"></span><span class="mark" style="left:${GOAL_AT}%"></span></span>
+				<span class="num">${k.wpm} wpm · ${k.ms}ms${k.errors ? ` · ${k.errors} miss` : ""}</span>
 			</div>
 		`;
 		if (!o.covered) {
-			return html`<section class="stats"><h2>progress</h2><p class="empty">Type a line or two and this fills in. Nothing is recorded until you hit a key.</p></section>`;
+			return html`<section class="stats"><h2>progress</h2><p class="empty">A key gets a bar once you have hit it correctly. Hit the highlighted letter to start.</p></section>`;
 		}
 		return html`
 			<section class="stats">
@@ -542,10 +544,17 @@ export class AppMain extends LitElement {
 					${card("hands", `${o.handBalance}/${100 - o.handBalance}`)}
 				</div>
 				<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. The lesson weights those keys already.` : ""}</p>
-				${o.untried.length ? html`<p class="empty">Unlocked but never practised: ${o.untried.map((k) => k.label).join(", ")}.</p>` : nothing}
-				<div class="rows">${o.keys.map(row)}</div>
+				<div class="rows">${o.measured.map(row)}</div>
+				${o.untried.length ? html`<p class="empty">Unlocked but never practised ${chips(o.untried)}</p>` : nothing}
+				${o.waiting.length - o.untried.length > 0
+					? html`<p class="empty">Still locked ${chips(o.waiting.filter((k) => !o.untried.some((u) => u.id === k.id)))}</p>`
+					: nothing}
 			</section>
 		`;
+	}
+
+	#goalMs() {
+		return this.targetCpm <= 0 ? 0 : Math.round(60000 / this.targetCpm);
 	}
 
 	// Clicks on the ::backdrop land on the dialog element itself, not on its children.

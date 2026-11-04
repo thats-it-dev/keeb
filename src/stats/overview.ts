@@ -22,6 +22,21 @@ export type KeyRow = {
 	next: boolean;
 };
 
+/**
+ * Bar width, as a percentage, on a scale that is symmetric in TIME rather than in speed: the goal sits at
+ * 50 and each doubling or halving of ms moves 25 points. A linear goal-relative bar looked right at 200 wpm
+ * and went useless at 400 -- every key saturated at 100% and the screen could not rank anything, which is
+ * the only reason to draw a bar. Log means a key twice as slow and a key twice as fast take up the same
+ * room, which is how they feel to type.
+ */
+export function barWidth(ms: number, goalMs: number): number {
+	if (ms <= 0 || goalMs <= 0) return 0;
+	return Math.max(2, Math.min(100, Math.round(50 - 25 * (Math.log2(ms / goalMs)))));
+}
+
+/** The goal tick, in the same coordinates as the bars. Always 50 by construction. */
+export const GOAL_AT = 50;
+
 export type Overview = {
 	/** Every key of the current layout, worst first; never practised sinks to the bottom. */
 	keys: KeyRow[];
@@ -41,6 +56,11 @@ export type Overview = {
 	rightSamples: number;
 	/** Worst five, for "practise these". */
 	slowest: KeyRow[];
+	/** Rows with at least one sample, in the same order as `keys`. The bar list draws these and nothing
+   else; a key with no data has no bar to draw and 40 empty rows bury the 20 that mean something. */
+	measured: KeyRow[];
+	/** Keys with no samples and no bar, in layout order: still locked, or unlocked and never tried. */
+	waiting: KeyRow[];
 	/** Keys the ladder has opened but that carry no samples: unlocked, never used. */
 	untried: KeyRow[];
 };
@@ -58,7 +78,10 @@ export type KeyInfo = { id: string; label: string; hand: "left" | "right" | "non
  */
 export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], unlocked: string[]): Overview {
 	const goalMs = targetCpm <= 0 ? 0 : Math.round(60000 / targetCpm);
-	const nextId = unlocked.length < keys.length ? keys.find((k) => !unlocked.includes(k.id))?.id : undefined;
+	// The next key is the first LETTER the ladder has not opened: only letter keys gate an unlock (see
+	// ladder.ts), so pointing at "9" would highlight a key the lesson will never drill.
+	const letter = (k: KeyInfo) => /^[a-z]$/i.test(k.label);
+	const nextId = unlocked.length < keys.length ? keys.find((k) => letter(k) && !unlocked.includes(k.id))?.id : undefined;
 
 	const rows: KeyRow[] = keys.map((k) => {
 		const s = stats[k.id] ?? emptyStat();
@@ -104,6 +127,8 @@ export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], unl
 		leftSamples,
 		rightSamples,
 		slowest: practised.slice(0, 5),
+		measured: practised,
+		waiting: rows.filter((r) => r.samples === 0),
 		untried: rows.filter((r) => r.samples === 0 && unlocked.includes(r.id)),
 	};
 }

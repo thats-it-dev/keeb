@@ -114,30 +114,43 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 	expect(cursor).toBeGreaterThan(10);
 });
 
-test("progress screen shows per-key bars and never invents a speed for an untouched key", async ({ page }) => {
+test("progress screen ranks keys instead of saturating every bar", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
-	for (let i = 0; i < 14; i += 1) {
+	for (let i = 0; i < 40; i += 1) {
 		const ch = await wanted(page);
 		if (ch === "") break;
+		// Deliberate pauses, so some keys end up measurably slower than others. A run of uniform synthetic
+		// taps types every key at the same speed, which would make "different times give different widths"
+		// vacuous and let a scale that cannot rank anything pass.
+		if (i % 5 === 4) await page.waitForTimeout(60);
 		await tap(page, ch);
 	}
 	await page.locator("button", { hasText: "Progress" }).click();
 	const rows = page.locator(".krow");
-	// One row per key on the board, not one row per key with data: a missing key is the useful fact.
-	expect(await rows.count()).toBeGreaterThan(30);
+	expect(await rows.count()).toBeGreaterThan(3);
+	// Only keys with timing get a row. A key never struck has no bar to draw, and 40 empty rows used to
+	// bury the handful that meant something; they get chips instead.
+	expect(await page.locator(".chip").count()).toBeGreaterThan(0);
 	const nums = await page.locator(".krow .num").allInnerTexts();
-	// A never-struck key must read as blank, not as a speed. This is the exact lie the screen exists to
-	// avoid: an untouched key carries ttMs16 0, and 0 ms per key converts to a triumphant 2400 wpm.
-	// Asserting the blank pairing rather than banning high numbers -- synthetic taps on the phone viewport
-	// land a few ms apart, so a genuinely practised key can honestly show a silly wpm there.
-	const blank = nums.filter((n) => n.trim() === "—").length;
-	expect(blank).toBeGreaterThan(0);
-	// The same rows must have no bar. If the two disagree, one of them is lying about which keys are empty.
+	expect(nums.every((n) => /wpm/.test(n))).toBe(true);
 	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.width));
-	expect(widths.filter((w) => w === "0%").length).toBe(blank);
-	// Bars share one capped scale, so nothing may overflow its track.
-	expect(widths.every((w) => parseFloat(w) <= 100)).toBe(true);
+	expect(widths.every((w) => parseFloat(w) <= 100 && parseFloat(w) >= 2)).toBe(true);
+	// The regression this screen was missing: bars scaled against the goal pinned anything faster than 2x
+	// goal at 100% and the chart ranked nothing. Different times must give different widths.
+	const times = await page.locator(".krow .num").allInnerTexts();
+	const msOf = (t: string) => Number(t.match(/(\d+)ms/)?.[1] ?? -1);
+	const pairs = widths.map((w, i) => ({ ms: msOf(times[i]!), w: parseFloat(w) })).filter((p) => p.ms > 0);
+	const distinct = [...new Set(pairs.map((p) => p.ms))];
+	expect(distinct.length).toBeGreaterThan(1);
+	for (const a of pairs) for (const b of pairs) if (a.ms < b.ms) expect(a.w).toBeGreaterThanOrEqual(b.w);
+	// The strict version, and the one that actually catches the old scale: different times must produce
+	// different bars, not merely non-inverted ones. The goal-relative formula clamped anything faster than
+	// 2x goal to 100%, so a fast run gave one uniform set of widths.
+	expect(new Set(pairs.map((p) => p.w)).size).toBeGreaterThan(1);
+	// The tick is the goal, so it belongs at the same x in every row: the scale's midpoint.
+	const marks = await page.locator(".krow .mark").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
+	expect(marks).toEqual(["50%"]);
 	await expect(page.locator(".card").first()).toContainText("wpm");
 });
 
