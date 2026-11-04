@@ -8,8 +8,9 @@ import { Sync, type SyncState } from "./atproto/sync.ts";
 import { mergeProgress, type SessionRow } from "./atproto/records.ts";
 import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
-import { history as buildHistory, series } from "./stats/history.ts";
+import { history as buildHistory, series, type Point } from "./stats/history.ts";
 import { scaleBand, scaleLinear } from "d3-scale";
+import { line } from "d3-shape";
 import { max } from "d3-array";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
@@ -134,9 +135,8 @@ export class AppMain extends LitElement {
 			/* Keys with no data get a chip, not a row: 40 empty bars would bury the 20 that mean something. */
 			.chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 			.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
-			/* History: one bar per day. Bars, not a line -- a day you skipped is a gap, and a line would
-			 * interpolate a slope that never happened. Text is 8px in SVG units on a 340-unit canvas, which
-			 * renders about 11px at the width this occupies. */
+			/* History: a line per day, broken at the days you skipped -- an unbroken slope through a rest day
+			 * would claim a decline that never happened. */
 			.hist { display: grid; gap: 10px; width: 100%; }
 			.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.chart { width: 100%; height: 8rem; display: block; overflow: visible; }
@@ -144,8 +144,9 @@ export class AppMain extends LitElement {
 			.chart .grid line { stroke: var(--border-color); stroke-width: 0.5; }
 			.chart .axis { stroke: var(--text-muted); stroke-width: 0.75; opacity: 0.45; }
 			.chart .goal { stroke: var(--text-muted); stroke-width: 0.75; stroke-dasharray: 3 2; }
-			.chart rect.ok { fill: var(--primary); }
-			.chart rect.under { fill: var(--accent); }
+			.chart circle.ok { fill: var(--primary); }
+			.chart circle.under { fill: var(--accent); }
+			.chart .trend { fill: none; stroke: var(--primary); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
 		`,
 	];
 
@@ -640,6 +641,15 @@ export class AppMain extends LitElement {
 			.nice();
 		const every = Math.max(1, Math.ceil(pts.length / 5)); // about five date labels at any span
 		const fmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+		const mid = (day: string) => (x(day) ?? 0) + x.bandwidth() / 2;
+		const data = pts.filter((p) => p.sessions > 0);
+		// .defined() is the whole trick of drawing a line honestly over a practice history: a day with no
+		// sessions breaks the path instead of letting it slope down through a day you were not at the
+		// keyboard. Rest days stay visible as the gap between two segments.
+		const trend = line<Point>()
+			.defined((p) => p.sessions > 0)
+			.x((p) => mid(p.day))
+			.y((p) => y(p.wpm));
 		return html`
 			<div class="hist">
 				<h3>history · ${geometryById(this.geometryId).name}</h3>
@@ -658,14 +668,11 @@ export class AppMain extends LitElement {
 							)}
 					<line class="axis" x1=${CH.pad.l} x2=${CH.w - CH.pad.r} y1=${y(0)} y2=${y(0)} />
 					<line class="goal" x1=${CH.pad.l} x2=${CH.w - CH.pad.r} y1=${y(goal)} y2=${y(goal)} />
-					${pts.map((p, i) =>
-						p.sessions === 0
-							? nothing // a day you skipped draws nothing at all: the empty slot is the information
-							: svg`<rect data-day=${p.day} x=${x(p.day)} y=${y(p.wpm)} width=${x.bandwidth()} height=${Math.max(1.5, y(0) - y(p.wpm))} rx="1.5" class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min, ${p.sessions} session(s)`}</title></rect>${
-									i % every === 0
-										? svg`<text class="tick" x=${(x(p.day) ?? 0) + x.bandwidth() / 2} y=${CH.h - CH.pad.b + 11} text-anchor="middle">${fmt.format(parseDay(p.day))}</text>`
-										: nothing
-									}`,)}
+					<path class="trend" d=${trend(pts) ?? ""} />
+					${data.map((p) => svg`<circle data-day=${p.day} cx=${mid(p.day)} cy=${y(p.wpm)} r="2.4" class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min, ${p.sessions} session(s)`}</title></circle>`)}
+					${pts
+						.filter((_, i) => i % every === 0)
+						.map((p) => svg`<text class="tick" x=${mid(p.day)} y=${CH.h - CH.pad.b + 11} text-anchor="middle">${fmt.format(parseDay(p.day))}</text>`)}
 					<text class="goal-label" x=${CH.w - CH.pad.r} y=${y(goal)} dy="-3" text-anchor="end">goal ${goal}</text>
 				</svg>
 				<p class="empty">

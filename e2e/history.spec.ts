@@ -58,7 +58,7 @@ test("cached sessions draw a day of bars and honest totals", async ({ page }) =>
 		row({ rkey: "aac", atMs: noon(2), chars: 600, ms: 120_000 }),
 	]);
 	await expect(page.locator(".hist")).toBeVisible();
-	expect(await page.locator(".hist .chart rect").count()).toBe(3);
+	expect(await page.locator(".hist .chart circle").count()).toBe(3);
 	await expect(page.locator(".hist .chart .goal")).toHaveCount(1);
 	const card = (name: string) => page.locator(".hist .card", { hasText: name }).locator("b");
 	await expect(card("characters")).toHaveText("1500"); // 400 + 500 + 600, a real stroke count
@@ -69,15 +69,19 @@ test("cached sessions draw a day of bars and honest totals", async ({ page }) =>
 
 test("a day with no sessions is a gap, not a point on a line", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "b1", atMs: noon(0) }), row({ rkey: "b2", atMs: noon(1) }), row({ rkey: "b3", atMs: noon(2) }), row({ rkey: "b4", atMs: noon(6) })]);
-	const xs = await page.locator(".hist .chart rect").evaluateAll((els) => els.map((e) => Number(e.getAttribute("x"))));
+	const xs = await page.locator(".hist .chart circle").evaluateAll((els) => els.map((e) => Number(e.getAttribute("cx"))));
 	expect(xs.length).toBe(4); // four days practised out of seven
-	// A ratio, not pixels: the chart's geometry is allowed to change (it just did, moving to d3 scales) and
-	// this is the claim that must survive it. Three consecutive days sit one slot apart, and the bar after
-	// the three-day hole is four slots from them. Ordering is not assumed -- only the gap sizes are.
+	// A ratio, not pixels: the chart's geometry is allowed to change (it just did, twice) and this is the
+	// claim that must survive it. Three consecutive days sit one slot apart, and the day after the three-day
+	// hole is four slots along. Ordering is not assumed -- only the gap sizes are.
 	const gaps = xs.slice(1).map((x, i) => x - xs[i]!).filter((g) => g > 0);
 	const one = Math.min(...gaps);
 	expect(one).toBeGreaterThan(0);
 	expect(Math.max(...gaps) / one).toBeCloseTo(4, 0);
+	// And the line itself must break, not slope: two subpaths (two M commands) for two runs of practice.
+	// A single continuous path here would claim a decline across days nobody was at the keyboard.
+	const d = (await page.locator(".hist .chart path.trend").getAttribute("d")) ?? "";
+	expect(d.split("M").length - 1).toBe(2);
 	await expect(page.locator(".hist .card", { hasText: "streak" }).locator("b")).toHaveText("3 d");
 });
 
@@ -96,7 +100,7 @@ test("history from another board does not leak into this one's chart", async ({ 
 
 test("a session with no readable date counts, but is not drawn", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "d1", atMs: 0, chars: 700, ms: 60_000 }), row({ rkey: "d2", atMs: noon(0), chars: 300, ms: 60_000 })]);
-	expect(await page.locator(".hist .chart rect").count()).toBe(1); // the undated one is in the totals only
+	expect(await page.locator(".hist .chart circle").count()).toBe(1); // the undated one is in the totals only
 	await expect(page.locator(".hist .card", { hasText: "characters" }).locator("b")).toHaveText("1000");
 	await expect(page.locator(".hist .card", { hasText: "sessions" }).locator("b")).toHaveText("2");
 	await expect(page.locator(".hist")).toContainText("no readable date");

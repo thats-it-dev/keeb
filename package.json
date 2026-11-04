@@ -26,6 +26,7 @@
 		"@playwright/test": "1.64.0",
 		"@types/d3-array": "^3.2.2",
 		"@types/d3-scale": "^4.0.9",
+		"@types/d3-shape": "^3.2.0",
 		"@types/node": "24.19.2",
 		"lit": "3.3.3",
 		"typescript": "5.9.3",
@@ -36,6 +37,7 @@
 		"@atproto/common-web": "^0.5.16",
 		"@atproto/oauth-client-browser": "^0.5.11",
 		"d3-array": "^3.2.5",
-		"d3-scale": "^4.0.3"
+		"d3-scale": "^4.0.3",
+		"d3-shape": "^3.2.1"
 	}
 }
