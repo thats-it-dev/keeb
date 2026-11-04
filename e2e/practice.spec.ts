@@ -187,6 +187,23 @@ test("highlights the key the next character lives on", async ({ page }) => {
 	await expect(key(page, id)).toHaveClass(/\bon\b/);
 });
 
+test("a held key counts once, not once per auto-repeat", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const ch = await wanted(page);
+	const before = await cursorOf(page);
+	// What the OS actually sends while a key is down: the first keydown is fresh, the rest are repeats.
+	await page.evaluate((c) => {
+		for (let i = 0; i < 8; i += 1) window.dispatchEvent(new KeyboardEvent("keydown", { key: c, repeat: i > 0, bubbles: true }));
+	}, ch ?? "a");
+	await page.waitForTimeout(120);
+	expect(await cursorOf(page)).toBe(before + 1);
+	// Repeats used to charge an error to the target key, which paints the letter the learner has NOT
+	// typed yet red -- the thing that reads as "the line is ahead of me".
+	const misses = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { wrong: Set<number> }).wrong.size);
+	expect(misses).toBe(0);
+});
+
 test("a wrong key does not move the cursor", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);

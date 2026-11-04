@@ -248,7 +248,10 @@ export class AppMain extends LitElement {
 		if (this.settingsOpen) return; // the modal owns the keyboard while it is up
 		const t = e.target as HTMLElement | null;
 		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-		if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+		// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
+		// that passed through here charged an error to the target key and turned the letter the learner has
+		// not typed yet red. That reads as the line running ahead of the fingers.
+		if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
 		e.preventDefault();
 		void this.#type(e.key);
 	};
