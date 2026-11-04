@@ -41,6 +41,27 @@ const idFor = (page: Page, ch: string) =>
 const cursorOf = (page: Page) =>
 	page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
 
+// Keys the persisted record actually holds. Reading the store rather than the component is the point: the
+// write behind a keystroke is async, and reload() would cut it off mid-transaction -- which is why this
+// test flaked in CI on a slow runner while passing locally.
+const storedKeys = (page: Page) =>
+	page.evaluate(
+		() =>
+			new Promise<number>((res, rej) => {
+				const open = indexedDB.open("keeb");
+				open.onsuccess = () => {
+					const r = open.result.transaction("stats").objectStore("stats").getAll();
+					r.onsuccess = () => {
+						const rows = (r.result ?? []) as { value?: Record<string, unknown> }[];
+						open.result.close();
+						res(rows.reduce((n, row) => n + Object.keys(row.value ?? {}).length, 0));
+					};
+					r.onerror = () => rej(r.error);
+				};
+				open.onerror = () => rej(open.error);
+			}),
+	);
+
 test("the first line is already real words", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
@@ -267,6 +288,7 @@ test("a single keystroke is enough to persist", async ({ page }) => {
 	}
 	expect(ch).not.toBe("");
 	await tap(page, ch);
+	await expect.poll(() => storedKeys(page), { timeout: 5000 }).toBe(1);
 	await page.reload();
 	await ready(page);
 	expect(await keysTyped(page)).toBe(1);
@@ -282,6 +304,7 @@ test("progress survives a reload", async ({ page }) => {
 	}
 	const before = await keysTyped(page);
 	expect(before).toBeGreaterThan(2);
+	await expect.poll(() => storedKeys(page), { timeout: 5000 }).toBe(before);
 	await page.reload();
 	await ready(page);
 	const after = await keysTyped(page);
