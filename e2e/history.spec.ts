@@ -68,15 +68,17 @@ test("cached sessions draw a day of bars and honest totals", async ({ page }) =>
 });
 
 test("a day with no sessions is a gap, not a point on a line", async ({ page }) => {
-	await seedAndOpen(page, [row({ rkey: "b1", atMs: noon(0) }), row({ rkey: "b2", atMs: noon(4) })]);
-	const rects = await page.locator(".hist .chart rect").evaluateAll((els) =>
-		els.map((e) => ({ x: Number(e.getAttribute("x")), day: e.getAttribute("data-day") ?? "" })),
-	);
-	expect(rects.length).toBe(2); // two bars, and nothing drawn into the three skipped days
-	// Position is the assertion that matters: two bars side by side would pass a count check while lying
-	// about the week. Five day-slots across 320 units is 64 each, so four days apart is 256.
-	expect(Math.abs(rects[1]!.x - rects[0]!.x)).toBeCloseTo(256, 0);
-	await expect(page.locator(".hist .card", { hasText: "streak" }).locator("b")).toHaveText("1 d");
+	await seedAndOpen(page, [row({ rkey: "b1", atMs: noon(0) }), row({ rkey: "b2", atMs: noon(1) }), row({ rkey: "b3", atMs: noon(2) }), row({ rkey: "b4", atMs: noon(6) })]);
+	const xs = await page.locator(".hist .chart rect").evaluateAll((els) => els.map((e) => Number(e.getAttribute("x"))));
+	expect(xs.length).toBe(4); // four days practised out of seven
+	// A ratio, not pixels: the chart's geometry is allowed to change (it just did, moving to d3 scales) and
+	// this is the claim that must survive it. Three consecutive days sit one slot apart, and the bar after
+	// the three-day hole is four slots from them. Ordering is not assumed -- only the gap sizes are.
+	const gaps = xs.slice(1).map((x, i) => x - xs[i]!).filter((g) => g > 0);
+	const one = Math.min(...gaps);
+	expect(one).toBeGreaterThan(0);
+	expect(Math.max(...gaps) / one).toBeCloseTo(4, 0);
+	await expect(page.locator(".hist .card", { hasText: "streak" }).locator("b")).toHaveText("3 d");
 });
 
 test("history from another board does not leak into this one's chart", async ({ page }) => {

@@ -9,6 +9,8 @@ import { mergeProgress, type SessionRow } from "./atproto/records.ts";
 import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { history as buildHistory, series } from "./stats/history.ts";
+import { scaleBand, scaleLinear } from "d3-scale";
+import { max } from "d3-array";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
@@ -40,6 +42,15 @@ function saved(): { g: string; k: string } {
 function keyLabel(k: { id: string; char: string }): string {
 	if (k.char === " ") return "space";
 	return k.char.trim() === "" ? k.id : k.char;
+}
+
+// The history chart's geometry, in SVG units: room on the left for speed labels, below for dates.
+const CH = { w: 340, h: 118, pad: { l: 26, r: 8, t: 10, b: 24 } };
+
+/** "YYYY-MM-DD" back to a local date at noon, so no timezone edge can move it into yesterday. */
+function parseDay(day: string): Date {
+	const [y, m, d] = day.split("-").map(Number);
+	return new Date(y!, (m ?? 1) - 1, d ?? 1, 12);
 }
 
 // The one card template, so the key stats and the history cannot render the same kind of number two ways.
@@ -124,11 +135,15 @@ export class AppMain extends LitElement {
 			.chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 			.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
 			/* History: one bar per day. Bars, not a line -- a day you skipped is a gap, and a line would
-			 * interpolate a slope that never happened. */
+			 * interpolate a slope that never happened. Text is 8px in SVG units on a 340-unit canvas, which
+			 * renders about 11px at the width this occupies. */
 			.hist { display: grid; gap: 10px; width: 100%; }
 			.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
-			.chart { width: 100%; height: 4.5rem; display: block; }
-			.chart .goal { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 3; }
+			.chart { width: 100%; height: 8rem; display: block; overflow: visible; }
+			.chart text { font-size: 8px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+			.chart .grid line { stroke: var(--border-color); stroke-width: 0.5; }
+			.chart .axis { stroke: var(--text-muted); stroke-width: 0.75; opacity: 0.45; }
+			.chart .goal { stroke: var(--text-muted); stroke-width: 0.75; stroke-dasharray: 3 2; }
 			.chart rect.ok { fill: var(--primary); }
 			.chart rect.under { fill: var(--accent); }
 		`,
@@ -614,11 +629,17 @@ export class AppMain extends LitElement {
 		const h = buildHistory(mine);
 		const pts = series(h, 40);
 		const goal = cpmToWpm(this.targetCpm);
-		const top = Math.max(goal * 1.25, ...pts.map((p) => p.wpm), 1);
-		// Baseline at y=60, the tallest bar 54 units high; the goal line uses the same mapping, so a bar
-		// that clears it means the same thing as the line says.
-		const y = (v: number) => 60 - (Math.min(v, top) / top) * 54;
-		const w = 320 / pts.length;
+		// d3 for the maths, Lit for the DOM. d3-selection would create and patch these nodes itself, and two
+		// owners of one subtree is how a chart ends up rendering state the component has already dropped.
+		// scaleBand over the day KEYS, so a skipped day still consumes a slot and the gap is real position.
+		const x = scaleBand<string>().domain(pts.map((p) => p.day)).range([CH.pad.l, CH.w - CH.pad.r]).padding(0.3);
+		// .nice() after the domain is set -- scaleLinear([0, n]) would read that array as the RANGE.
+		const y = scaleLinear()
+			.domain([0, Math.max(goal * 1.2, max(pts, (p) => p.wpm) ?? 0, 10)])
+			.range([CH.h - CH.pad.b, CH.pad.t])
+			.nice();
+		const every = Math.max(1, Math.ceil(pts.length / 5)); // about five date labels at any span
+		const fmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 		return html`
 			<div class="hist">
 				<h3>history · ${geometryById(this.geometryId).name}</h3>
@@ -626,13 +647,26 @@ export class AppMain extends LitElement {
 					${card("sessions", `${h.sessions}`)} ${card("characters", `${h.chars}`)} ${card("practised", `${h.minutes} min`)} ${card("streak", `${h.streak} d`)}
 					${card("best day", `${h.best?.wpm ?? 0} wpm`)}
 				</div>
-				<svg viewBox="0 0 320 64" class="chart" role="img" aria-label=${`${h.activeDays} days practised, best day ${h.best?.wpm ?? 0} wpm, goal ${goal} wpm`}>
-					<line x1="0" x2="320" y1=${y(goal).toFixed(1)} y2=${y(goal).toFixed(1)} class="goal" />
+				<svg viewBox="0 0 ${CH.w} ${CH.h}" class="chart" role="img" aria-label=${`${h.activeDays} days practised, best day ${h.best?.wpm ?? 0} wpm, goal ${goal} wpm`}>
+					${y
+						.ticks(4)
+							.filter((v) => v > 0)
+							.map(
+								(v) => svg`
+									<g class="grid"><line x1=${CH.pad.l} x2=${CH.w - CH.pad.r} y1=${y(v)} y2=${y(v)} /><text x=${CH.pad.l - 5} y=${y(v)} dy="0.32em" text-anchor="end">${v}</text></g>
+								`,
+							)}
+					<line class="axis" x1=${CH.pad.l} x2=${CH.w - CH.pad.r} y1=${y(0)} y2=${y(0)} />
+					<line class="goal" x1=${CH.pad.l} x2=${CH.w - CH.pad.r} y1=${y(goal)} y2=${y(goal)} />
 					${pts.map((p, i) =>
 						p.sessions === 0
-							? nothing // a day you skipped draws nothing at all: an empty slot is the information
-							: svg`<rect data-day=${p.day} x=${(i * w + w * 0.18).toFixed(1)} y=${y(p.wpm).toFixed(1)} width=${(w * 0.64).toFixed(1)} height=${Math.max(1, 60 - y(p.wpm)).toFixed(1)} class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min, ${p.sessions} session(s)`}</title></rect>`,
-					)}
+							? nothing // a day you skipped draws nothing at all: the empty slot is the information
+							: svg`<rect data-day=${p.day} x=${x(p.day)} y=${y(p.wpm)} width=${x.bandwidth()} height=${Math.max(1.5, y(0) - y(p.wpm))} rx="1.5" class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min, ${p.sessions} session(s)`}</title></rect>${
+									i % every === 0
+										? svg`<text class="tick" x=${(x(p.day) ?? 0) + x.bandwidth() / 2} y=${CH.h - CH.pad.b + 11} text-anchor="middle">${fmt.format(parseDay(p.day))}</text>`
+										: nothing
+									}`,)}
+					<text class="goal-label" x=${CH.w - CH.pad.r} y=${y(goal)} dy="-3" text-anchor="end">goal ${goal}</text>
 				</svg>
 				<p class="empty">
 					${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${this.sessions.length > mine.length ? `, plus ${this.sessions.length - mine.length} session(s) on other boards` : ""}. The repo keeps
