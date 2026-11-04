@@ -51,7 +51,7 @@ const seedAndOpen = async (page: Page, rows: Row[]) => {
 	await page.locator("button", { hasText: "Progress" }).click();
 };
 
-test("cached sessions draw a day of bars and honest totals", async ({ page }) => {
+test("cached sessions draw a curve and honest totals", async ({ page }) => {
 	await seedAndOpen(page, [
 		row({ rkey: "aaa", atMs: noon(0), chars: 400, ms: 60_000 }),
 		row({ rkey: "aab", atMs: noon(1), chars: 500, errors: 20, ms: 60_000 }),
@@ -107,6 +107,8 @@ test("a session with no readable date counts, but is not drawn", async ({ page }
 });
 
 test("with nothing synced there is no history section", async ({ page }) => {
+	// Doubles as the gating check: this runs on localhost, which is not a Pages preview host, so the
+	// "show demo sessions" prompt must stay absent off a preview.
 	await page.goto("/");
 	await expect(page.locator("tt-practice .line")).toBeVisible();
 	await page.evaluate(() => document.fonts.ready);
@@ -114,4 +116,41 @@ test("with nothing synced there is no history section", async ({ page }) => {
 	await expect(page.locator(".hist")).toHaveCount(0);
 	// The key-progress part of the pane still works offline.
 	await expect(page.locator(".stats h2")).toContainText("progress");
+});
+
+test("?demo=1 draws a labelled curve and stores nothing", async ({ page }) => {
+	await page.goto("/?demo=1");
+	await expect(page.locator("tt-practice .line")).toBeVisible();
+	await page.evaluate(() => document.fonts.ready);
+	await page.locator("button", { hasText: "Progress" }).click();
+	await expect(page.locator(".demo-note")).toContainText("demo sessions");
+	await expect(page.locator(".demo-note")).toContainText("nothing here is your progress");
+	expect(await page.locator(".hist .chart circle").count()).toBeGreaterThan(5);
+	expect(await page.locator(".hist .chart path.trend").getAttribute("d")).toContain("M");
+	// The claim that matters: generated per render, never written down. A preview must not be able to put a
+	// made-up session in a real repo or in this device's cache.
+	const stored = await page.evaluate(
+		() =>
+			new Promise<number>((res, rej) => {
+				const db = indexedDB.open("keeb");
+				db.onsuccess = () => {
+					const r = db.result.transaction("history").objectStore("history").getAll();
+					r.onsuccess = () => {
+						db.result.close();
+						res((r.result ?? []).length);
+					};
+					r.onerror = () => rej(r.error);
+				};
+				db.onerror = () => rej(db.error);
+			}),
+	);
+	expect(stored).toBe(0);
+	// Turning it off is reflected in the URL, so a reloaded preview cannot come back quietly faked.
+	await page.locator(".demo-note button", { hasText: "Use real data" }).click();
+	await expect(page.locator(".hist")).toHaveCount(0);
+	expect(page.url()).not.toContain("demo");
+	await page.reload();
+	await expect(page.locator("tt-practice .line")).toBeVisible();
+	await page.locator("button", { hasText: "Progress" }).click();
+	await expect(page.locator(".hist")).toHaveCount(0);
 });

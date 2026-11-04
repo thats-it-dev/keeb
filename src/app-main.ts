@@ -9,6 +9,7 @@ import { mergeProgress, type SessionRow } from "./atproto/records.ts";
 import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { history as buildHistory, series, type Point } from "./stats/history.ts";
+import { demoSessions, isPreviewHost } from "./stats/demo.ts";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { line } from "d3-shape";
 import { max } from "d3-array";
@@ -77,7 +78,7 @@ const syncStore = {
 };
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -147,6 +148,11 @@ export class AppMain extends LitElement {
 			.chart circle.ok { fill: var(--primary); }
 			.chart circle.under { fill: var(--accent); }
 			.chart .trend { fill: none; stroke: var(--primary); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
+			/* Demo data announces itself. A chart that looks like progress and is not progress is the one
+			 * failure mode this screen has been built to avoid. */
+			.demo-note { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 8px 10px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--text-muted); font-size: 0.85rem; }
+			.demo-note b { color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.75rem; }
+			.link { border: 0; background: none; color: var(--primary); font: inherit; padding: 0; cursor: pointer; text-decoration: underline; }
 		`,
 	];
 
@@ -158,6 +164,9 @@ export class AppMain extends LitElement {
 	view: "type" | "progress" = "type";
 	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
 	sessions: SessionRow[] = [];
+	// Fake history for previews, switched on by ?demo=1. Generated per render and never stored anywhere:
+	// a preview visit must not be able to write a made-up session into a real repo or a real device.
+	demo = new URLSearchParams(location.search).has("demo");
 	keymapId = saved().k;
 	// Layout files the learner imported, straight out of IndexedDB.
 	boards: Geometry[] = [];
@@ -625,8 +634,25 @@ export class AppMain extends LitElement {
 	// `samples` is a weighted mean and sums to nothing meaningful.
 	#history() {
 		const key = layoutKey(this.geometryId, this.keymapId);
-		const mine = this.sessions.filter((s) => s.layout === key);
-		if (!mine.length) return nothing;
+		// The demo flag replaces the source rather than overlaying it: two half-truths merged into one curve
+		// would be the least legible chart this app could draw.
+		const source = this.demo ? demoSessions(key) : this.sessions;
+		const mine = source.filter((s) => s.layout === key);
+		if (!mine.length) {
+			// A preview deploy is the same artifact as production, so the hostname is the only way to know this
+			// is a branch preview -- and on one, an empty chart tells a reviewer nothing. The data stays opt-in:
+			// generated per render, labelled, never written to storage or to a repo.
+			if (this.sessions.length || !isPreviewHost(location.hostname, __APP_NAME__)) return nothing;
+			return html`
+				<div class="hist">
+					<h3>history · ${geometryById(this.geometryId).name}</h3>
+					<p class="demo-note">
+						<b>preview</b> No synced sessions yet.
+						<button class="link" @click=${() => this.#demo(true)}>Show demo sessions</button>
+					</p>
+				</div>
+			`;
+		}
 		const h = buildHistory(mine);
 		const pts = series(h, 40);
 		const goal = cpmToWpm(this.targetCpm);
@@ -653,6 +679,12 @@ export class AppMain extends LitElement {
 		return html`
 			<div class="hist">
 				<h3>history · ${geometryById(this.geometryId).name}</h3>
+				${this.demo
+					? html`<p class="demo-note">
+							<b>demo sessions</b> — nothing here is your progress, and none of it is stored or synced.
+							<button class="link" @click=${() => this.#demo(false)}>Use real data</button>
+						</p>`
+					: nothing}
 				<div class="grid">
 					${card("sessions", `${h.sessions}`)} ${card("characters", `${h.chars}`)} ${card("practised", `${h.minutes} min`)} ${card("streak", `${h.streak} d`)}
 					${card("best day", `${h.best?.wpm ?? 0} wpm`)}
@@ -676,12 +708,27 @@ export class AppMain extends LitElement {
 					<text class="goal-label" x=${CH.w - CH.pad.r} y=${y(goal)} dy="-3" text-anchor="end">goal ${goal}</text>
 				</svg>
 				<p class="empty">
-					${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${this.sessions.length > mine.length ? `, plus ${this.sessions.length - mine.length} session(s) on other boards` : ""}. The repo keeps
+					${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${source.length > mine.length ? `, plus ${source.length - mine.length} session(s) on other boards` : ""}. The repo keeps
 					the newest 50 sessions per layout, so these totals are that window rather than your whole life
 					${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
 				</p>
 			</div>
 		`;
+	}
+
+	// Turning demo data on also puts it in the URL, so a preview link that shows a chart still shows one
+	// after a reload or when forwarded onward. Turning it off removes the parameter and the rows with it:
+	// nothing is left in storage, because nothing was ever written there.
+	#demo(on: boolean): void {
+		this.demo = on;
+		// Query built through URLSearchParams, which cannot throw, rather than parsing location.href: the
+		// page could be served from a path with characters a URL constructor would reject, and a settings
+		// toggle must never be the thing that raises.
+		const q = new URLSearchParams(location.search);
+		if (on) q.set("demo", "");
+		else q.delete("demo");
+		const s = q.toString();
+		history.replaceState(null, "", location.pathname + (s ? `?${s}` : "") + location.hash);
 	}
 
 	// Clicks on the ::backdrop land on the dialog element itself, not on its children.
