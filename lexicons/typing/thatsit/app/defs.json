@@ -24,7 +24,7 @@
 		"key": {
 			"type": "object",
 			"required": [
-				"id",
+				"keyId",
 				"hand",
 				"row",
 				"col",
@@ -35,7 +35,7 @@
 				"rot"
 			],
 			"properties": {
-				"id": {
+				"keyId": {
 					"type": "string",
 					"maxGraphemes": 100
 				},
@@ -92,11 +92,11 @@
 		"char": {
 			"type": "object",
 			"required": [
-				"id",
+				"keyId",
 				"char"
 			],
 			"properties": {
-				"id": {
+				"keyId": {
 					"type": "string",
 					"maxGraphemes": 100
 				},
@@ -117,13 +117,13 @@
 		"keyStat": {
 			"type": "object",
 			"required": [
-				"id",
+				"keyId",
 				"ttMs16",
 				"samples",
 				"errors"
 			],
 			"properties": {
-				"id": {
+				"keyId": {
 					"type": "string",
 					"maxGraphemes": 100
 				},

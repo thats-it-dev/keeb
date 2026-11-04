@@ -5,7 +5,7 @@ import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { PROGRESS, SETTINGS, SESSION, defs, layout, progress, session, settings } from "../src/atproto/lexicons.ts";
-import { charMap, clockSeconds, fromProgressRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, mergeProgress, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, statsFrom } from "../src/atproto/records.ts";
+import { charMap, fromProgressRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, mergeProgress, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, statsFrom } from "../src/atproto/records.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
@@ -21,7 +21,7 @@ describe("records", () => {
 			expect(Number.isInteger(k.w)).toBe(true);
 		}
 		// A NaN from a divide-by-zero somewhere upstream must not become null on the wire.
-		expect(keyStats({ q: stat(NaN, undefined as unknown as number) })).toEqual([{ id: "q", ttMs16: 0, samples: 0, errors: 0 }]);
+		expect(keyStats({ q: stat(NaN, undefined as unknown as number) })).toEqual([{ keyId: "q", ttMs16: 0, samples: 0, errors: 0 }]);
 	});
 
 	it("keeps a geometry round-tripping, which is the part that broke in M1", () => {
@@ -36,8 +36,23 @@ describe("records", () => {
 
 	it("carries characters separately from positions", () => {
 		const chars = charMap(r.keys.map((k) => ({ id: k.id, char: k.char })));
-		expect(chars.chars.find((c) => c.id === "L_C5R3")?.char).toBe("a");
+		expect(chars.chars.find((c) => c.keyId === "L_C5R3")?.char).toBe("a");
 		expect(keyGeometry(GO60).keys[0]).not.toHaveProperty("char");
+	});
+
+	it("writes keyId and still reads the older id", () => {
+		// The field was renamed before publishing because goat flags `id` as reserved across language
+		// code generators, and a published field name is permanent. Records written under the old name are
+		// still in repos, so reading accepts both and writing emits only the new one.
+		expect(statsFrom([{ keyId: "a", ttMs16: 3200, samples: 10, errors: 1 }, { keyId: "s", ttMs16: 900, samples: 2, errors: 0 }])).toEqual({
+			a: stat(3200, 10, 1),
+			s: stat(900, 2),
+		});
+		expect(statsFrom([{ id: "a", ttMs16: 3200, samples: 10, errors: 1 } as never])).toEqual({ a: stat(3200, 10, 1) });
+		// the new name wins when a row somehow carries both
+		expect(Object.keys(statsFrom([{ keyId: "d", id: "f", ttMs16: 1, samples: 1, errors: 0 }]))).toEqual(["d"]);
+		expect(geometryFromRecord({ split: false, keys: [{ id: "L_C5R3", hand: "l", row: 2, col: 5, x: 0, y: 0, w: 100, h: 100, rot: 0 } as never] }).keys[0]!.id).toBe("L_C5R3");
+		expect(keyStats({ a: stat(1, 1) })[0]).not.toHaveProperty("id");
 	});
 
 	it("writes settings under the self key and reads back what it wrote", () => {
@@ -66,7 +81,7 @@ describe("records", () => {
 	});
 
 	it("orders stats by key id so the same progress always looks the same", () => {
-		const ids = keyStats({ s: stat(1, 1), a: stat(1, 1), f: stat(1, 1) }).map((x) => x.id);
+		const ids = keyStats({ s: stat(1, 1), a: stat(1, 1), f: stat(1, 1) }).map((x) => x.keyId);
 		expect(ids).toEqual(["a", "f", "s"]);
 	});
 
@@ -86,7 +101,7 @@ describe("records", () => {
 
 	it("prunes to the newest sessions per layout, using the tid as a clock", () => {
 		const tids = Array.from({ length: 5 }, (_, i) => newKey() + String(i)).sort(); // distinct, time-ordered
-		const rows = [...tids.map((rkey, i) => ({ rkey, layout: "go60+qwerty" })), { rkey: tids[0]!, layout: "corne+qwerty" }];
+		const rows = [...tids.map((rkey) => ({ rkey, layout: "go60+qwerty" })), { rkey: tids[0]!, layout: "corne+qwerty" }];
 		const drop = pruneSessions(rows, 4);
 		expect(drop).toEqual([tids[0]]); // oldest of the six go60 sessions; the corne one is untouched
 		// A tid really is comparable as a string, or this test would be fiction.

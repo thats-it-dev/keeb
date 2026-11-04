@@ -18,7 +18,8 @@
 		"test": "vitest run",
 		"e2e": "playwright test",
 		"icons": "node scripts/make-icons.ts",
-		"lexicons": "node scripts/export-lexicons.ts"
+		"lexicons": "node scripts/export-lexicons.ts",
+		"lexicons:publish": "npm run lexicons && goat lex publish"
 	},
 	"devDependencies": {
 		"@atproto/oauth-types": "^0.7.7",

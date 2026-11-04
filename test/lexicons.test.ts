@@ -69,7 +69,7 @@ describe("lexicons", () => {
 	it("caps what a hostile client can post in one record", () => {
 		// maxLength is the array cap; maxGraphemes on an array is ignored, so a wrong key here would
 		// silently leave the record unbounded. 201 keys is more than any keyboard has.
-		const keys = Array.from({ length: 201 }, (_, i) => ({ id: `k${i}`, hand: "l", row: 0, col: 0, x: i, y: 0, w: 100, h: 100, rot: 0 }));
+		const keys = Array.from({ length: 201 }, (_, i) => ({ keyId: `k${i}`, hand: "l", row: 0, col: 0, x: i, y: 0, w: 100, h: 100, rot: 0 }));
 		const rec = { $type: "app.thatsit.typing.layout", name: "flood", geometry: { keys }, charMap: { chars: [] } } as unknown as Record<string, unknown>;
 		expect(check(rec).join(" ")).toMatch(/more than 200/i);
 	});
