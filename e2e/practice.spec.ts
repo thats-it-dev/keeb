@@ -62,9 +62,11 @@ test("the lesson is text, not a field you type into", async ({ page }) => {
 	});
 	const now = marks.find((m) => m.cls === "now");
 	expect(now?.dec).toBe("underline");
-	// The target shares the colour of the letters already hit. A loud colour sitting one step ahead of the
-	// fingers is what read as the line accelerating, so the underline carries "here" and the colour does not.
-	expect(now?.color).toBe(marks.find((m) => m.cls === "hit")?.color);
+	// The target carries the colour of a letter you have not reached yet. Colour reports what happened --
+	// dark means hit, red means missed -- and the underline alone reports where you are. Give the target a
+	// colour of its own and it sits one step ahead of your typing again.
+	expect(now?.color).toBe(marks.find((m) => m.cls === "todo")?.color);
+	expect(now?.color).not.toBe(marks.find((m) => m.cls === "hit")?.color);
 	// A mistyped character turns red and stays red, even under the cursor.
 	const ch = await wanted(page);
 	await tap(page, ch === "z" ? "y" : "z");

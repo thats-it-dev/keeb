@@ -13,11 +13,12 @@ export class TtPractice extends LitElement {
 		.hit { color: var(--text-primary); } /* completed: darkest grey, behind the cursor */
 		.todo { color: var(--text-muted); } /* upcoming */
 		.bad { color: var(--accent); } /* mistyped: red, and it outranks the cursor colour */
-		/* The letter to type next is UNDERLINED, not recoloured. A loud colour that always sits one ahead of
-		 * the letters you have hit reads as the line running away from you, which is exactly what it looked
-		 * like. Same colour as the typed text, so the underline alone carries "here"; an underline costs no
-		 * layout, so nothing shifts sideways as it moves (the reason the old padded-chip version went). */
-		.now { color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--primary); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+		/* The letter to type next keeps the colour of every letter you have NOT typed yet, and carries an
+		 * underline instead. Colour is reserved for what happened: dark means you hit it, red means you did
+		 * not. A coloured target sits one step ahead of the letters you have hit and reads as the line
+		 * running away from your fingers. The underline costs no layout, so nothing shifts sideways as it
+		 * moves (the reason the old padded-chip version went). */
+		.now { color: var(--text-muted); text-decoration: underline; text-decoration-color: var(--primary); text-decoration-thickness: 2px; text-underline-offset: 5px; }
 		:host { display: block; }
 	`;
 	resolved?: Resolved;
