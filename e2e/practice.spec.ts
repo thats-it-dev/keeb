@@ -54,7 +54,19 @@ test("the lesson is text, not a field you type into", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
 	await expect(page.locator("tt-practice input, tt-practice textarea, tt-practice [contenteditable]")).toHaveCount(0);
-	await expect(page.locator("tt-practice .now")).toBeVisible(); // one highlighted letter, keybr-style
+	await tap(page, await wanted(page));
+	await expect(page.locator("tt-practice .now")).toBeVisible(); // one underlined letter marks the target
+	const marks = await page.evaluate(() => {
+		const pr = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { shadowRoot: ShadowRoot };
+		return [...pr.shadowRoot.querySelectorAll(".line span")].map((s) => ({ cls: s.className, dec: getComputedStyle(s).textDecorationLine, color: getComputedStyle(s).color }));
+	});
+	const now = marks.find((m) => m.cls === "now");
+	expect(now?.dec).toBe("underline");
+	// The target carries the colour of a letter you have not reached yet. Colour reports what happened --
+	// dark means hit, red means missed -- and the underline alone reports where you are. Give the target a
+	// colour of its own and it sits one step ahead of your typing again.
+	expect(now?.color).toBe(marks.find((m) => m.cls === "todo")?.color);
+	expect(now?.color).not.toBe(marks.find((m) => m.cls === "hit")?.color);
 	// A mistyped character turns red and stays red, even under the cursor.
 	const ch = await wanted(page);
 	await tap(page, ch === "z" ? "y" : "z");
@@ -114,12 +126,94 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 	expect(cursor).toBeGreaterThan(10);
 });
 
+test("progress screen ranks keys instead of saturating every bar", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	for (let i = 0; i < 40; i += 1) {
+		const ch = await wanted(page);
+		if (ch === "") break;
+		// Deliberate pauses, so some keys end up measurably slower than others. A run of uniform synthetic
+		// taps types every key at the same speed, which would make "different times give different widths"
+		// vacuous and let a scale that cannot rank anything pass.
+		if (i % 5 === 4) await page.waitForTimeout(60);
+		await tap(page, ch);
+	}
+	await page.locator("button", { hasText: "Progress" }).click();
+	const rows = page.locator(".krow");
+	expect(await rows.count()).toBeGreaterThan(3);
+	// Only keys with timing get a row. A key never struck has no bar to draw, and 40 empty rows used to
+	// bury the handful that meant something; they get chips instead.
+	expect(await page.locator(".chip").count()).toBeGreaterThan(0);
+	const nums = await page.locator(".krow .num").allInnerTexts();
+	expect(nums.every((n) => /wpm/.test(n))).toBe(true);
+	// No row may render without a name. The space bar's character is a blank, so it used to arrive as an
+	// invisible label on the most-struck key on the board.
+	const caps = await page.locator(".krow .cap").allInnerTexts();
+	expect(caps.length).toBeGreaterThan(3);
+	expect(caps.every((c) => c.trim() !== "")).toBe(true);
+	expect(caps).toContain("space");
+	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.width));
+	expect(widths.every((w) => parseFloat(w) <= 100 && parseFloat(w) >= 2)).toBe(true);
+	// The regression this screen was missing: bars scaled against the goal pinned anything faster than 2x
+	// goal at 100% and the chart ranked nothing. Different times must give different widths.
+	const times = await page.locator(".krow .num").allInnerTexts();
+	const msOf = (t: string) => Number(t.match(/(\d+)ms/)?.[1] ?? -1);
+	const pairs = widths.map((w, i) => ({ ms: msOf(times[i]!), w: parseFloat(w) })).filter((p) => p.ms > 0);
+	const distinct = [...new Set(pairs.map((p) => p.ms))];
+	expect(distinct.length).toBeGreaterThan(1);
+	for (const a of pairs) for (const b of pairs) if (a.ms < b.ms) expect(a.w).toBeGreaterThanOrEqual(b.w);
+	// The strict version, and the one that actually catches the old scale: different times must produce
+	// different bars, not merely non-inverted ones. The goal-relative formula clamped anything faster than
+	// 2x goal to 100%, so a fast run gave one uniform set of widths.
+	expect(new Set(pairs.map((p) => p.w)).size).toBeGreaterThan(1);
+	// The tick is the goal, so it belongs at the same x in every row: the scale's midpoint.
+	const marks = await page.locator(".krow .mark").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
+	expect(marks).toEqual(["50%"]);
+	await expect(page.locator(".card").first()).toContainText("wpm");
+});
+
+test("switching keyboards cannot write the old layout's stats into the new layout's record", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	for (let i = 0; i < 6; i += 1) await tap(page, await wanted(page));
+	const engineKeys = () => page.evaluate(() => Object.keys((document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { stats: object } }).engine.stats));
+	const before = await engineKeys();
+	expect(before.length).toBeGreaterThan(0);
+	await page.locator("button[aria-label='Settings']").click();
+	await page.locator("select").first().selectOption("corne");
+	await ready(page);
+	// Switching layouts must not leave the child lesson holding the previous board's numbers: #flushStats
+	// writes whatever the engine holds under whichever layout is selected. What makes this safe is that
+	// `ready` is false for the whole load, which unmounts <tt-practice> so no keystroke can land in between.
+	expect((await engineKeys()).length).toBe(0);
+	// And typing on the new board must not resurrect a single key from the old one.
+	await tap(page, await wanted(page));
+	expect((await engineKeys()).length).toBeLessThanOrEqual(1);
+});
+
 test("highlights the key the next character lives on", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
 	await tap(page, await wanted(page));
 	const id = await page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId);
 	await expect(key(page, id)).toHaveClass(/\bon\b/);
+});
+
+test("a held key counts once, not once per auto-repeat", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const ch = await wanted(page);
+	const before = await cursorOf(page);
+	// What the OS actually sends while a key is down: the first keydown is fresh, the rest are repeats.
+	await page.evaluate((c) => {
+		for (let i = 0; i < 8; i += 1) window.dispatchEvent(new KeyboardEvent("keydown", { key: c, repeat: i > 0, bubbles: true }));
+	}, ch ?? "a");
+	await page.waitForTimeout(120);
+	expect(await cursorOf(page)).toBe(before + 1);
+	// Repeats used to charge an error to the target key, which paints the letter the learner has NOT
+	// typed yet red -- the thing that reads as "the line is ahead of me".
+	const misses = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { wrong: Set<number> }).wrong.size);
+	expect(misses).toBe(0);
 });
 
 test("a wrong key does not move the cursor", async ({ page }) => {
@@ -156,6 +250,26 @@ test("a finished line starts clean", async ({ page }) => {
 	expect(await cursorOf(page)).toBe(0); // a fresh line is on screen
 	await expect(page.locator("tt-practice .bad")).toHaveCount(0); // and none of its letters are red
 	await expect(page.locator("tt-practice .line .now")).not.toHaveCount(0);
+});
+
+test("a single keystroke is enough to persist", async ({ page }) => {
+	// The first key after a load is the interesting one: #type used to read the engine reference before
+	// calling p.key(), and key() replaces the engine, so that first flush saw undefined and saved nothing.
+	// Typing a whole line hid it, because the second key saved everything. One key, then reload.
+	await page.goto("/");
+	await ready(page);
+	// The line exists a moment before the engine has placed a run in it, and wanted() answers "" for that
+	// gap -- which silently skipped the keystroke and made this flake under load.
+	let ch = await wanted(page);
+	for (let i = 0; i < 50 && ch === ""; i += 1) {
+		await page.waitForTimeout(20);
+		ch = await wanted(page);
+	}
+	expect(ch).not.toBe("");
+	await tap(page, ch);
+	await page.reload();
+	await ready(page);
+	expect(await keysTyped(page)).toBe(1);
 });
 
 test("progress survives a reload", async ({ page }) => {

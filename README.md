@@ -76,8 +76,9 @@ floating point type, so the numbers that work in the browser are already the num
 | M1 geometry × keymap model, SVG keyboard view | shipped on `main` |
 | M2 lesson engine, word generator, IndexedDB, practice pane | shipped on `main` |
 | M3 layout import — a keyboard's `info.json` or a layout editor export | shipped on `main` |
-| M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | in review |
-| M5 publish the lexicons, DNS authority, stats screen | planned |
+| M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | shipped on `main` |
+| M5 publish the lexicons, DNS authority, stats screen | lexicons published; stats screen in review |
+| M6 shareable layouts — publish a `layout` record, browse and load one | planned |
 
 ## Data model
 

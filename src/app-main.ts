@@ -6,7 +6,8 @@ import { deleteBoard, deleteMap, layoutKey, loadBoards, loadMaps, loadSettings, 
 import { auth } from "./atproto/auth.ts";
 import { Sync, type SyncState } from "./atproto/sync.ts";
 import { mergeProgress } from "./atproto/records.ts";
-import { timeToTypeMs, cpmToWpm, wpmFrom, wpmToCpm, type StatMap } from "./stats/stats.ts";
+import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
+import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
@@ -31,6 +32,15 @@ function saved(): { g: string; k: string } {
 	return { g: GEOMETRIES[0].id, k: KEYMAPS[0].id };
 }
 
+// What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on
+// the board, and an invisible row label reads as a bug in the screen rather than as the space bar. A key
+// with no character at all (an unmapped pinky column) falls back to its id, which is at least something
+// to point at.
+function keyLabel(k: { id: string; char: string }): string {
+	if (k.char === " ") return "space";
+	return k.char.trim() === "" ? k.id : k.char;
+}
+
 // Summing per-key samples gives the session totals without double-counting a repeated key.
 function totals(stats: StatMap): { chars: number; errors: number } {
 	let chars = 0;
@@ -50,7 +60,7 @@ const syncStore = {
 };
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -87,11 +97,36 @@ export class AppMain extends LitElement {
 			/* Sign-in is one line of the panel, not a section: it is optional and rarely touched. */
 			.sync { display: flex; gap: 8px; align-items: center; }
 			.sync input { width: 100%; max-width: 12rem; }
+			/* Stats screen: one line per key, so the eye lands on the shortest bars first. */
+			.stats { width: 100%; display: grid; gap: 16px; }
+			.stats h2 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+			.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 14px; }
+			.card { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--code-bg); }
+			.card b { font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+			.card span.label { font-size: 0.75rem; }
+			.rows { display: grid; gap: 5px; }
+			.krow { display: grid; grid-template-columns: 2.2rem 1fr 5.5rem; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
+			.krow .cap { font-weight: 600; }
+			.krow .num { text-align: right; color: var(--text-muted); font-size: 0.8rem; }
+			.track { position: relative; height: 8px; border-radius: 4px; background: var(--code-bg); overflow: hidden; }
+			.bar { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--primary); }
+			.bar.bad { background: var(--accent); }
+			/* The goal line: without it a half-full bar cannot be read as slow or as on target. */
+			.mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-muted); }
+			.next { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--radius); }
+			.empty { margin: 0; color: var(--text-muted); }
+			/* Keys with no data get a chip, not a row: 40 empty bars would bury the 20 that mean something. */
+			.chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+			.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
 		`,
 	];
 
 	geometryId = saved().g;
 	settingsOpen = false;
+	// Which pane is showing. Typing stays the default: a returning learner came to type, and the button is
+	// how the stats screen remains one click away instead of hiding behind a modal. Deliberately not
+	// persisted — losing it on reload costs nothing, and a stored flag is one more thing to get stale.
+	view: "type" | "progress" = "type";
 	keymapId = saved().k;
 	// Layout files the learner imported, straight out of IndexedDB.
 	boards: Geometry[] = [];
@@ -191,6 +226,10 @@ export class AppMain extends LitElement {
 		this.stats = stored;
 		this.targetCpm = this.settings.targetCpm;
 		this.#saved = JSON.stringify(stored);
+		// The switch is safe because ready was false for the whole await, which unmounts <tt-practice>:
+		// #type cannot run, so no keystroke can write another layout's stats under this key. The next render
+		// hands the child the new .resolved, and practice.ts restarts its engine from scratch on that.
+		// If you ever keep the pane mounted across a load, that guarantee goes away and this needs a restart.
 		this.ready = true;
 	}
 
@@ -209,7 +248,10 @@ export class AppMain extends LitElement {
 		if (this.settingsOpen) return; // the modal owns the keyboard while it is up
 		const t = e.target as HTMLElement | null;
 		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-		if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+		// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
+		// that passed through here charged an error to the target key and turned the letter the learner has
+		// not typed yet red. That reads as the line running ahead of the fingers.
+		if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
 		e.preventDefault();
 		void this.#type(e.key);
 	};
@@ -217,12 +259,14 @@ export class AppMain extends LitElement {
 	async #type(ch: string): Promise<void> {
 		const p = this.#practice;
 		if (!p) return;
-		const engine = p.engine;
 		if (!this.#startedAt) this.#startSession();
 		this.#armIdle();
 		this.lastId = p.key(ch, performance.now()) ?? "";
 		this.nowCpm = p.instantCpm;
-		if (engine) await this.#flushStats(engine); // one write per keystroke, deduped inside
+		// Read the engine AFTER the keystroke. p.key() replaces it with a new object; holding the reference
+		// from before the call would persist the stats as they stood one key ago — and on the very first
+		// keystroke that is undefined, so nothing is saved at all.
+		if (p.engine) await this.#flushStats(p.engine);
 	}
 
 	// A session is the span between two silences, which is what the record is named for: it ends when the
@@ -256,19 +300,29 @@ export class AppMain extends LitElement {
 	}
 
 	async #flushStats(engine: NonNullable<TtPractice["engine"]>): Promise<void> {
-		const key = layoutKey(this.geometryId, this.keymapId);
+		// Captured once, at the top. The writes below are awaited, and a board switch can land between them:
+		// reading this.geometryId again would describe the row as the NEW layout while storing it under the
+		// OLD layout's key, and a reader that keys off the fields instead of the row id would disagree with
+		// one that keys off the id. One snapshot, and both agree.
+		const { geometryId: g, keymapId: k } = this;
+		const key = layoutKey(g, k);
 		this.stats = { ...engine.stats };
 		const previous = this.#saved;
 		const now = JSON.stringify(engine.stats);
 		if (previous === now) return; // nothing moved: wrong key, or the line is already finished
 		this.#saved = now;
 		await saveStats(key, this.stats);
-		await saveSettings(key, { ...this.settings, geometry: this.geometryId, keymap: this.keymapId, targetCpm: this.targetCpm, unlocked: engine.ladder.unlocked });
+		await saveSettings(key, { ...this.settings, geometry: g, keymap: k, targetCpm: this.targetCpm, unlocked: engine.ladder.unlocked });
 	}
 
 	#saved = "";
 
 	#pick(part: "g" | "k", value: string): void {
+		// Close the session while the old layout is still selected. #load replaces this.stats with the new
+		// layout's map, and #endSession computes a delta against the baseline it took from the OLD one — that
+		// difference is usually negative, and a negative delta is discarded, so switching mid-session would
+		// silently lose the characters you had just typed.
+		if (part === "g" ? value !== this.geometryId : value !== this.keymapId) void this.#endSession();
 		if (part === "g") this.geometryId = value;
 		else this.keymapId = value;
 	}
@@ -445,8 +499,10 @@ export class AppMain extends LitElement {
 					<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
 					<div class="row">
 						<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
+						<button class="btn ghost" @click=${() => (this.view = this.view === "type" ? "progress" : "type")}>${this.view === "type" ? "Progress" : "Back to typing"}</button>
 						${this.#status(r)}
 					</div>
+					${this.view === "progress" && this.ready ? this.#stats() : nothing}
 					${this.#notice(geo)}
 				</div>
 			</main>
@@ -457,16 +513,63 @@ export class AppMain extends LitElement {
 	// keeps, so they are right on the first paint after a reload, before a single key is pressed.
 	#readout() {
 		const cell = (label: string, value: string) => html`<div class="metric"><span class="label">${label}</span><b>${value}</b></div>`;
-		const ids = Object.keys(this.stats);
-		const avgMs = ids.length ? Math.round(ids.reduce((s, id) => s + timeToTypeMs(this.stats[id]!), 0) / ids.length) : 0;
+		const o = this.#overview();
 		return html`
 			<div class="read">
 				${cell("now", `${cpmToWpm(this.nowCpm)} wpm`)}
-				${cell("session", `${wpmFrom(avgMs)} wpm`)}
-				${cell("avg", `${avgMs} ms/key`)}
+				${cell("avg", `${o.avgWpm} wpm`)}
 				${cell("goal", `${cpmToWpm(this.targetCpm)} wpm`)}
 			</div>
 		`;
+	}
+
+	// The screen reads from the same derived numbers as the ladder, so "at goal" here and "unlocks next"
+	// in the engine cannot mean different things.
+	#overview() {
+		const r = this.#resolved;
+		// A space has to be spelled out: it is the most-struck key on the board and an invisible row label
+		// reads as a bug in the screen rather than as the space bar. Keys with no character at all (an
+		// unmapped pinky column) fall back to their id, which is at least something to point at.
+		const keys: KeyInfo[] = r.keys.map((k) => ({ id: k.id, label: keyLabel(k), hand: k.hand === "l" ? "left" : "right" }));
+		const unlocked = this.settings.unlocked?.length ? this.settings.unlocked : keys.map((k) => k.id).slice(0, 9);
+		return overview(this.stats, this.targetCpm, keys, unlocked);
+	}
+
+	#stats() {
+		const o = this.#overview();
+		const card = (label: string, value: string) => html`<div class="card"><span class="label">${label}</span><b>${value}</b></div>`;
+		const chips = (list: typeof o.keys) => html`<span class="chips">${list.map((k) => html`<span class="chip" title="no samples yet">${k.label}</span>`)}</span>`;
+		// One scale for every row, goal in the middle: the tick is at 50% here and in barWidth, and the two
+		// must not drift or the chart reads as "past the line" for keys that are not.
+		const row = (k: (typeof o.keys)[number]) => html`
+			<div class="krow ${k.next ? "next" : ""}">
+				<span class="cap">${k.label}</span>
+				<span class="track"><span class="bar ${k.conf < 1 ? "bad" : ""}" style="width:${barWidth(k.ms, this.#goalMs())}%"></span><span class="mark" style="left:${GOAL_AT}%"></span></span>
+				<span class="num">${k.wpm} wpm · ${k.ms}ms${k.errors ? ` · ${k.errors} miss` : ""}</span>
+			</div>
+		`;
+		if (!o.covered) {
+			return html`<section class="stats"><h2>progress</h2><p class="empty">A key gets a bar once you have hit it correctly. Hit the highlighted letter to start.</p></section>`;
+		}
+		return html`
+			<section class="stats">
+				<h2>progress</h2>
+				<div class="grid">
+					${card("average", `${o.avgWpm} wpm`)} ${card("at goal", `${o.readyPct}%`)} ${card("errors", `${o.errPct}%`)} ${card("keys", `${o.covered}/${o.total}`)}
+					${card("hands", `${o.handBalance}/${100 - o.handBalance}`)}
+				</div>
+				<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. The lesson weights those keys already.` : ""}</p>
+				<div class="rows">${o.measured.map(row)}</div>
+				${o.untried.length ? html`<p class="empty">Unlocked but never practised ${chips(o.untried)}</p>` : nothing}
+				${o.waiting.length - o.untried.length > 0
+					? html`<p class="empty">Still locked ${chips(o.waiting.filter((k) => !o.untried.some((u) => u.id === k.id)))}</p>`
+					: nothing}
+			</section>
+		`;
+	}
+
+	#goalMs() {
+		return this.targetCpm <= 0 ? 0 : Math.round(60000 / this.targetCpm);
 	}
 
 	// Clicks on the ::backdrop land on the dialog element itself, not on its children.
