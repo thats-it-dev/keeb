@@ -628,7 +628,11 @@ export class AppMain extends LitElement {
 				</div>
 				<svg viewBox="0 0 320 64" class="chart" role="img" aria-label=${`${h.activeDays} days practised, best day ${h.best?.wpm ?? 0} wpm, goal ${goal} wpm`}>
 					<line x1="0" x2="320" y1=${y(goal).toFixed(1)} y2=${y(goal).toFixed(1)} class="goal" />
-					${pts.map((p, i) => svg`<rect x=${(i * w + w * 0.18).toFixed(1)} y=${y(p.wpm).toFixed(1)} width=${(w * 0.64).toFixed(1)} height=${Math.max(1, 60 - y(p.wpm)).toFixed(1)} class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min`}</title></rect>`)}
+					${pts.map((p, i) =>
+						p.sessions === 0
+							? nothing // a day you skipped draws nothing at all: an empty slot is the information
+							: svg`<rect data-day=${p.day} x=${(i * w + w * 0.18).toFixed(1)} y=${y(p.wpm).toFixed(1)} width=${(w * 0.64).toFixed(1)} height=${Math.max(1, 60 - y(p.wpm)).toFixed(1)} class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min, ${p.sessions} session(s)`}</title></rect>`,
+					)}
 				</svg>
 				<p class="empty">
 					${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${this.sessions.length > mine.length ? `, plus ${this.sessions.length - mine.length} session(s) on other boards` : ""}. The repo keeps

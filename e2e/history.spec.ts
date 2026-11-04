@@ -69,8 +69,13 @@ test("cached sessions draw a day of bars and honest totals", async ({ page }) =>
 
 test("a day with no sessions is a gap, not a point on a line", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "b1", atMs: noon(0) }), row({ rkey: "b2", atMs: noon(4) })]);
-	// Two bars for two days, not five days of interpolated slope.
-	expect(await page.locator(".hist .chart rect").count()).toBe(2);
+	const rects = await page.locator(".hist .chart rect").evaluateAll((els) =>
+		els.map((e) => ({ x: Number(e.getAttribute("x")), day: e.getAttribute("data-day") ?? "" })),
+	);
+	expect(rects.length).toBe(2); // two bars, and nothing drawn into the three skipped days
+	// Position is the assertion that matters: two bars side by side would pass a count check while lying
+	// about the week. Five day-slots across 320 units is 64 each, so four days apart is 256.
+	expect(Math.abs(rects[1]!.x - rects[0]!.x)).toBeCloseTo(256, 0);
 	await expect(page.locator(".hist .card", { hasText: "streak" }).locator("b")).toHaveText("1 d");
 });
 
@@ -89,7 +94,7 @@ test("history from another board does not leak into this one's chart", async ({ 
 
 test("a session with no readable date counts, but is not drawn", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "d1", atMs: 0, chars: 700, ms: 60_000 }), row({ rkey: "d2", atMs: noon(0), chars: 300, ms: 60_000 })]);
-	expect(await page.locator(".hist .chart rect").count()).toBe(1);
+	expect(await page.locator(".hist .chart rect").count()).toBe(1); // the undated one is in the totals only
 	await expect(page.locator(".hist .card", { hasText: "characters" }).locator("b")).toHaveText("1000");
 	await expect(page.locator(".hist .card", { hasText: "sessions" }).locator("b")).toHaveText("2");
 	await expect(page.locator(".hist")).toContainText("no readable date");

@@ -50,12 +50,9 @@ export function dayKey(ms: number): string {
 	return `${d.getFullYear()}-${m}-${day}`;
 }
 
-/** The day before a day key, in local time, by stepping back noon minus a day (dollar-free DST math). */
+/** The day before a day key, in local time. */
 function prevDay(day: string): string {
-	const [y, m, d] = day.split("-").map(Number);
-	const noon = new Date(y, (m ?? 1) - 1, d ?? 1, 12);
-	noon.setDate(noon.getDate() - 1);
-	return dayKey(noon.getTime());
+	return shiftDay(day, -1);
 }
 
 const wpmOf = (chars: number, ms: number): number => (ms <= 0 || chars <= 0 ? 0 : Math.round(chars / (ms / 60000) / CHARS_PER_WORD));
@@ -128,15 +125,46 @@ function streak(days: string[], today: string): number {
 }
 
 /**
- * One point per day for the sparkline, oldest left. `limit` keeps the chart readable on a phone; the
- * totals are unaffected, because they come from `history`, not from what is drawn.
+ * One point per CALENDAR day, oldest left, across the span the data covers. Not one point per day that
+ * has data: a bar chart indexed by position hides which days were skipped, which is the one thing a
+ * practice history has to show honestly. A skipped day arrives with sessions 0 and draws nothing.
+ *
+ * `limit` caps the span rather than the sessions shown, and the totals are unaffected, because they come
+ * from history(), not from what is drawn.
  */
-export function series(h: History, limit = 30): { day: string; wpm: number; minutes: number }[] {
-	const take = h.days.slice(0, limit); // days arrive newest-first
-	// Oldest-left for drawing, indexed rather than reversed: mutating a copy reads as safe and is the
-	// thing a reviewer has to re-check, while this cannot touch h.days at all.
-	return take.map((_, i) => {
-		const d = take[take.length - 1 - i]!;
-		return { day: d.day, wpm: d.wpm, minutes: d.minutes };
-	});
+export function series(h: History, limit = 30): Point[] {
+	if (!h.days.length) return [];
+	const byDay = new Map(h.days.map((d) => [d.day, d]));
+	// Newest day with data, even if that is yesterday at 00:05; anchoring on today would pad the right edge
+	// with empty days every morning.
+	const newest = h.days[0]!.day;
+	const span = Math.min(daysBetween(h.days[h.days.length - 1]!.day, newest) + 1, Math.max(1, limit));
+	const out: Point[] = [];
+	for (let i = span - 1; i >= 0; i -= 1) {
+		// Walking backwards from the newest day and emitting oldest-first, by index: no copy, no reverse.
+		const day = shiftDay(newest, -i);
+		const d = byDay.get(day);
+		out.push({ day, wpm: d?.wpm ?? 0, minutes: d?.minutes ?? 0, sessions: d?.sessions ?? 0 });
+	}
+	return out;
 }
+
+export type Point = { day: string; wpm: number; minutes: number; sessions: number };
+
+/** The day `delta` days from `day`, in local time. Noon arithmetic keeps DST from shifting the date. */
+function shiftDay(day: string, delta: number): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const noon = new Date(y!, (m ?? 1) - 1, d ?? 1, 12);
+	noon.setDate(noon.getDate() + delta);
+	return dayKey(noon.getTime());
+}
+
+function daysBetween(from: string, to: string): number {
+	const [ay, am, ad] = from.split("-").map(Number);
+	const [by, bm, bd] = to.split("-").map(Number);
+	const a = new Date(ay!, (am ?? 1) - 1, ad ?? 1, 12).getTime();
+	const b = new Date(by!, (bm ?? 1) - 1, bd ?? 1, 12).getTime();
+	return Math.max(0, Math.round((b - a) / DAY));
+}
+
+const DAY = 86_400_000;

@@ -119,6 +119,24 @@ describe("history", () => {
 		expect(h.sessions).toBe(50); // the cap is a drawing decision, not a data one
 	});
 
+	it("spans calendar days, so a skipped day is a point with nothing in it", () => {
+		// A series indexed by which days HAVE data is the bug this guards: nine sessions across eleven days
+		// would draw as nine adjacent bars and read as an unbroken run of practice.
+		const h = history([s({ atMs: noon(0) }), s({ atMs: noon(4) })]);
+		const pts = series(h);
+		expect(pts.length).toBe(5);
+		expect(pts.map((p) => p.sessions)).toEqual([1, 0, 0, 0, 1]);
+		expect(pts.map((p) => p.wpm)).toEqual([pts[0]!.wpm, 0, 0, 0, pts[4]!.wpm]);
+	});
+
+	it("anchors on the newest day with data rather than today", () => {
+		// Checking the chart at 00:05 should not pad the right edge with empty days and shrink the bars.
+		const h = history([s({ atMs: noon(1) }), s({ atMs: noon(2) })]);
+		const pts = series(h);
+		expect(pts.length).toBe(2);
+		expect(pts[1]!.sessions).toBe(1);
+	});
+
 	it("leaves the days array alone when building a series", () => {
 		const h = history([s({ atMs: noon(0) }), s({ atMs: noon(1) })]);
 		const before = h.days.map((d) => d.day);
