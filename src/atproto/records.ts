@@ -129,6 +129,44 @@ export function fromProgressRecord(rec: Record<string, unknown> | undefined): { 
 	return { layout: rec.layout, stats };
 }
 
+/** A session as the app wants it. `atMs` is when it happened, which the record itself does not say. */
+export type SessionRow = { rkey: string; layout: string; atMs: number; chars: number; errors: number; ms: number };
+
+/**
+ * When a session was typed, in ms since the epoch. There is no time field on the record: the lexicon is
+ * published and has none, so the tid in the rkey is the timestamp, which is what `pruneSessions` already
+ * relies on. Note `TID.timestamp()` is MICROSECONDS, and a tid that does not parse just yields a
+ * nonsense number rather than throwing -- so it is range-checked and treated as unknown when absurd.
+ * An unknown session still counts in the totals; it only cannot be placed on a day.
+ */
+export function sessionTimeMs(rkey: string): number {
+	let micros: number;
+	try {
+		micros = new TID(rkey).timestamp();
+	} catch {
+		return 0;
+	}
+	if (!Number.isFinite(micros) || micros <= 0) return 0;
+	const ms = Math.round(micros / 1000);
+	// 2020-01-01 to one day from now. A real session is inside that; a garbage tid is not.
+	return ms >= 1577836800000 && ms <= Date.now() + 86_400_000 ? ms : 0;
+}
+
+/** One session record from the network, or nothing usable. */
+export function fromSessionRecord(rec: Record<string, unknown> | undefined, rkey: string): SessionRow | undefined {
+	if (!rec || rec.$type !== SESSION || typeof rec.layout !== "string") return undefined;
+	return {
+		rkey,
+		layout: rec.layout,
+		atMs: sessionTimeMs(rkey),
+		chars: n(rec.chars),
+		errors: n(rec.errors),
+		// `ms` is the field name on the wire and means the session's wall-clock span. Renamed on the way in
+		// because every other ms in this app is a per-key timing, and a collision there is how charts lie.
+		ms: n(rec.ms),
+	};
+}
+
 /**
  * Local and remote progress, combined. `mergeAll` adds the sample counts and weights each mean by its
  * own count, which is why two devices can drift apart for a week and still merge without a conflict.

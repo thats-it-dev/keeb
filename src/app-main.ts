@@ -1,13 +1,14 @@
-import { LitElement, html, css, nothing } from "https://kit.thatsit.app/lit.js";
+import { LitElement, html, svg, css, nothing } from "https://kit.thatsit.app/lit.js";
 import { sharedStyles } from "https://kit.thatsit.app/kit.js";
 import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeometry } from "./data/geometries.ts";
 import { KEYMAPS, allKeymaps, forgetKeymap, keymapById, registerKeymap } from "./data/keymaps.ts";
-import { deleteBoard, deleteMap, layoutKey, loadBoards, loadMaps, loadSettings, loadStats, loadSyncState, saveBoard, saveMap, saveSettings, saveStats, saveSyncState, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { deleteBoard, deleteMap, layoutKey, loadBoards, loadHistory, loadMaps, loadSettings, loadStats, loadSyncState, saveBoard, saveHistory, saveMap, saveSettings, saveStats, saveSyncState, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { auth } from "./atproto/auth.ts";
 import { Sync, type SyncState } from "./atproto/sync.ts";
-import { mergeProgress } from "./atproto/records.ts";
+import { mergeProgress, type SessionRow } from "./atproto/records.ts";
 import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
+import { history as buildHistory, series } from "./stats/history.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
@@ -41,9 +42,13 @@ function keyLabel(k: { id: string; char: string }): string {
 	return k.char.trim() === "" ? k.id : k.char;
 }
 
+// The one card template, so the key stats and the history cannot render the same kind of number two ways.
+function card(label: string, value: string) {
+	return html`<div class="card"><span class="label">${label}</span><b>${value}</b></div>`;
+}
+
 // Summing per-key samples gives the session totals without double-counting a repeated key.
-function totals(stats: StatMap): { chars: number; errors: number } {
-	let chars = 0;
+function totals(stats: StatMap): { chars: number; errors: number } {	let chars = 0;
 	let errors = 0;
 	for (const s of Object.values(stats)) {
 		chars += s.samples;
@@ -60,7 +65,7 @@ const syncStore = {
 };
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -118,6 +123,14 @@ export class AppMain extends LitElement {
 			/* Keys with no data get a chip, not a row: 40 empty bars would bury the 20 that mean something. */
 			.chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 			.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
+			/* History: one bar per day. Bars, not a line -- a day you skipped is a gap, and a line would
+			 * interpolate a slope that never happened. */
+			.hist { display: grid; gap: 10px; width: 100%; }
+			.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+			.chart { width: 100%; height: 4.5rem; display: block; }
+			.chart .goal { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 4 3; }
+			.chart rect.ok { fill: var(--primary); }
+			.chart rect.under { fill: var(--accent); }
 		`,
 	];
 
@@ -127,6 +140,8 @@ export class AppMain extends LitElement {
 	// how the stats screen remains one click away instead of hiding behind a modal. Deliberately not
 	// persisted — losing it on reload costs nothing, and a stored flag is one more thing to get stale.
 	view: "type" | "progress" = "type";
+	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
+	sessions: SessionRow[] = [];
 	keymapId = saved().k;
 	// Layout files the learner imported, straight out of IndexedDB.
 	boards: Geometry[] = [];
@@ -175,6 +190,13 @@ export class AppMain extends LitElement {
 			// Closing the tab ends a practice session; the browser gets one last look at it.
 			window.addEventListener("pagehide", () => void this.#endSession());
 		});
+		// Kept out of the call above on purpose. The lesson cannot start until that one resolves, and cached
+		// sessions are an add-on: a history store that rejects or stalls must never be why nobody can type.
+		void loadHistory()
+			.then((sessions) => {
+				this.sessions = sessions;
+			})
+			.catch(() => undefined);
 	}
 
 	// Restore a session if this browser has one, and finish a sign-in redirect if one is in flight.
@@ -339,7 +361,11 @@ export class AppMain extends LitElement {
 		if (!this.#sync) return;
 		this.syncNote = "";
 		const key = layoutKey(this.geometryId, this.keymapId);
-		const { settings, progress } = await this.#sync.pull();
+		const { settings, progress, sessions } = await this.#sync.pull();
+		// Cached only once the network has actually answered. saveHistory replaces the cache wholesale, so
+		// calling it on a failed pull would erase the history the offline chart is drawing.
+		await saveHistory(sessions);
+		this.sessions = sessions;
 		const remote = progress[key];
 		if (remote) {
 			const merged = mergeProgress(this.stats, remote);
@@ -537,8 +563,9 @@ export class AppMain extends LitElement {
 
 	#stats() {
 		const o = this.#overview();
-		const card = (label: string, value: string) => html`<div class="card"><span class="label">${label}</span><b>${value}</b></div>`;
 		const chips = (list: typeof o.keys) => html`<span class="chips">${list.map((k) => html`<span class="chip" title="no samples yet">${k.label}</span>`)}</span>`;
+		// "waiting" is every key with no samples, unlocked or not; the locked ones are the rest.
+		const stillLocked = o.waiting.filter((k) => !o.untried.some((u) => u.id === k.id));
 		// One scale for every row, goal in the middle: the tick is at 50% here and in barWidth, and the two
 		// must not drift or the chart reads as "past the line" for keys that are not.
 		const row = (k: (typeof o.keys)[number]) => html`
@@ -548,28 +575,68 @@ export class AppMain extends LitElement {
 				<span class="num">${k.wpm} wpm · ${k.ms}ms${k.errors ? ` · ${k.errors} miss` : ""}</span>
 			</div>
 		`;
-		if (!o.covered) {
-			return html`<section class="stats"><h2>progress</h2><p class="empty">A key gets a bar once you have hit it correctly. Hit the highlighted letter to start.</p></section>`;
-		}
+		// History is its own section, outside the keys branch. It comes from synced sessions, and a browser
+		// that has typed nothing local can still hold a year of practice on its repo -- gating the chart on
+		// local per-key stats hid exactly the person who most wants to see it.
+		const keys = o.covered
+			? html`
+					<div class="grid">
+						${card("average", `${o.avgWpm} wpm`)} ${card("at goal", `${o.readyPct}%`)} ${card("errors", `${o.errPct}%`)} ${card("keys", `${o.covered}/${o.total}`)}
+						${card("hands", `${o.handBalance}/${100 - o.handBalance}`)}
+					</div>
+					<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. The lesson weights those keys already.` : ""}</p>
+					<div class="rows">${o.measured.map(row)}</div>
+					${o.untried.length ? html`<p class="empty">Unlocked but never practised ${chips(o.untried)}</p>` : nothing}
+					${stillLocked.length ? html`<p class="empty">Still locked ${chips(stillLocked)}</p>` : nothing}
+				`
+			: html`<p class="empty">A key gets a bar once you have hit it correctly. Hit the highlighted letter to start.</p>`;
 		return html`
 			<section class="stats">
 				<h2>progress</h2>
-				<div class="grid">
-					${card("average", `${o.avgWpm} wpm`)} ${card("at goal", `${o.readyPct}%`)} ${card("errors", `${o.errPct}%`)} ${card("keys", `${o.covered}/${o.total}`)}
-					${card("hands", `${o.handBalance}/${100 - o.handBalance}`)}
-				</div>
-				<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. The lesson weights those keys already.` : ""}</p>
-				<div class="rows">${o.measured.map(row)}</div>
-				${o.untried.length ? html`<p class="empty">Unlocked but never practised ${chips(o.untried)}</p>` : nothing}
-				${o.waiting.length - o.untried.length > 0
-					? html`<p class="empty">Still locked ${chips(o.waiting.filter((k) => !o.untried.some((u) => u.id === k.id)))}</p>`
-					: nothing}
+				${keys}
+				${this.#history()}
 			</section>
 		`;
 	}
 
 	#goalMs() {
 		return this.targetCpm <= 0 ? 0 : Math.round(60000 / this.targetCpm);
+	}
+
+	// Practice history for the board you are on: speed on a Go60 says nothing about the same fingers on a
+	// Corne, so this is filtered by layout exactly like the key bars above it. The character count here is
+	// the honest one the key screen could not show: it adds up what each session recorded, where per-key
+	// `samples` is a weighted mean and sums to nothing meaningful.
+	#history() {
+		const key = layoutKey(this.geometryId, this.keymapId);
+		const mine = this.sessions.filter((s) => s.layout === key);
+		if (!mine.length) return nothing;
+		const h = buildHistory(mine);
+		const pts = series(h, 40);
+		const goal = cpmToWpm(this.targetCpm);
+		const top = Math.max(goal * 1.25, ...pts.map((p) => p.wpm), 1);
+		// Baseline at y=60, the tallest bar 54 units high; the goal line uses the same mapping, so a bar
+		// that clears it means the same thing as the line says.
+		const y = (v: number) => 60 - (Math.min(v, top) / top) * 54;
+		const w = 320 / pts.length;
+		return html`
+			<div class="hist">
+				<h3>history · ${geometryById(this.geometryId).name}</h3>
+				<div class="grid">
+					${card("sessions", `${h.sessions}`)} ${card("characters", `${h.chars}`)} ${card("practised", `${h.minutes} min`)} ${card("streak", `${h.streak} d`)}
+					${card("best day", `${h.best?.wpm ?? 0} wpm`)}
+				</div>
+				<svg viewBox="0 0 320 64" class="chart" role="img" aria-label=${`${h.activeDays} days practised, best day ${h.best?.wpm ?? 0} wpm, goal ${goal} wpm`}>
+					<line x1="0" x2="320" y1=${y(goal).toFixed(1)} y2=${y(goal).toFixed(1)} class="goal" />
+					${pts.map((p, i) => svg`<rect x=${(i * w + w * 0.18).toFixed(1)} y=${y(p.wpm).toFixed(1)} width=${(w * 0.64).toFixed(1)} height=${Math.max(1, 60 - y(p.wpm)).toFixed(1)} class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min`}</title></rect>`)}
+				</svg>
+				<p class="empty">
+					${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${this.sessions.length > mine.length ? `, plus ${this.sessions.length - mine.length} session(s) on other boards` : ""}. The repo keeps
+					the newest 50 sessions per layout, so these totals are that window rather than your whole life
+					${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
+				</p>
+			</div>
+		`;
 	}
 
 	// Clicks on the ::backdrop land on the dialog element itself, not on its children.

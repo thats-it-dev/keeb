@@ -74,6 +74,23 @@ describe("sync", () => {
 		expect(store.state.progressRkeys["go60+qwerty"]).toBe("2222abc");
 	});
 
+	it("pulls the sessions the repo keeps, dated from their rkey", async () => {
+		const tid = newKey();
+		const { session } = fake({
+			[SESSION]: [
+				{ uri: `at://${DID}/${SESSION}/${tid}`, value: { $type: SESSION, layout: "go60+qwerty", chars: 500, errors: 3, ms: 61_000, stats: [] } },
+				{ uri: `at://${DID}/${SESSION}/self`, value: { $type: SESSION, layout: "go60+qwerty", chars: 10, errors: 0, ms: 1000, stats: [] } },
+				{ uri: `at://${DID}/${PROGRESS}/wrong`, value: { $type: PROGRESS, layout: "x", stats: [], updatedAt: 1 } },
+			],
+		});
+		const res = await new Sync(session, memStore()).pull();
+		expect(res.sessions.length).toBe(2); // a record of another type in the listing is skipped
+		expect(res.sessions[0]).toMatchObject({ rkey: tid, layout: "go60+qwerty", chars: 500, errors: 3, ms: 61_000 });
+		expect(res.sessions[0]!.atMs).toBeGreaterThan(0);
+		// A rkey that is not a tid still counts in the totals; it simply cannot be placed on a day.
+		expect(res.sessions[1]!.atMs).toBe(0);
+	});
+
 	it("takes the newest of two progress records for one layout instead of averaging them", async () => {
 		const now = Math.round(Date.now() / 1000);
 		const { session } = fake({

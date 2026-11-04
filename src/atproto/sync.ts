@@ -4,7 +4,7 @@
 // on as if there were no network. And the local copy stays authoritative while you type — sync happens
 // around a session, never inside a keystroke, because a slow PDS must not show up as a slow typist.
 import { PROGRESS, SESSION, SETTINGS } from "./lexicons.ts";
-import { fromProgressRecord, fromSettingsRecord, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord } from "./records.ts";
+import { fromProgressRecord, fromSessionRecord, fromSettingsRecord, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, type SessionRow } from "./records.ts";
 import type { Settings } from "../data/store.ts";
 import type { StatMap } from "../stats/stats.ts";
 import type { Session } from "./auth.ts";
@@ -69,12 +69,13 @@ export class Sync {
 	constructor(private s: Session, private store: SyncStore) {}
 
 	/**
-	 * Everything the network knows that this browser does not. Returns the settings to adopt and the
-	 * progress to merge, per layout; the caller decides when local typing stops being in the way.
+	 * Everything the network knows that this browser does not. Returns the settings to adopt, the progress
+	 * to merge per layout, and every session the repo still keeps; the caller decides when local typing
+	 * stops being in the way.
 	 */
-	async pull(): Promise<{ settings: Partial<Settings>; progress: Record<string, StatMap> }> {
+	async pull(): Promise<{ settings: Partial<Settings>; progress: Record<string, StatMap>; sessions: SessionRow[] }> {
 		const state = await this.store.load();
-		const [records, settings] = await Promise.all([list(this.s, PROGRESS), list(this.s, SETTINGS)]);
+		const [records, settings, sessions] = await Promise.all([list(this.s, PROGRESS), list(this.s, SETTINGS), list(this.s, SESSION)]);
 		const progress: Record<string, StatMap> = {};
 		const seen = new Map<string, number>();
 		for (const rec of records) {
@@ -92,7 +93,20 @@ export class Sync {
 		}
 		state.lastPull = Math.round(Date.now() / 1000);
 		await this.store.save(state);
-		return { settings: fromSettingsRecord(settings.sort((a, b) => Number(b.value.updatedAt ?? 0) - Number(a.value.updatedAt ?? 0))[0]?.value), progress };
+		// The newest settings record wins. Picked rather than sorted: sorting mutates the array the caller
+		// handed us nothing about, and one pass with a comparator says the same thing without the side effect.
+		const newest = settings.reduce<{ at: number; value: Record<string, unknown> } | undefined>((top, r) => {
+			const at = Number(r.value.updatedAt ?? 0);
+			return !top || at >= top.at ? { at, value: r.value } : top;
+		}, undefined);
+		return {
+			settings: fromSettingsRecord(newest?.value),
+			progress,
+			sessions: sessions.flatMap((r) => {
+				const parsed = fromSessionRecord(r.value, rkeyOf(r.uri));
+				return parsed ? [parsed] : [];
+			}),
+		};
 	}
 
 	async pushSettings(s: Settings, nowMs: number): Promise<void> {
