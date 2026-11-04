@@ -127,14 +127,17 @@ test("progress screen shows per-key bars and never invents a speed for an untouc
 	// One row per key on the board, not one row per key with data: a missing key is the useful fact.
 	expect(await rows.count()).toBeGreaterThan(30);
 	const nums = await page.locator(".krow .num").allInnerTexts();
-	// A never-struck key must read as blank. If it inherited the 0 ms EWMA it would show "2400 wpm",
-	// which is the exact lie this screen exists to avoid.
-	expect(nums.some((n) => n.trim() === "—")).toBe(true);
-	expect(nums.some((n) => /2400|12000/.test(n))).toBe(false);
-	// The bar is a percentage width, so an untouched key must render 0%, not a full one.
+	// A never-struck key must read as blank, not as a speed. This is the exact lie the screen exists to
+	// avoid: an untouched key carries ttMs16 0, and 0 ms per key converts to a triumphant 2400 wpm.
+	// Asserting the blank pairing rather than banning high numbers -- synthetic taps on the phone viewport
+	// land a few ms apart, so a genuinely practised key can honestly show a silly wpm there.
+	const blank = nums.filter((n) => n.trim() === "—").length;
+	expect(blank).toBeGreaterThan(0);
+	// The same rows must have no bar. If the two disagree, one of them is lying about which keys are empty.
 	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.width));
-	expect(widths.filter((w) => w === "0%").length).toBeGreaterThan(0);
-	expect(widths.some((w) => parseFloat(w) > 200)).toBe(false);
+	expect(widths.filter((w) => w === "0%").length).toBe(blank);
+	// Bars share one capped scale, so nothing may overflow its track.
+	expect(widths.every((w) => parseFloat(w) <= 100)).toBe(true);
 	await expect(page.locator(".card").first()).toContainText("wpm");
 });
 
