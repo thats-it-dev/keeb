@@ -54,7 +54,17 @@ test("the lesson is text, not a field you type into", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
 	await expect(page.locator("tt-practice input, tt-practice textarea, tt-practice [contenteditable]")).toHaveCount(0);
-	await expect(page.locator("tt-practice .now")).toBeVisible(); // one highlighted letter, keybr-style
+	await tap(page, await wanted(page));
+	await expect(page.locator("tt-practice .now")).toBeVisible(); // one underlined letter marks the target
+	const marks = await page.evaluate(() => {
+		const pr = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { shadowRoot: ShadowRoot };
+		return [...pr.shadowRoot.querySelectorAll(".line span")].map((s) => ({ cls: s.className, dec: getComputedStyle(s).textDecorationLine, color: getComputedStyle(s).color }));
+	});
+	const now = marks.find((m) => m.cls === "now");
+	expect(now?.dec).toBe("underline");
+	// The target shares the colour of the letters already hit. A loud colour sitting one step ahead of the
+	// fingers is what read as the line accelerating, so the underline carries "here" and the colour does not.
+	expect(now?.color).toBe(marks.find((m) => m.cls === "hit")?.color);
 	// A mistyped character turns red and stays red, even under the cursor.
 	const ch = await wanted(page);
 	await tap(page, ch === "z" ? "y" : "z");
@@ -246,7 +256,15 @@ test("a single keystroke is enough to persist", async ({ page }) => {
 	// Typing a whole line hid it, because the second key saved everything. One key, then reload.
 	await page.goto("/");
 	await ready(page);
-	await tap(page, await wanted(page));
+	// The line exists a moment before the engine has placed a run in it, and wanted() answers "" for that
+	// gap -- which silently skipped the keystroke and made this flake under load.
+	let ch = await wanted(page);
+	for (let i = 0; i < 50 && ch === ""; i += 1) {
+		await page.waitForTimeout(20);
+		ch = await wanted(page);
+	}
+	expect(ch).not.toBe("");
+	await tap(page, ch);
 	await page.reload();
 	await ready(page);
 	expect(await keysTyped(page)).toBe(1);
