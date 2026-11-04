@@ -32,6 +32,15 @@ function saved(): { g: string; k: string } {
 	return { g: GEOMETRIES[0].id, k: KEYMAPS[0].id };
 }
 
+// What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on
+// the board, and an invisible row label reads as a bug in the screen rather than as the space bar. A key
+// with no character at all (an unmapped pinky column) falls back to its id, which is at least something
+// to point at.
+function keyLabel(k: { id: string; char: string }): string {
+	if (k.char === " ") return "space";
+	return k.char.trim() === "" ? k.id : k.char;
+}
+
 // Summing per-key samples gives the session totals without double-counting a repeated key.
 function totals(stats: StatMap): { chars: number; errors: number } {
 	let chars = 0;
@@ -515,7 +524,10 @@ export class AppMain extends LitElement {
 	// in the engine cannot mean different things.
 	#overview() {
 		const r = this.#resolved;
-		const keys: KeyInfo[] = r.keys.map((k) => ({ id: k.id, label: k.char || k.id, hand: k.hand === "l" ? "left" : "right" }));
+		// A space has to be spelled out: it is the most-struck key on the board and an invisible row label
+		// reads as a bug in the screen rather than as the space bar. Keys with no character at all (an
+		// unmapped pinky column) fall back to their id, which is at least something to point at.
+		const keys: KeyInfo[] = r.keys.map((k) => ({ id: k.id, label: keyLabel(k), hand: k.hand === "l" ? "left" : "right" }));
 		const unlocked = this.settings.unlocked?.length ? this.settings.unlocked : keys.map((k) => k.id).slice(0, 9);
 		return overview(this.stats, this.targetCpm, keys, unlocked);
 	}

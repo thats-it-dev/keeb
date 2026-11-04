@@ -134,6 +134,12 @@ test("progress screen ranks keys instead of saturating every bar", async ({ page
 	expect(await page.locator(".chip").count()).toBeGreaterThan(0);
 	const nums = await page.locator(".krow .num").allInnerTexts();
 	expect(nums.every((n) => /wpm/.test(n))).toBe(true);
+	// No row may render without a name. The space bar's character is a blank, so it used to arrive as an
+	// invisible label on the most-struck key on the board.
+	const caps = await page.locator(".krow .cap").allInnerTexts();
+	expect(caps.length).toBeGreaterThan(3);
+	expect(caps.every((c) => c.trim() !== "")).toBe(true);
+	expect(caps).toContain("space");
 	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.width));
 	expect(widths.every((w) => parseFloat(w) <= 100 && parseFloat(w) >= 2)).toBe(true);
 	// The regression this screen was missing: bars scaled against the goal pinned anything faster than 2x
