@@ -10,6 +10,8 @@ import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { history as buildHistory, series, type Point } from "./stats/history.ts";
 import { demoSessions, isPreviewHost } from "./stats/demo.ts";
+import { insightPanel } from "./stats/panel.ts";
+import "./stats/panel-element.ts";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { line } from "d3-shape";
 import { max } from "d3-array";
@@ -138,7 +140,10 @@ export class AppMain extends LitElement {
 			.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
 			/* History: a line per day, broken at the days you skipped -- an unbroken slope through a rest day
 			 * would claim a decline that never happened. */
-			.hist { display: grid; gap: 10px; width: 100%; }
+			.hist { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: start; width: 100%; }
+			.hist > .chart, .hist > .grid, .hist > .empty, .hist > .demo-note { grid-column: 1; }
+			.hist > .head { grid-column: 1 / -1; }
+			@media (max-width: 46rem) { .hist { grid-template-columns: 1fr; } .hist > .chart, .hist > .grid, .hist > .empty, .hist > .demo-note { grid-column: 1; } }
 			.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.chart { width: 100%; height: 8rem; display: block; overflow: visible; }
 			.chart text { font-size: 8px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -645,7 +650,7 @@ export class AppMain extends LitElement {
 			if (this.sessions.length || !isPreviewHost(location.hostname, __APP_NAME__)) return nothing;
 			return html`
 				<div class="hist">
-					<h3>history · ${geometryById(this.geometryId).name}</h3>
+					<h3 class="head">history · ${geometryById(this.geometryId).name}</h3>
 					<p class="demo-note">
 						<b>preview</b> No synced sessions yet.
 						<button class="link" @click=${() => this.#demo(true)}>Show demo sessions</button>
@@ -712,6 +717,7 @@ export class AppMain extends LitElement {
 					the newest 50 sessions per layout, so these totals are that window rather than your whole life
 					${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
 				</p>
+				<tt-insight-panel .cards=${insightPanel(mine, this.stats, this.targetCpm)}></tt-insight-panel>
 			</div>
 		`;
 	}

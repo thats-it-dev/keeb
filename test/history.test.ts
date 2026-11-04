@@ -15,6 +15,7 @@ const s = (over: Partial<SessionRow> & { atMs: number }): SessionRow => ({
 	chars: 500,
 	errors: 0,
 	ms: 60_000,
+	stats: {},
 	...over,
 });
 

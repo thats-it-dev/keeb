@@ -12,7 +12,8 @@
 // Deterministic per seed, so the same preview URL always shows the same curve and a screenshot in a PR
 // body is reproducible.
 
-import type { SessionRow } from "../atproto/records.ts";
+import { type SessionRow, tidAt } from "../atproto/records.ts";
+import type { StatMap } from "./stats.ts";
 
 const MAX_SESSIONS = 50; // matches the cap the real records are pruned to, so the caption stays true
 
@@ -36,6 +37,10 @@ export function demoSessions(layout: string, opts: { seed?: number; days?: numbe
 	const { seed = 20261104, days = 42, nowMs = Date.now() } = opts;
 	const r = rng(seed);
 	const rows: SessionRow[] = [];
+	// A running snapshot per key, because that is what a real session record carries: cumulative, not the
+	// session's own. Building demo rows without it would make them a different shape from the real ones.
+	const running: StatMap = {};
+	const taught = "qwertyuiopasdfghjklzxcvbnm".split("");
 	for (let ago = days - 1; ago >= 0; ago -= 1) {
 		if (r() < 0.28) continue; // a day off, roughly one in four
 		// Slowly improving, with a bad-day wobble. Capped well below anything a real fast typist reaches,
@@ -48,8 +53,22 @@ export function demoSessions(layout: string, opts: { seed?: number; days?: numbe
 			// chars follows from wpm and minutes by definition (5 characters to a word), so the derived
 			// speed on the chart equals the ramp above instead of drifting from it.
 			const chars = wpm * 5 * minutes;
+			// Roughly one third of the alphabet per session, faster as the ramp goes up, and each keystroke
+			// moves the stored mean the way engine.bump() would move it.
+			const strokesPerKey = Math.max(1, Math.round(chars / 18));
+			for (const keyId of taught) {
+				if (r() > 0.4) continue;
+				let stat = running[keyId] ?? { ttMs16: 0, samples: 0, errors: 0 };
+				const goal = 60000 / (wpm * 5);
+				for (let i = 0; i < strokesPerKey; i += 1) {
+					const ms = Math.max(20, Math.round(goal * (0.6 + r() * 0.9)) * 16);
+					stat = { ttMs16: stat.samples === 0 ? ms : stat.ttMs16 + (ms - stat.ttMs16) / 16, samples: stat.samples + 1, errors: stat.errors };
+					if (r() < 0.02) stat = { ...stat, errors: stat.errors + 1 };
+				}
+				running[keyId] = stat;
+			}
 			rows.push({
-				rkey: `demo-${rows.length}`,
+				rkey: `${tidAt(atMs)}-${rows.length}`,
 				layout,
 				atMs,
 				chars,
@@ -57,6 +76,7 @@ export function demoSessions(layout: string, opts: { seed?: number; days?: numbe
 				// Rounded like every other number here: a float is what the atproto data model cannot carry, and
 				// a generator that drifts from the shape of real rows would stop being a test of that shape.
 				ms: Math.round((minutes + r()) * 60_000),
+				stats: { ...running },
 			});
 		}
 	}

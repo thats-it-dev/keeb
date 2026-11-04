@@ -3,7 +3,8 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "./csp.ts";
 
-type Row = { rkey: string; layout: string; atMs: number; chars: number; errors: number; ms: number };
+type Stat = { ttMs16: number; samples: number; errors: number };
+type Row = { rkey: string; layout: string; atMs: number; chars: number; errors: number; ms: number; stats: Record<string, Stat> };
 
 const noon = (daysAgo: number) => {
 	const d = new Date();
@@ -12,7 +13,7 @@ const noon = (daysAgo: number) => {
 	return d.getTime();
 };
 
-const row = (over: Partial<Row> & { rkey: string; atMs: number }): Row => ({ layout: "go60+qwerty", chars: 500, errors: 4, ms: 60_000, ...over });
+const row = (over: Partial<Row> & { rkey: string; atMs: number }): Row => ({ layout: "go60+qwerty", chars: 500, errors: 4, ms: 60_000, stats: {}, ...over });
 
 const seed = (page: Page, rows: Row[]) =>
 	page.evaluate((rs) => {
@@ -153,4 +154,93 @@ test("?demo=1 draws a labelled curve and stores nothing", async ({ page }) => {
 	await expect(page.locator("tt-practice .line")).toBeVisible();
 	await page.locator("button", { hasText: "Progress" }).click();
 	await expect(page.locator(".hist")).toHaveCount(0);
+});
+
+test("the insight panel is collapsed by default, opens, and remembers", async ({ page }) => {
+	const rows: Row[] = [];
+	let samples = 20;
+	for (let i = 0; i < 12; i += 1) {
+		samples += 25;
+		// A cumulative snapshot, the way the real records carry it: the mean falls and the sample count only ever rises.
+		rows.push(row({ rkey: `r${i}`, atMs: noon(12 - i), chars: 120, ms: 90_000, stats: { a: { ttMs16: (300 - i * 8) * 16, samples, errors: 2 } } }));
+	}
+	await page.goto("/");
+	await page.locator("tt-practice .line").waitFor();
+	await seed(page, rows);
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+
+	const panel = page.locator("tt-insight-panel");
+	await expect(panel).toBeVisible();
+	// Closed: the cards exist in the DOM but are hidden, so opening costs no re-render of the chart.
+	await expect(panel.locator(".card")).toHaveCount(4);
+	await expect(panel.locator(".body")).toBeHidden();
+	await expect(panel.locator(".toggle")).toHaveAttribute("aria-expanded", "false");
+
+	await panel.locator(".toggle").click();
+	await expect(panel.locator(".body")).toBeVisible();
+	await expect(panel.locator(".toggle")).toHaveAttribute("aria-expanded", "true");
+	// The hesitation card is the reason the panel exists, so it must carry a number, not just prose.
+	await expect(panel.locator('[data-id="hesitation"] .big')).toContainText("wpm");
+
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+	await expect(page.locator("tt-insight-panel .body")).toBeVisible(); // remembered, without a click
+});
+
+test("an empty panel says so instead of showing four empty cards", async ({ page }) => {
+	await page.goto("/");
+	await page.locator("tt-practice .line").waitFor();
+	await seed(page, [row({ rkey: "solo", atMs: noon(0), stats: {} })]);
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+	const panel = page.locator("tt-insight-panel");
+	await panel.locator(".toggle").click();
+	await expect(panel.locator('[data-id="milestones"] .say')).toContainText(/no key|not listed|starts out/i);
+});
+
+test("a collapsed panel takes no keyboard focus", async ({ page }) => {
+	await page.goto("/");
+	await page.locator("tt-practice .line").waitFor();
+	await seed(page, [row({ rkey: "one", atMs: noon(0) })]);
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+	const panel = page.locator("tt-insight-panel");
+	await expect(panel.locator(".body")).toBeHidden();
+	await expect(panel.locator(".body")).toHaveAttribute("inert");
+	// Tab from the top of the screen: the toggle is reachable, the cards inside it are not. One focus() on a
+	// card is the whole claim -- inert makes focus() a no-op, so activeElement stays where it was.
+	const toggle = page.locator("tt-insight-panel .toggle");
+	await toggle.focus();
+	await expect(toggle).toBeFocused();
+	await page.locator("tt-insight-panel .card").first().evaluate((el) => (el as HTMLElement).focus());
+	await expect(toggle).toBeFocused();
+	await expect(page.locator("tt-insight-panel .card").first()).not.toBeFocused();
+});
+
+test("the panel comes back the way you left it after a reload", async ({ page }) => {
+	await page.goto("/");
+	await page.locator("tt-practice .line").waitFor();
+	await seed(page, [row({ rkey: "one", atMs: noon(0) })]);
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+	const panel = page.locator("tt-insight-panel");
+	await expect(panel.locator(".body")).toBeHidden();
+
+	// Open it, then reload: the state must survive without a click.
+	await panel.locator(".toggle").click();
+	await expect(panel.locator(".body")).toBeVisible();
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+	await expect(page.locator("tt-insight-panel .body")).toBeVisible();
+	await expect(page.locator("tt-insight-panel .toggle")).toHaveAttribute("aria-expanded", "true");
+
+	// Close it, then reload again. This is the half that a presence-based attribute gets wrong: storage holds
+	// "0", and reading that as "anything present means open" would silently reopen the panel forever.
+	await page.locator("tt-insight-panel .toggle").click();
+	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
+	await expect(page.locator("tt-insight-panel .toggle")).toHaveAttribute("aria-expanded", "false");
 });

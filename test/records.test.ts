@@ -152,10 +152,25 @@ describe("session rows", () => {
 		expect(row?.atMs).toBeGreaterThan(0);
 	});
 
+	it("keeps the per-key snapshot, which is the only history the record has", () => {
+		// This field used to be dropped on read. Everything in stats/insights.ts -- per-key trends, hesitation,
+		// goal crossings -- is built from it, and the app looks identical without it except that four cards
+		// quietly fall back to "not enough data". A round trip through the writer is the assertion that holds.
+		const written = sessionRecord("go60+qwerty", { chars: 40, errors: 2, ms: 30_000, stats: { a: { ttMs16: 2400, samples: 12, errors: 2 } } });
+		const row = fromSessionRecord(written as unknown as Record<string, unknown>, newKey());
+		expect(row?.stats).toEqual({ a: { ttMs16: 2400, samples: 12, errors: 2 } });
+	});
+
+	it("reads an older record that carries no stats as an empty snapshot, not a crash", () => {
+		// Sessions written before M7 have no stats array. The history screen must still chart them by totals.
+		const row = fromSessionRecord({ $type: SESSION, layout: "go60+qwerty", chars: 10, errors: 0, ms: 5000 }, newKey());
+		expect(row?.stats).toEqual({});
+	});
+
 	it("ignores records that are not sessions and tolerates sessions missing fields", () => {
 		expect(fromSessionRecord({ $type: PROGRESS, layout: "x", stats: [], updatedAt: 1 }, newKey())).toBeUndefined();
 		expect(fromSessionRecord(undefined, newKey())).toBeUndefined();
 		const bare = fromSessionRecord({ $type: SESSION, layout: "go60+qwerty" }, "self");
-		expect(bare).toEqual({ rkey: "self", layout: "go60+qwerty", atMs: 0, chars: 0, errors: 0, ms: 0 });
+		expect(bare).toEqual({ rkey: "self", layout: "go60+qwerty", atMs: 0, chars: 0, errors: 0, ms: 0, stats: {} });
 	});
 });

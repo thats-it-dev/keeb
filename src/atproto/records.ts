@@ -22,6 +22,14 @@ const str = (v: unknown, max = 100): string => (typeof v === "string" ? [...v].s
 // below a string comparison rather than a timestamp lookup.
 export const newKey = (): string => TID.nextStr();
 
+/**
+ * A tid for a moment in the past, for data that was not typed just now.
+ *
+ * Demo rows need this: their whole value is sitting at a believable date on a believable day, and a rkey
+ * that is not a tid would make every one of them read as undated.
+ */
+export const tidAt = (ms: number): string => TID.fromTime(Math.round(ms) * 1000, 0).toString();
+
 export type KeyChar = { id: string; char: string };
 
 // On the wire the identifier is `keyId`. Reads also accept the old `id`: records written before the
@@ -129,8 +137,22 @@ export function fromProgressRecord(rec: Record<string, unknown> | undefined): { 
 	return { layout: rec.layout, stats };
 }
 
-/** A session as the app wants it. `atMs` is when it happened, which the record itself does not say. */
-export type SessionRow = { rkey: string; layout: string; atMs: number; chars: number; errors: number; ms: number };
+/**
+ * A session as the app wants it. `atMs` is when it happened, which the record itself does not say.
+ *
+ * `stats` is the per-key state as it stood when the session ended -- a CUMULATIVE snapshot, not that
+ * session's own numbers. `chars`, `errors` and `ms` beside it are per-session deltas. The two halves of
+ * one record are different kinds of thing, and any code that diffs them has to know which side it is on.
+ */
+export type SessionRow = {
+	rkey: string;
+	layout: string;
+	atMs: number;
+	chars: number;
+	errors: number;
+	ms: number;
+	stats: StatMap;
+};
 
 /**
  * When a session was typed, in ms since the epoch. There is no time field on the record: the lexicon is
@@ -164,6 +186,9 @@ export function fromSessionRecord(rec: Record<string, unknown> | undefined, rkey
 		// `ms` is the field name on the wire and means the session's wall-clock span. Renamed on the way in
 		// because every other ms in this app is a per-key timing, and a collision there is how charts lie.
 		ms: n(rec.ms),
+		// This field used to be dropped on read, which threw away every per-key history the app had ever
+		// recorded and left three integers to draw charts from.
+		stats: Array.isArray(rec.stats) ? statsFrom(rec.stats as KeyStat[]) : {},
 	};
 }
 
