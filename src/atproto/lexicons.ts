@@ -18,12 +18,14 @@ export const SCOPES = `atproto offline_access repo:${SETTINGS} repo:${PROGRESS} 
 const integer = { type: "integer" } as const;
 const string = { type: "string", maxGraphemes: 100 } as const;
 
-// One physical key. `id` is stable per geometry, so stats and character maps can point at it.
+// One physical key. `keyId` is stable per geometry, so stats and character maps can point at it. It is
+// not called `id`: goat flags that as a reserved word across language code generators, and a published
+// field name can never be changed, so the cheaper rename happens now.
 const key = {
 	type: "object",
-	required: ["id", "hand", "row", "col", "x", "y", "w", "h", "rot"],
+	required: ["keyId", "hand", "row", "col", "x", "y", "w", "h", "rot"],
 	properties: {
-		id: string,
+		keyId: string,
 		hand: { type: "string", knownValues: ["l", "r"] },
 		row: integer,
 		// Counted from the outside edge of that hand, so a columnar board stores no mirror maths.
@@ -39,16 +41,16 @@ const key = {
 
 const char = {
 	type: "object",
-	required: ["id", "char"],
-	properties: { id: string, char: { type: "string", maxGraphemes: 4 } },
+	required: ["keyId", "char"],
+	properties: { keyId: string, char: { type: "string", maxGraphemes: 4 } },
 };
 
 // The fixed-point form of KeyStat. Weighting the mean by `samples` is what lets two devices merge
 // without a coordinator, so all three fields travel together.
 const keyStat = {
 	type: "object",
-	required: ["id", "ttMs16", "samples", "errors"],
-	properties: { id: string, ttMs16: integer, samples: integer, errors: integer },
+	required: ["keyId", "ttMs16", "samples", "errors"],
+	properties: { keyId: string, ttMs16: integer, samples: integer, errors: integer },
 };
 
 export const defs = {
@@ -84,6 +86,7 @@ export const settings = {
 	id: SETTINGS,
 	defs: {
 		main: {
+			description: "Which board and keymap this learner is practising, and how fast they want to be. One record per account.",
 			type: "record",
 			key: "literal:self",
 			record: {
@@ -108,6 +111,7 @@ export const progress = {
 	id: PROGRESS,
 	defs: {
 		main: {
+			description: "Per-key practice totals for one board+keymap pair. Additive: two devices merge by summing samples.",
 			type: "record",
 			key: "tid",
 			record: {
@@ -130,6 +134,7 @@ export const session = {
 	id: SESSION,
 	defs: {
 		main: {
+			description: "One practice session: the span between two silences. Keystrokes are never stored individually.",
 			type: "record",
 			key: "tid",
 			record: {
@@ -153,6 +158,7 @@ export const layout = {
 	id: LAYOUT,
 	defs: {
 		main: {
+			description: "A shareable layout: where the keys are, and what characters they produce.",
 			type: "record",
 			key: "tid",
 			record: {

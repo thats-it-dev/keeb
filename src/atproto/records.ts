@@ -24,14 +24,20 @@ export const newKey = (): string => TID.nextStr();
 
 export type KeyChar = { id: string; char: string };
 
-export type KeyGeometryRecord = { split: boolean; keys: { id: string; hand: string; row: number; col: number; x: number; y: number; w: number; h: number; rot: number; label: string }[] };
+// On the wire the identifier is `keyId`. Reads also accept the old `id`: records written before the
+// rename are still sitting in people's repos, and a schema that cannot read them would silently drop
+// every key they had practised. Writes only ever emit `keyId`.
+export type WireKeyId = { keyId?: string; id?: string };
+const wireKeyId = (s: WireKeyId): string => str(s.keyId ?? s.id);
+
+export type KeyGeometryRecord = { split: boolean; keys: ({ keyId: string } & WireKeyId & { hand: string; row: number; col: number; x: number; y: number; w: number; h: number; rot: number; label: string })[] };
 
 // The geometry half of a layout: where the keys are. Nothing about characters travels in it, so one
 // geometry can be paired with any keymap on the receiving device too.
 export function keyGeometry(g: Geometry): KeyGeometryRecord {
 	return {
 		split: !!g.split,
-		keys: g.keys.map((k: Key) => ({ id: k.id, hand: k.hand, row: n(k.row), col: n(k.col), x: n(k.x), y: n(k.y), w: n(k.w), h: n(k.h), rot: n(k.rot), label: str(k.label, 20) })),
+		keys: g.keys.map((k: Key) => ({ keyId: k.id, hand: k.hand, row: n(k.row), col: n(k.col), x: n(k.x), y: n(k.y), w: n(k.w), h: n(k.h), rot: n(k.rot), label: str(k.label, 20) })),
 	};
 }
 
@@ -39,7 +45,7 @@ export function geometryFromRecord(rec: KeyGeometryRecord): Pick<Geometry, "spli
 	return {
 		split: !!rec?.split,
 		keys: (rec?.keys ?? []).map((k) => ({
-			id: str(k.id),
+			id: wireKeyId(k),
 			hand: k.hand === "r" ? "r" : "l",
 			row: n(k.row),
 			col: n(k.col),
@@ -53,20 +59,21 @@ export function geometryFromRecord(rec: KeyGeometryRecord): Pick<Geometry, "spli
 	};
 }
 
-export const charMap = (keys: KeyChar[]) => ({ chars: keys.map((k) => ({ id: str(k.id), char: [...k.char].slice(0, 4).join("") })) });
+export const charMap = (keys: KeyChar[]) => ({ chars: keys.map((k) => ({ keyId: str(k.id), char: [...k.char].slice(0, 4).join("") })) });
 
 // The wire form of a StatMap. Sorted by key id so two devices that never met still produce byte-equal
 // arrays for the same progress, which makes a diff during debugging mean something.
 export const keyStats = (stats: StatMap) =>
 	Object.entries(stats)
 		.sort((a, b) => (a[0] < b[0] ? -1 : 1))
-		.map(([id, s]) => ({ id: str(id), ttMs16: n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) }));
+		.map(([id, s]) => ({ keyId: str(id), ttMs16: n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) }));
 
-export function statsFrom(list: { id: string; ttMs16: number; samples: number; errors: number }[]): StatMap {
+export function statsFrom(list: ({ ttMs16: number; samples: number; errors: number } & WireKeyId)[]): StatMap {
 	const out: StatMap = {};
 	for (const s of list ?? []) {
-		if (!s?.id) continue;
-		out[str(s.id)] = { ttMs16: n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) };
+		const id = wireKeyId(s ?? { ttMs16: 0, samples: 0, errors: 0 });
+		if (!id) continue;
+		out[id] = { ttMs16: n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) };
 	}
 	return out;
 }

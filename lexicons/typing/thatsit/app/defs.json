@@ -1,0 +1,142 @@
+{
+	"lexicon": 1,
+	"id": "app.thatsit.typing.defs",
+	"defs": {
+		"keyGeometry": {
+			"type": "object",
+			"required": [
+				"keys"
+			],
+			"properties": {
+				"split": {
+					"type": "boolean"
+				},
+				"keys": {
+					"type": "array",
+					"items": {
+						"type": "ref",
+						"ref": "#key"
+					},
+					"maxLength": 200
+				}
+			}
+		},
+		"key": {
+			"type": "object",
+			"required": [
+				"keyId",
+				"hand",
+				"row",
+				"col",
+				"x",
+				"y",
+				"w",
+				"h",
+				"rot"
+			],
+			"properties": {
+				"keyId": {
+					"type": "string",
+					"maxGraphemes": 100
+				},
+				"hand": {
+					"type": "string",
+					"knownValues": [
+						"l",
+						"r"
+					]
+				},
+				"row": {
+					"type": "integer"
+				},
+				"col": {
+					"type": "integer"
+				},
+				"x": {
+					"type": "integer"
+				},
+				"y": {
+					"type": "integer"
+				},
+				"w": {
+					"type": "integer"
+				},
+				"h": {
+					"type": "integer"
+				},
+				"rot": {
+					"type": "integer"
+				},
+				"label": {
+					"type": "string",
+					"maxGraphemes": 20
+				}
+			}
+		},
+		"charMap": {
+			"type": "object",
+			"required": [
+				"chars"
+			],
+			"properties": {
+				"chars": {
+					"type": "array",
+					"items": {
+						"type": "ref",
+						"ref": "#char"
+					},
+					"maxLength": 200
+				}
+			}
+		},
+		"char": {
+			"type": "object",
+			"required": [
+				"keyId",
+				"char"
+			],
+			"properties": {
+				"keyId": {
+					"type": "string",
+					"maxGraphemes": 100
+				},
+				"char": {
+					"type": "string",
+					"maxGraphemes": 4
+				}
+			}
+		},
+		"keyStats": {
+			"type": "array",
+			"items": {
+				"type": "ref",
+				"ref": "#keyStat"
+			},
+			"maxLength": 200
+		},
+		"keyStat": {
+			"type": "object",
+			"required": [
+				"keyId",
+				"ttMs16",
+				"samples",
+				"errors"
+			],
+			"properties": {
+				"keyId": {
+					"type": "string",
+					"maxGraphemes": 100
+				},
+				"ttMs16": {
+					"type": "integer"
+				},
+				"samples": {
+					"type": "integer"
+				},
+				"errors": {
+					"type": "integer"
+				}
+			}
+		}
+	}
+}

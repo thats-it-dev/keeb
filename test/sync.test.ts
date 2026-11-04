@@ -63,7 +63,7 @@ describe("sync", () => {
 	it("pulls progress and settings from the repo", async () => {
 		const now = Math.round(Date.now() / 1000);
 		const { session } = fake({
-			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/2222abc`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ id: "a", ttMs16: 3200, samples: 10, errors: 1 }], updatedAt: now } }],
+			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/2222abc`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16: 3200, samples: 10, errors: 1 }], updatedAt: now } }],
 			[SETTINGS]: [{ uri: `at://${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, unlocked: ["a"], updatedAt: now } }],
 		});
 		const store = memStore();
@@ -78,8 +78,8 @@ describe("sync", () => {
 		const now = Math.round(Date.now() / 1000);
 		const { session } = fake({
 			[PROGRESS]: [
-				{ uri: `at://${DID}/${PROGRESS}/3333new`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ id: "a", ttMs16: 9000, samples: 4, errors: 0 }], updatedAt: now } },
-				{ uri: `at://${DID}/${PROGRESS}/1111old`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ id: "a", ttMs16: 100, samples: 900, errors: 0 }], updatedAt: now - 500 } },
+				{ uri: `at://${DID}/${PROGRESS}/3333new`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16: 9000, samples: 4, errors: 0 }], updatedAt: now } },
+				{ uri: `at://${DID}/${PROGRESS}/1111old`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16: 100, samples: 900, errors: 0 }], updatedAt: now - 500 } },
 			],
 			[SETTINGS]: [],
 		});
@@ -87,7 +87,23 @@ describe("sync", () => {
 		expect(res.progress["go60+qwerty"]!.a!.samples).toBe(4);
 	});
 
-	it("writes a session and its progress without asking the PDS to validate", async () => {
+	it("pulls a progress record written before the id field was renamed", async () => {
+		// Nothing rewrites a learner's existing records, so a pull has to understand the older row shape
+		// or their practice history would come back empty without saying so.
+		const { session } = fake({
+			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/4444legacy`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ id: "a", ttMs16: 2000, samples: 7, errors: 0 }], updatedAt: Math.round(Date.now() / 1000) } }],
+			[SETTINGS]: [],
+			[SESSION]: [],
+		});
+		const res = await new Sync(session, memStore()).pull();
+		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 2000, samples: 7, errors: 0 } });
+	});
+
+	it("writes a session and its progress with validate:false, the only way a hosted PDS accepts these", async () => {
+		// Publishing the lexicons did not change this. A Bluesky-hosted PDS validates only against schemas
+		// it holds locally and will not fetch a third-party lexicon on demand, so dropping the flag fails
+		// the write with "Unknown lexicon type". Asserting the flag is present, because a future reader
+		// tidyming it away would break every write and no other test would catch it.
 		const { session, calls, stored } = fake({ [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [] });
 		const store = memStore();
 		const sync = new Sync(session, store);

@@ -1,0 +1,37 @@
+{
+	"lexicon": 1,
+	"id": "app.thatsit.typing.layout",
+	"defs": {
+		"main": {
+			"description": "A shareable layout: where the keys are, and what characters they produce.",
+			"type": "record",
+			"key": "tid",
+			"record": {
+				"type": "object",
+				"required": [
+					"name",
+					"geometry",
+					"charMap"
+				],
+				"properties": {
+					"name": {
+						"type": "string",
+						"maxGraphemes": 100
+					},
+					"geometry": {
+						"type": "ref",
+						"ref": "app.thatsit.typing.defs#keyGeometry"
+					},
+					"charMap": {
+						"type": "ref",
+						"ref": "app.thatsit.typing.defs#charMap"
+					},
+					"source": {
+						"type": "string",
+						"maxGraphemes": 300
+					}
+				}
+			}
+		}
+	}
+}
