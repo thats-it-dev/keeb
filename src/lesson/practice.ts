@@ -1,6 +1,6 @@
 import { LitElement, html, css } from "https://kit.thatsit.app/lit.js";
 import { press, start } from "../lesson/engine.ts";
-import { cpmFrom, timeToTypeMs, type StatMap } from "../stats/stats.ts";
+import { cpmFrom, type StatMap } from "../stats/stats.ts";
 import type { Resolved } from "../keyboard/resolve.ts";
 
 // The typing pane. It owns the lesson engine and reports every keystroke back up, so the keyboard
@@ -63,17 +63,9 @@ export class TtPractice extends LitElement {
 		return !!this.engine && this.cursor >= [...this.engine.text].length;
 	}
 
-	/** Mean time per key across everything practised, from the stored samples. */
-	get avgMs(): number {
-		const ids = Object.keys(this.engine?.stats ?? {});
-		if (!ids.length) return 0;
-		const total = ids.reduce((s, id) => s + timeToTypeMs(this.engine!.stats[id]), 0);
-		return Math.round(total / ids.length);
-	}
-
-	get sessionCpm(): number {
-		return this.avgMs ? cpmFrom(this.avgMs) : 0;
-	}
+	// The session and average figures used to be getters here. The metrics row computes them from the
+	// parent's own stats now, because it has to render correctly before this element exists — and leaving
+	// a second copy of that arithmetic here would mean two numbers that can disagree.
 
 	override render() {
 		const text = this.engine?.text ?? "";

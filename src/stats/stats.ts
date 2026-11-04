@@ -44,6 +44,22 @@ export function targetTimeMs(targetCpm: number): number {
 	return targetCpm <= 0 ? 0 : Math.round(60000 / targetCpm);
 }
 
+// The convention every typist tool means by "word": five characters, including the space. It is why the
+// stored unit stays characters-per-minute -- a word count is a display choice, and rounding at the last
+// step keeps a stored goal exactly convertible instead of off by a character.
+export const CHARS_PER_WORD = 5;
+
+/** Words per minute implied by a time-per-character. */
+export function wpmFrom(ttMs: number): number {
+	return ttMs <= 0 ? 0 : Math.round(60000 / (ttMs * CHARS_PER_WORD));
+}
+
+/** Words per minute for a speed already counted in characters. */
+export const cpmToWpm = (cpm: number): number => Math.round(cpm / CHARS_PER_WORD);
+
+/** The stored goal, given a number typed into a words-per-minute field. */
+export const wpmToCpm = (wpm: number): number => Math.round(wpm * CHARS_PER_WORD);
+
 // keybr's confidence: > 1 means this key is faster than the goal, so it is safe to teach the next one.
 // Returns 0 with no data, which keeps a fresh key locked.
 export function confidence(stat: KeyStat, targetCpm: number): number {
