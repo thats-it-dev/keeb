@@ -49,7 +49,7 @@ test("progress is stored locally with nobody signed in", async ({ page }) => {
 	await page.reload({ waitUntil: "networkidle" });
 	await ready(page);
 	// The keyboard readout survives a reload purely from IndexedDB.
-	await expect(page.locator(".read").first()).toContainText(/cpm|wpm/i);
+	await expect(page.locator(".read").first()).toContainText(/wpm/i);
 	const keys = await page.evaluate(() => Object.keys((document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { stats: object } }).engine.stats).length);
 	expect(keys).toBeGreaterThan(0);
 });

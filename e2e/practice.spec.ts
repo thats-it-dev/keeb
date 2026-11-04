@@ -109,7 +109,7 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 		if (ch === "") break;
 		await tap(page, ch);
 	}
-	await expect(page.locator("main")).toContainText("cpm");
+	await expect(page.locator("main")).toContainText("wpm");
 	const cursor = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
 	expect(cursor).toBeGreaterThan(10);
 });

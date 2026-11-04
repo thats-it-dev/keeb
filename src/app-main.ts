@@ -6,7 +6,7 @@ import { deleteBoard, deleteMap, layoutKey, loadBoards, loadMaps, loadSettings, 
 import { auth } from "./atproto/auth.ts";
 import { Sync, type SyncState } from "./atproto/sync.ts";
 import { mergeProgress } from "./atproto/records.ts";
-import { cpmFrom, timeToTypeMs, type StatMap } from "./stats/stats.ts";
+import { timeToTypeMs, cpmToWpm, wpmFrom, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
@@ -273,9 +273,11 @@ export class AppMain extends LitElement {
 		else this.keymapId = value;
 	}
 
+	// The field is words per minute; the stored goal stays characters per minute, so the number that goes
+	// to the PDS and drives the ladder does not depend on a word ever being five letters.
 	#goal(e: Event): void {
 		const v = Number((e.target as HTMLInputElement).value);
-		if (Number.isFinite(v) && v >= 40 && v <= 600) this.targetCpm = Math.round(v);
+		if (Number.isFinite(v) && v >= 15 && v <= 120) this.targetCpm = wpmToCpm(v);
 	}
 
 	// Bring the account and this browser into line, in whichever direction each piece is newer.
@@ -410,7 +412,7 @@ export class AppMain extends LitElement {
 						<label><span class="label">keymap</span><select @change=${(e: Event) => this.#pick("k", (e.target as HTMLSelectElement).value)}>
 								${allKeymaps().map((k) => html`<option value=${k.id} ?selected=${k.id === this.keymapId}>${k.name}</option>`)}
 							</select></label>
-						<label><span class="label">goal cpm</span><input type="number" min="40" max="600" step="10" .value=${String(this.targetCpm)} @change=${this.#goal} /></label>
+						<label><span class="label">goal wpm</span><input type="number" min="15" max="120" step="5" .value=${String(cpmToWpm(this.targetCpm))} @change=${this.#goal} /></label>
 						<label><span class="label">layout file</span><input type="file" accept=".json,application/json" @change=${this.#upload} /></label>
 						<div class="full sync">
 							${this.did
@@ -459,10 +461,10 @@ export class AppMain extends LitElement {
 		const avgMs = ids.length ? Math.round(ids.reduce((s, id) => s + timeToTypeMs(this.stats[id]!), 0) / ids.length) : 0;
 		return html`
 			<div class="read">
-				${cell("now", `${this.nowCpm} cpm`)}
-				${cell("session", `${avgMs ? cpmFrom(avgMs) : 0} cpm`)}
+				${cell("now", `${cpmToWpm(this.nowCpm)} wpm`)}
+				${cell("session", `${wpmFrom(avgMs)} wpm`)}
 				${cell("avg", `${avgMs} ms/key`)}
-				${cell("goal", `${this.targetCpm} cpm`)}
+				${cell("goal", `${cpmToWpm(this.targetCpm)} wpm`)}
 			</div>
 		`;
 	}
