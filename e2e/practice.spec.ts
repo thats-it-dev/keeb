@@ -147,7 +147,7 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 	expect(cursor).toBeGreaterThan(10);
 });
 
-test("progress screen ranks keys instead of saturating every bar", async ({ page }) => {
+test("progress screen ranks keys instead of saturating every bar", async ({ page }, testInfo) => {
 	await page.goto("/");
 	await ready(page);
 	for (let i = 0; i < 40; i += 1) {
@@ -187,10 +187,18 @@ test("progress screen ranks keys instead of saturating every bar", async ({ page
 	// different bars, not merely non-inverted ones. The goal-relative formula clamped anything faster than
 	// 2x goal to 100%, so a fast run gave one uniform set of widths.
 	//
-	// This is the assertion that goes red on a runner that times every synthetic keystroke identically: the
-	// distinct-timings check above still passes, because the data does differ, but the widths collapse. When
-	// it fails, suspect the runner's timer before the scale.
-	expect(new Set(pairs.map((p) => p.w)).size).toBeGreaterThan(1);
+	// The scale is logarithmic, so "can the bars differ at all" is a question about RATIO: measured against
+	// barWidth(), one width point costs 2^(1/25) - 1 = 2.81% of ms, at every goal speed. Two points of spread
+	// is the smallest difference this screen could possibly draw, and below that the browser is not testing
+	// the scale -- it is testing how precisely the runner timestamps synthetic keystrokes. When the spread is
+	// that narrow the check is annotated rather than silently dropped, and test/scale.test.ts is what holds
+	// the ranking property in that case.
+	const ratio = Math.max(...pairs.map((p) => p.ms)) / Math.min(...pairs.map((p) => p.ms));
+	if (ratio >= Math.pow(2, 2 / 25)) {
+		expect(new Set(pairs.map((p) => p.w)).size).toBeGreaterThan(1);
+	} else {
+		testInfo.annotations.push({ type: "note", description: `keystroke spread was ${(ratio.toFixed(4))}x, below the scale's 5.7% resolution; ranking asserted in test/scale.test.ts` });
+	}
 	// The tick is the goal, so it belongs at the same x in every row: the scale's midpoint.
 	const marks = await page.locator(".krow .mark").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
 	expect(marks).toEqual(["50%"]);
