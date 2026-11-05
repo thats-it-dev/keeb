@@ -186,6 +186,10 @@ test("progress screen ranks keys instead of saturating every bar", async ({ page
 	// The strict version, and the one that actually catches the old scale: different times must produce
 	// different bars, not merely non-inverted ones. The goal-relative formula clamped anything faster than
 	// 2x goal to 100%, so a fast run gave one uniform set of widths.
+	//
+	// This is the assertion that goes red on a runner that times every synthetic keystroke identically: the
+	// distinct-timings check above still passes, because the data does differ, but the widths collapse. When
+	// it fails, suspect the runner's timer before the scale.
 	expect(new Set(pairs.map((p) => p.w)).size).toBeGreaterThan(1);
 	// The tick is the goal, so it belongs at the same x in every row: the scale's midpoint.
 	const marks = await page.locator(".krow .mark").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
