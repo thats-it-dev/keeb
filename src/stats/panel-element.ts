@@ -98,6 +98,9 @@ class InsightPanel extends LitElement {
 			:host(:not([data-open])) .body { display: none; }
 
 			.card { padding: 14px 12px; border-bottom: 1px solid var(--line); }
+			/* Slotted content is styled by the tree it came from, so the parent's sheet draws the section; all the
+			   pane can do from here is give it an edge and breathe its own padding. */
+			::slotted(.hist) { padding: 14px 12px; border-bottom: 1px solid var(--line); }
 			h3 { margin: 0 0 6px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.big { margin: 0; font-size: 1.4rem; font-weight: 700; }
 			.big .sub { display: block; font-size: 0.75rem; font-weight: 400; color: var(--text-muted); }
@@ -146,6 +149,9 @@ class InsightPanel extends LitElement {
 			</button>
 			<!-- inert, not merely hidden: a closed pane's cards stay out of tab order and screen readers -->
 			<div class="body" ?inert=${!this.open}>
+				<!-- The history section is the parent's own DOM, slotted in ahead of the cards: it is built from d3
+					     scales and SVG templates that only that file owns. -->
+					<slot name="hist"></slot>
 				${this.cards.map(cardHtml)}
 				${this.cards.length ? nothing : html`<p class="empty">Type a few sessions, and this fills itself.</p>`}
 			</div>

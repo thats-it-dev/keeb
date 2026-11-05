@@ -41,6 +41,15 @@ const seed = (page: Page, rows: Row[]) =>
 		});
 	}, rows);
 
+// Fold the pane out, whichever shape it took. On a desktop the rail is the button; on a phone the whole pane
+// sits off-canvas, so its rail is not clickable and the header button is the opener.
+const openPane = async (page: Page) => {
+	const rail = page.locator("tt-insight-panel .bar");
+	if (await rail.isVisible()) await rail.click();
+	else await page.locator("app-main .head button[aria-label=\"Insights\"]").click();
+	await expect(page.locator("tt-insight-panel .body")).toBeVisible();
+};
+
 // The app reads the cache once, on boot, so seed first and then load.
 const seedAndOpen = async (page: Page, rows: Row[]) => {
 	await page.goto("/");
@@ -50,6 +59,8 @@ const seedAndOpen = async (page: Page, rows: Row[]) => {
 	await expect(page.locator("tt-practice .line")).toBeVisible();
 	await page.evaluate(() => document.fonts.ready);
 	await page.locator("button", { hasText: "Progress" }).click();
+	// The history is a section of the insight pane now, and the pane arrives folded.
+	await openPane(page);
 };
 
 test("cached sessions draw a curve and honest totals", async ({ page }) => {
@@ -124,6 +135,9 @@ test("?demo=1 draws a labelled curve and stores nothing", async ({ page }) => {
 	await expect(page.locator("tt-practice .line")).toBeVisible();
 	await page.evaluate(() => document.fonts.ready);
 	await page.locator("button", { hasText: "Progress" }).click();
+	// The demo prompt lives in the history section, which lives in the pane. On a real branch preview the pane
+	// starts open; this is localhost, so the test folds it out by hand.
+	await openPane(page);
 	await expect(page.locator(".demo-note")).toContainText("demo sessions");
 	await expect(page.locator(".demo-note")).toContainText("nothing here is your progress");
 	expect(await page.locator(".hist .chart circle").count()).toBeGreaterThan(5);
@@ -225,7 +239,9 @@ test("the insight panel is collapsed by default, opens, and remembers", async ({
 	const panel = page.locator("tt-insight-panel");
 	await expect(panel).toBeVisible();
 	// Closed: the cards exist in the DOM but are hidden, so opening costs no re-render of the chart.
-	await expect(panel.locator(".card")).toHaveCount(3);
+	// Scoped to .body, which is where the panel's own cards are: the slotted history section is a child of the
+	// host in the DOM tree, not of .body, so naming .card bare would also count the five history totals.
+	await expect(panel.locator(".body .card")).toHaveCount(3);
 	await expect(panel.locator(".body")).toBeHidden();
 	await expect(panel.locator(".bar")).toHaveAttribute("aria-expanded", "false");
 
@@ -274,9 +290,9 @@ test("a collapsed panel takes no keyboard focus", async ({ page }, testInfo) => 
 	const toggle = page.locator("tt-insight-panel .bar");
 	await toggle.focus();
 	await expect(toggle).toBeFocused();
-	await page.locator("tt-insight-panel .card").first().evaluate((el) => (el as HTMLElement).focus());
+	await page.locator("tt-insight-panel .body .card").first().evaluate((el) => (el as HTMLElement).focus());
 	await expect(toggle).toBeFocused();
-	await expect(page.locator("tt-insight-panel .card").first()).not.toBeFocused();
+	await expect(page.locator("tt-insight-panel .body .card").first()).not.toBeFocused();
 });
 
 test("the panel comes back the way you left it after a reload", async ({ page }, testInfo) => {
@@ -352,6 +368,12 @@ test("the pane is a full-height shell column, not a card in the section", async 
 
 	// The cards scroll inside the column rather than extending the page.
 	expect(await panel.locator(".body").evaluate((el) => el.scrollHeight >= el.clientHeight)).toBe(true);
+
+	// And the history is a section of THIS pane, not of the progress screen. The chart's nodes are children of
+	// the host, distributed into .body by the slot, so the claim is checkable from the DOM tree: the section is
+	// under tt-insight-panel and there is none left in .stats.
+	expect(await page.locator("tt-insight-panel > .hist .chart").count()).toBe(1);
+	await expect(page.locator(".stats .hist")).toHaveCount(0);
 });
 test("on a phone the pane is a side menu", async ({ page }) => {
 	const rows: Row[] = [];
@@ -397,5 +419,13 @@ test("on a phone the pane is a side menu", async ({ page }) => {
 	await openBtn.click();
 	await expect(panel).toHaveCSS("visibility", "visible");
 	await page.keyboard.press("Escape");
+	await expect(panel).toHaveCSS("visibility", "hidden");
+
+	// A menu does not remember being a menu open: the desktop column's folded-or-not choice is stored, but a
+	// reload must never drop an open drawer across the page and swallow the first tap. (This is the case the
+	// history section exposed -- the stored flag used to restore the drawer open here.)
+	await openBtn.click();
+	await page.reload();
+	await page.locator("tt-practice .line").waitFor();
 	await expect(panel).toHaveCSS("visibility", "hidden");
 });

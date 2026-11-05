@@ -170,6 +170,15 @@ export class AppMain extends LitElement {
 			/* The history section is a plain stack now: the insight pane belongs to the shell, not to this
 			 * screen, so it no longer reserves room inside it. */
 			.hist { display: grid; gap: 10px; width: 100%; }
+			/* The section now lives in a 19rem column, not across the page, so the totals wrap tighter and carry
+			   less type than they did on the progress screen. */
+			.hist .grid { grid-template-columns: repeat(auto-fit, minmax(7.25rem, 1fr)); gap: 8px; }
+			.hist .card { padding: 7px 9px; }
+			.hist .card b { font-size: 1.05rem; }
+			.hist .legend, .hist .empty { font-size: 0.72rem; }
+			/* Fill the column instead of letterboxing: viewBox is 340x118, and a fixed 8rem height in a 280px
+			   wide pane would waste the bottom of every box. */
+			.hist .chart { height: auto; aspect-ratio: 340 / 118; }
 			.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.chart { width: 100%; height: 8rem; display: block; overflow: visible; }
 			.chart text { font-size: 8px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -202,9 +211,15 @@ export class AppMain extends LitElement {
 	view: "type" | "progress" = "type";
 	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
 	sessions: SessionRow[] = [];
-	// Which way the insight pane is folded. Read here and passed down, because the history section has to
-	// reserve the same width the pane takes -- a child that kept this to itself would overlap the chart.
-	panelOpen = localStorage.getItem(PANEL_OPEN_KEY) === "1";
+	// Which way the insight pane is folded. Read here and passed down, because the page has to reserve the same
+	// width the pane takes -- a child that kept this to itself would overlap the content.
+	// Three rules, in order of who wins:
+	//   - on a phone the pane is an off-canvas MENU, and a menu that redeploys itself over the page on every
+	//     load is a bug users would report. The stored choice is ignored there; it always starts closed.
+	//   - a branch preview defaults to OPEN, because the history section lives in the pane and on a preview that
+	//     section carries the only "show demo sessions" prompt: a folded pane would leave a reviewer at a blank rail.
+	//   - anywhere else, whatever the person last chose is what they get.
+	panelOpen = matchMedia("(min-width: 900px)").matches && (localStorage.getItem(PANEL_OPEN_KEY) === null ? isPreviewHost(location.hostname, __APP_NAME__) : localStorage.getItem(PANEL_OPEN_KEY) === "1");
 	// Fake history for previews, switched on by ?demo=1. Generated per render and never stored anywhere:
 	// a preview visit must not be able to write a made-up session into a real repo or a real device.
 	demo = new URLSearchParams(location.search).has("demo");
@@ -610,7 +625,9 @@ export class AppMain extends LitElement {
 			<!-- One pane for both layouts: a column on a desktop, a drawer under 900px. The scrim is inert on a
 				desktop and is what dismisses the drawer on a phone. -->
 			<div class="scrim" ?inert=${!this.panelOpen} @click=${() => this.#panel(false)}></div>
-			<tt-insight-panel .cards=${this.#cards()} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}></tt-insight-panel>
+			<tt-insight-panel .cards=${this.#cards()} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}>
+				${this.#history()}
+			</tt-insight-panel>
 		`;
 	}
 
@@ -673,7 +690,6 @@ export class AppMain extends LitElement {
 			<section class="stats">
 				<h2>progress</h2>
 				${keys}
-				${this.#history()}
 			</section>
 		`;
 	}
@@ -682,8 +698,12 @@ export class AppMain extends LitElement {
 		return this.targetCpm <= 0 ? 0 : Math.round(60000 / this.targetCpm);
 	}
 
+	// The practice history, drawn as a section of the insight pane rather than of the progress screen. It is
+	// slotted, not passed in as data: the SVG is built from d3 scales in this file, and a template handed to a
+	// child would be styled by the child's stylesheet, which knows nothing about .chart or .trend.
+	//
 	// Practice history for the board you are on: speed on a Go60 says nothing about the same fingers on a
-	// Corne, so this is filtered by layout exactly like the key bars above it. The character count here is
+	// Corne, so this is filtered by layout exactly like the key bars beside it. The character count here is
 	// the honest one the key screen could not show: it adds up what each session recorded, where per-key
 	// `samples` is a weighted mean and sums to nothing meaningful.
 	#history() {
@@ -698,7 +718,7 @@ export class AppMain extends LitElement {
 			// generated per render, labelled, never written to storage or to a repo.
 			if (this.sessions.length || !isPreviewHost(location.hostname, __APP_NAME__)) return nothing;
 			return html`
-			<div class="hist">
+			<div class="hist" slot="hist">
 				<h3>history · ${geometryById(this.geometryId).name}</h3>
 				<p class="demo-note">
 					<b>preview</b> No synced sessions yet.
@@ -746,7 +766,7 @@ export class AppMain extends LitElement {
 			.y0((p) => y(p.wpm))
 			.y1((p) => y(p.strokeWpm));
 		return html`
-			<div class="hist">
+			<div class="hist" slot="hist">
 				<h3>history · ${geometryById(this.geometryId).name}</h3>
 				${this.demo
 							? html`<p class="demo-note">
@@ -798,8 +818,8 @@ export class AppMain extends LitElement {
 	}
 
 	// The pane is a child of the shell, not of the history screen, so it can be the full height of the window.
-	// That means the card data is assembled here rather than inside #history(), and the two must select the
-	// same rows the chart is drawing -- demo or real, this layout only.
+	// That means the insight cards are assembled here rather than inside the section they sit under, and the two
+	// must select the same rows the chart is drawing -- demo or real, this layout only.
 	#cards(): PanelCard[] {
 		const key = layoutKey(this.geometryId, this.keymapId);
 		const source = this.demo ? demoSessions(key) : this.sessions;
