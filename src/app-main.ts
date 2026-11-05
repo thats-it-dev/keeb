@@ -10,7 +10,7 @@ import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { history as buildHistory, series, type Point } from "./stats/history.ts";
 import { demoSessions, isPreviewHost } from "./stats/demo.ts";
-import { insightPanel } from "./stats/panel.ts";
+import { insightPanel, type PanelCard } from "./stats/panel.ts";
 import { PANEL_OPEN_KEY } from "./stats/panel-element.ts";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
@@ -19,7 +19,7 @@ import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
 import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
 import { isKeycapFile, keymapFromKeycap, type KeycapFile } from "./layout/keycap.ts";
-import { iconSettings, iconTrash, iconX } from "./ui/icons.ts";
+import { iconPanelRight, iconSettings, iconTrash, iconX } from "./ui/icons.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
@@ -80,13 +80,35 @@ const syncStore = {
 };
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, panelOpen: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, panelOpen: { type: Boolean, attribute: "data-panel-open", reflect: true } };
 	static styles = [
 		sharedStyles,
 		css`
 			main { display: grid; gap: 18px; padding: 18px; max-width: 62rem; margin: 0 auto; justify-items: center; }
+			/* The insight pane is a fixed full-height column, so the document has to step aside for it. Padding
+			 * on the host keeps the centered main element centered in the space that is left, and it animates on
+			 * the same curve as the pane, so opening it reads as a resize rather than a jump. */
+			:host { display: block; padding-right: 2.25rem; box-sizing: border-box; transition: padding-right 0.18s ease; }
+			:host([data-panel-open]) { padding-right: 19rem; }
+			.scrim { display: none; }
+			@media (max-width: 899px) {
+				/* A phone has no sideways room to reserve: the pane is a drawer over the content, and the page
+				 * keeps its full width. The scrim is what dismisses it, same as kit's shell. */
+				:host, :host([data-panel-open]) { padding-right: 0; }
+				.scrim { display: block; position: fixed; inset: 0; background: var(--overlay); z-index: 25; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+				:host([data-panel-open]) .scrim { opacity: 1; pointer-events: auto; }
+			}
 			.head { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; }
 			.head h1 { margin: 0; }
+			.head-actions { display: flex; align-items: center; gap: 6px; }
+			/* Two classes, not one: the .x rule below sets display:grid with the same specificity, and whichever
+			 * rule comes last in the sheet wins. That is how a phone-only button ended up in the desktop header. */
+			.x.drawer-only { display: none; }
+			/* And the override has to come AFTER the base rule: an @media block adds no specificity, so a media
+			 * declaration written earlier in the sheet loses to the one below it at every width. */
+			@media (max-width: 899px) {
+				.x.drawer-only { display: grid; }
+			}
 			.col { display: grid; gap: 14px; width: 100%; justify-items: center; }
 			/* The svg inside is width:100% of its host, and an inline host has no width of its own. */
 			tt-keyboard, tt-practice { display: block; width: 100%; }
@@ -145,15 +167,9 @@ export class AppMain extends LitElement {
 			 * item a height derived from its SIBLING -- the panel's own prose would grow the row instead -- so the
 			 * pane is absolutely positioned and the text column reserves the width it needs. Both animate on the
 			 * same transition, so the chart appears to stretch rather than jump. */
-			.hist { position: relative; width: 100%; }
-			.hist-main { display: grid; gap: 10px; align-content: start; padding-right: calc(2.25rem + 16px); transition: padding-right 0.18s ease; }
-			.hist[data-panel="open"] > .hist-main { padding-right: calc(19rem + 16px); }
-			.hist > tt-insight-panel { position: absolute; top: 0; right: 0; bottom: 0; }
-			@media (max-width: 46rem) {
-				/* No sideways room on a phone: the pane goes back to being a block under the chart. */
-				.hist-main, .hist[data-panel="open"] > .hist-main { padding-right: 0; }
-				.hist > tt-insight-panel { position: static; margin-top: 10px; }
-			}
+			/* The history section is a plain stack now: the insight pane belongs to the shell, not to this
+			 * screen, so it no longer reserves room inside it. */
+			.hist { display: grid; gap: 10px; width: 100%; }
 			.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.chart { width: 100%; height: 8rem; display: block; overflow: visible; }
 			.chart text { font-size: 8px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -263,7 +279,10 @@ export class AppMain extends LitElement {
 	}
 
 	override disconnectedCallback(): void {
-		if (this.#bound) window.removeEventListener("keydown", this.#onKey);
+		if (this.#bound) {
+			window.removeEventListener("keydown", this.#onKey);
+			window.removeEventListener("keydown", this.#onEsc);
+		}
 		this.#bound = false;
 		super.disconnectedCallback();
 	}
@@ -273,6 +292,7 @@ export class AppMain extends LitElement {
 		if (changed.has("settingsOpen")) this.#syncDialog();
 		if (this.ready && !this.#bound) {
 			window.addEventListener("keydown", this.#onKey);
+			window.addEventListener("keydown", this.#onEsc);
 			this.#bound = true;
 		}
 	}
@@ -528,7 +548,12 @@ export class AppMain extends LitElement {
 			<main>
 				<div class="head">
 					<h1>${__APP_HEADING__}</h1>
-					<button class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
+					<div class="head-actions">
+						<!-- On a phone the pane is off-canvas, so the rail that opens it on a desktop is gone. This is
+							the only way in, and it hides itself above the drawer breakpoint where the rail returns. -->
+						<button class="x drawer-only" aria-label="Insights" .ariaExpanded=${this.panelOpen ? "true" : "false"} @click=${() => this.#panel(!this.panelOpen)}>${iconPanelRight}</button>
+						<button class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
+					</div>
 				</div>
 				<dialog @close=${() => (this.settingsOpen = false)} @click=${this.#onDialogClick} aria-label="Settings">
 					<div class="modal-head">
@@ -578,10 +603,14 @@ export class AppMain extends LitElement {
 						<button class="btn ghost" @click=${() => (this.view = this.view === "type" ? "progress" : "type")}>${this.view === "type" ? "Progress" : "Back to typing"}</button>
 						${this.#status(r)}
 					</div>
-					${this.view === "progress" && this.ready ? this.#stats() : nothing}
+				${this.view === "progress" && this.ready ? this.#stats() : nothing}
 					${this.#notice(geo)}
 				</div>
 			</main>
+			<!-- One pane for both layouts: a column on a desktop, a drawer under 900px. The scrim is inert on a
+				desktop and is what dismisses the drawer on a phone. -->
+			<div class="scrim" ?inert=${!this.panelOpen} @click=${() => this.#panel(false)}></div>
+			<tt-insight-panel .cards=${this.#cards()} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}></tt-insight-panel>
 		`;
 	}
 
@@ -669,15 +698,13 @@ export class AppMain extends LitElement {
 			// generated per render, labelled, never written to storage or to a repo.
 			if (this.sessions.length || !isPreviewHost(location.hostname, __APP_NAME__)) return nothing;
 			return html`
-				<div class="hist">
-					<div class="hist-main">
-						<h3 class="head">history · ${geometryById(this.geometryId).name}</h3>
-						<p class="demo-note">
-							<b>preview</b> No synced sessions yet.
-							<button class="link" @click=${() => this.#demo(true)}>Show demo sessions</button>
-						</p>
-					</div>
-				</div>
+			<div class="hist">
+				<h3>history · ${geometryById(this.geometryId).name}</h3>
+				<p class="demo-note">
+					<b>preview</b> No synced sessions yet.
+					<button class="link" @click=${() => this.#demo(true)}>Show demo sessions</button>
+				</p>
+			</div>
 			`;
 		}
 		const h = buildHistory(mine);
@@ -719,10 +746,9 @@ export class AppMain extends LitElement {
 			.y0((p) => y(p.wpm))
 			.y1((p) => y(p.strokeWpm));
 		return html`
-			<div class="hist" data-panel=${this.panelOpen ? "open" : "rail"}>
-				<div class="hist-main">
-					<h3>history · ${geometryById(this.geometryId).name}</h3>
-					${this.demo
+			<div class="hist">
+				<h3>history · ${geometryById(this.geometryId).name}</h3>
+				${this.demo
 							? html`<p class="demo-note">
 										<b>demo sessions</b> — nothing here is your progress, and none of it is stored or synced.
 										<button class="link" @click=${() => this.#demo(false)}>Use real data</button>
@@ -767,16 +793,29 @@ export class AppMain extends LitElement {
 					the newest 50 sessions per layout, so these totals are that window rather than your whole life
 					${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
 				</p>
-					</div>
-				<tt-insight-panel .cards=${insightPanel(mine, this.targetCpm)} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}></tt-insight-panel>
 			</div>
 		`;
+	}
+
+	// The pane is a child of the shell, not of the history screen, so it can be the full height of the window.
+	// That means the card data is assembled here rather than inside #history(), and the two must select the
+	// same rows the chart is drawing -- demo or real, this layout only.
+	#cards(): PanelCard[] {
+		const key = layoutKey(this.geometryId, this.keymapId);
+		const source = this.demo ? demoSessions(key) : this.sessions;
+		return insightPanel(source.filter((s) => s.layout === key), this.targetCpm);
 	}
 
 	#panel(on: boolean): void {
 		this.panelOpen = on;
 		localStorage.setItem(PANEL_OPEN_KEY, on ? "1" : "0");
 	}
+
+	// Escape dismisses the pane. On a phone that is the only way out besides the scrim and the header button,
+	// and it must not fire while the settings modal has the keyboard.
+	#onEsc = (e: KeyboardEvent): void => {
+		if (e.key === "Escape" && !this.settingsOpen && this.panelOpen) this.#panel(false);
+	};
 
 	// Turning demo data on also puts it in the URL, so a preview link that shows a chart still shows one
 	// after a reload or when forwarded onward. Turning it off removes the parameter and the rows with it:

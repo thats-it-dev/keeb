@@ -1,6 +1,6 @@
 import { svg } from "https://kit.thatsit.app/lit.js";
 
-// Two icons from Lucide v1.67.0 (ISC, https://lucide.dev), inlined rather than depended on: the app's
+// Icons from Lucide v1.67.0 (ISC, https://lucide.dev), inlined rather than depended on: the app's
 // CSP keeps the bundle self-contained, and svg markup inside a shadow root must be built with lit's
 // `svg` tag — `html` puts the nodes in the HTML namespace and they paint nothing.
 const frame = (paths: ReturnType<typeof svg>) => svg`
@@ -18,10 +18,16 @@ export const iconX = frame(svg`
 	<path d="m6 6 12 12" />
 `);
 
-export const iconTrash = frame(svg`
-	<path d="M10 11v6" />
+export const iconTrash = frame(svg`	<path d="M10 11v6" />
 	<path d="M14 11v6" />
 	<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
 	<path d="M3 6h18" />
 	<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+`);
+
+// The drawer affordance for a phone: an outlined pane with its divider on the right, which is where this
+// app's sidebar lives on a desktop.
+export const iconPanelRight = frame(svg`
+	<rect width="18" height="18" x="3" y="3" rx="2" />
+	<path d="M15 3v18" />
 `);

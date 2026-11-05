@@ -105,7 +105,7 @@ test("stats sit above the line, settings start hidden", async ({ page }) => {
 	});
 	expect(boxes.readBottom).toBeLessThanOrEqual(boxes.lineTop); // metrics above the phrase
 	await expect(page.locator("dialog")).toBeHidden(); // board/keymap behind the settings modal
-	await page.locator("app-main .head button").click();
+	await page.locator("app-main .head button[aria-label='Settings']").click();
 	await expect(page.locator("dialog")).toBeVisible();
 	await expect(page.locator("dialog .panel")).toBeVisible();
 	await page.locator("dialog [aria-label='Close settings']").click();
