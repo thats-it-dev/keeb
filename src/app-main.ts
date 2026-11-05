@@ -366,6 +366,10 @@ export class AppMain extends LitElement {
 	async #type(ch: string): Promise<void> {
 		const p = this.#practice;
 		if (!p) return;
+		// The progress screen is a look, not a mode: the keyboard keeps working underneath it, so the first
+		// keystroke brings the line back rather than typing into a screen the learner can no longer see. That
+		// replaces a "Back to typing" button, which was the only control saying what the keys already did.
+		if (this.view !== "type") this.view = "type";
 		if (!this.#startedAt) this.#startSession();
 		this.#armIdle();
 		this.lastId = p.key(ch, performance.now()) ?? "";
@@ -615,7 +619,7 @@ export class AppMain extends LitElement {
 					<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
 					<div class="row">
 						<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
-						<button class="btn ghost" @click=${() => (this.view = this.view === "type" ? "progress" : "type")}>${this.view === "type" ? "Progress" : "Back to typing"}</button>
+						${this.view === "type" ? html`<button class="btn ghost" @click=${() => (this.view = "progress")}>Progress</button>` : nothing}
 						${this.#status(r)}
 					</div>
 				${this.view === "progress" && this.ready ? this.#stats() : nothing}
@@ -688,7 +692,7 @@ export class AppMain extends LitElement {
 			: html`<p class="empty">A key gets a bar once you have hit it correctly. Hit the highlighted letter to start.</p>`;
 		return html`
 			<section class="stats">
-				<h2>progress</h2>
+				<h2>progress <span class="label">type to return</span></h2>
 				${keys}
 			</section>
 		`;

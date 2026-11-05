@@ -147,6 +147,27 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 	expect(cursor).toBeGreaterThan(10);
 });
 
+test("the progress screen exits by typing, not by a button", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	for (let i = 0; i < 6; i += 1) await tap(page, await wanted(page));
+	await page.locator("button", { hasText: "Progress" }).click();
+	await page.locator(".stats").waitFor();
+	// There used to be a "Back to typing" button here. It said out loud what every key already did -- the
+	// progress screen is a look at the numbers, not a mode the lesson pauses for -- so it is gone, and the
+	// heading carries the hint instead.
+	await expect(page.locator("button", { hasText: "Back to typing" })).toHaveCount(0);
+	await expect(page.locator(".stats h2")).toContainText("type to return");
+	// Scrolling keys must not count as typing: reading a chart with Page Down should keep the chart up.
+	await page.keyboard.press("PageDown");
+	await page.keyboard.press("ArrowRight");
+	await expect(page.locator(".stats")).toBeVisible();
+	// One real keystroke, and the line is back.
+	await tap(page, await wanted(page));
+	await expect(page.locator(".stats")).toHaveCount(0);
+	await expect(page.locator("button", { hasText: "Progress" })).toBeVisible();
+});
+
 test("the progress screen names every key it measured", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
