@@ -1,5 +1,6 @@
 import { mergeAll, type StatMap } from "../stats/stats.ts";
 import { emptyState as emptySyncState, type SyncState } from "../atproto/sync.ts";
+import type { SessionRow } from "../atproto/records.ts";
 import type { Geometry, Keymap } from "../keyboard/types.ts";
 
 // Offline-first storage. Everything the learner does lands here immediately; atproto sync (M4)
@@ -11,6 +12,7 @@ const SETTINGS = "settings";
 const BOARDS = "boards"; // layout files the learner imported (M3)
 const MAPS = "maps"; // keymaps read out of a layout editor export (M3)
 const SYNC = "sync"; // one row: which record is which, and what is waiting to be sent (M4)
+const HISTORY = "history"; // session records read from the PDS, keyed by rkey, so the chart works offline (M5)
 const SYNC_KEY = "state";
 
 export type Settings = {
@@ -28,7 +30,7 @@ let dbp: Promise<IDBDatabase> | undefined;
 
 function open(): Promise<IDBDatabase> {
 	dbp ??= new Promise((res, rej) => {
-		const req = indexedDB.open(DB, 4);
+		const req = indexedDB.open(DB, 5);
 		req.onupgradeneeded = () => {
 			const db = req.result;
 			if (!db.objectStoreNames.contains(STATS)) db.createObjectStore(STATS, { keyPath: "layout" });
@@ -39,6 +41,9 @@ function open(): Promise<IDBDatabase> {
 			if (!db.objectStoreNames.contains(MAPS)) db.createObjectStore(MAPS, { keyPath: "id" });
 			// v4: sync bookkeeping.
 			if (!db.objectStoreNames.contains(SYNC)) db.createObjectStore(SYNC, { keyPath: "key" });
+			// v5: the session rows pulled from the PDS. They live on the network, but a history that is
+			// blank until you are online is not a history an offline-first app can show.
+			if (!db.objectStoreNames.contains(HISTORY)) db.createObjectStore(HISTORY, { keyPath: "rkey" });
 		};
 		req.onsuccess = () => res(req.result);
 		req.onerror = () => rej(req.error);
@@ -96,7 +101,7 @@ export async function saveSettings(key: string, s: Settings): Promise<void> {
 
 export async function wipe(): Promise<void> {
 	const db = await open();
-	for (const store of [STATS, SETTINGS, BOARDS, MAPS, SYNC]) {
+	for (const store of [STATS, SETTINGS, BOARDS, MAPS, SYNC, HISTORY]) {
 		await new Promise<void>((res, rej) => {
 			const tx = db.transaction(store, "readwrite");
 			tx.objectStore(store).clear();
@@ -159,6 +164,33 @@ export async function deleteMap(id: string): Promise<void> {
  * The one row of sync bookkeeping: which record holds which layout's progress, and what still has to
  * leave the device. Losing it costs a duplicate record, never a lost session — sessions live on the PDS.
  */
+/**
+ * The session rows most recently seen on the PDS. `replace` writes them wholesale rather than merging:
+ * the repo is the source of truth for sessions (they are created, never edited), so a row that vanished
+ * there -- pruned, or deleted on another device -- has to vanish here too. Merging would resurrect it and
+ * the chart would quietly keep counting a session that no longer exists.
+ */
+export async function saveHistory(rows: SessionRow[]): Promise<void> {
+	const db = await open();
+	await new Promise<void>((res, rej) => {
+		const tx = db.transaction(HISTORY, "readwrite");
+		const store = tx.objectStore(HISTORY);
+		store.clear();
+		for (const r of rows) store.put(r);
+		tx.oncomplete = () => res();
+		tx.onerror = () => rej(tx.error);
+	});
+}
+
+export async function loadHistory(): Promise<SessionRow[]> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const r = db.transaction(HISTORY).objectStore(HISTORY).getAll();
+		r.onsuccess = () => res((r.result as SessionRow[]) ?? []);
+		r.onerror = () => rej(r.error);
+	});
+}
+
 export async function loadSyncState(): Promise<SyncState> {
 	const db = await open();
 	return new Promise((res, rej) => {

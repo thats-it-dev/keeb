@@ -5,7 +5,7 @@ import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { PROGRESS, SETTINGS, SESSION, defs, layout, progress, session, settings } from "../src/atproto/lexicons.ts";
-import { charMap, fromProgressRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, mergeProgress, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, statsFrom } from "../src/atproto/records.ts";
+import { charMap, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, mergeProgress, newKey, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
@@ -118,5 +118,59 @@ describe("records", () => {
 		]);
 		expect(settings.defs.main.key).toBe("literal:self");
 		expect([progress.defs.main.key, session.defs.main.key, layout.defs.main.key]).toEqual(["tid", "tid", "tid"]);
+	});
+});
+
+describe("session rows", () => {
+	it("reads the timestamp out of the rkey the record is filed under", () => {
+		// There is no time field on a session record, so the tid is the only date the app has.
+		const at = sessionTimeMs(newKey());
+		expect(Math.abs(Date.now() - at)).toBeLessThan(2000);
+	});
+
+	it("decodes rkeys in the same order it sorts them, which pruneSessions relies on", () => {
+		const a = newKey();
+		const b = newKey();
+		const ta = sessionTimeMs(a);
+		const tb = sessionTimeMs(b);
+		if (a < b) expect(tb).toBeGreaterThanOrEqual(ta);
+		else expect(ta).toBeGreaterThanOrEqual(tb);
+	});
+
+	it("treats an unreadable rkey as undated rather than throwing", () => {
+		// "self" is a real rkey in this app: the settings record uses a literal key. A tid that decodes to
+		// an absurd date is handled the same way, because a session on 1970-01-01 would sit at the far end
+		// of the chart and drag the day buckets with it.
+		for (const k of ["self", "", "zzzzzzzzzzzzzzz", "2222222222222", "aaaaaaaaaaaaaaaaaaaa"]) expect(sessionTimeMs(k)).toBe(0);
+	});
+
+	it("parses a session row and coerces its numbers to integers", () => {
+		const row = fromSessionRecord({ $type: SESSION, layout: "go60+qwerty", chars: 120.6, errors: 4, ms: 61_000.4, stats: [] }, newKey());
+		expect(row?.chars).toBe(121);
+		expect(row?.ms).toBe(61000);
+		expect(row?.layout).toBe("go60+qwerty");
+		expect(row?.atMs).toBeGreaterThan(0);
+	});
+
+	it("keeps the per-key snapshot, which is the only history the record has", () => {
+		// This field used to be dropped on read. Everything in stats/insights.ts -- per-key trends, hesitation,
+		// goal crossings -- is built from it, and the app looks identical without it except that four cards
+		// quietly fall back to "not enough data". A round trip through the writer is the assertion that holds.
+		const written = sessionRecord("go60+qwerty", { chars: 40, errors: 2, ms: 30_000, stats: { a: { ttMs16: 2400, samples: 12, errors: 2 } } });
+		const row = fromSessionRecord(written as unknown as Record<string, unknown>, newKey());
+		expect(row?.stats).toEqual({ a: { ttMs16: 2400, samples: 12, errors: 2 } });
+	});
+
+	it("reads an older record that carries no stats as an empty snapshot, not a crash", () => {
+		// Sessions written before M7 have no stats array. The history screen must still chart them by totals.
+		const row = fromSessionRecord({ $type: SESSION, layout: "go60+qwerty", chars: 10, errors: 0, ms: 5000 }, newKey());
+		expect(row?.stats).toEqual({});
+	});
+
+	it("ignores records that are not sessions and tolerates sessions missing fields", () => {
+		expect(fromSessionRecord({ $type: PROGRESS, layout: "x", stats: [], updatedAt: 1 }, newKey())).toBeUndefined();
+		expect(fromSessionRecord(undefined, newKey())).toBeUndefined();
+		const bare = fromSessionRecord({ $type: SESSION, layout: "go60+qwerty" }, "self");
+		expect(bare).toEqual({ rkey: "self", layout: "go60+qwerty", atMs: 0, chars: 0, errors: 0, ms: 0, stats: {} });
 	});
 });

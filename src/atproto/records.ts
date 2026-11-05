@@ -22,6 +22,14 @@ const str = (v: unknown, max = 100): string => (typeof v === "string" ? [...v].s
 // below a string comparison rather than a timestamp lookup.
 export const newKey = (): string => TID.nextStr();
 
+/**
+ * A tid for a moment in the past, for data that was not typed just now.
+ *
+ * Demo rows need this: their whole value is sitting at a believable date on a believable day, and a rkey
+ * that is not a tid would make every one of them read as undated.
+ */
+export const tidAt = (ms: number): string => TID.fromTime(Math.round(ms) * 1000, 0).toString();
+
 export type KeyChar = { id: string; char: string };
 
 // On the wire the identifier is `keyId`. Reads also accept the old `id`: records written before the
@@ -127,6 +135,61 @@ export function fromProgressRecord(rec: Record<string, unknown> | undefined): { 
 	if (!rec || rec.$type !== PROGRESS || typeof rec.layout !== "string") return undefined;
 	const stats = Array.isArray(rec.stats) ? statsFrom(rec.stats as ProgressRecord["stats"]) : {};
 	return { layout: rec.layout, stats };
+}
+
+/**
+ * A session as the app wants it. `atMs` is when it happened, which the record itself does not say.
+ *
+ * `stats` is the per-key state as it stood when the session ended -- a CUMULATIVE snapshot, not that
+ * session's own numbers. `chars`, `errors` and `ms` beside it are per-session deltas. The two halves of
+ * one record are different kinds of thing, and any code that diffs them has to know which side it is on.
+ */
+export type SessionRow = {
+	rkey: string;
+	layout: string;
+	atMs: number;
+	chars: number;
+	errors: number;
+	ms: number;
+	stats: StatMap;
+};
+
+/**
+ * When a session was typed, in ms since the epoch. There is no time field on the record: the lexicon is
+ * published and has none, so the tid in the rkey is the timestamp, which is what `pruneSessions` already
+ * relies on. Note `TID.timestamp()` is MICROSECONDS, and a tid that does not parse just yields a
+ * nonsense number rather than throwing -- so it is range-checked and treated as unknown when absurd.
+ * An unknown session still counts in the totals; it only cannot be placed on a day.
+ */
+export function sessionTimeMs(rkey: string): number {
+	let micros: number;
+	try {
+		micros = new TID(rkey).timestamp();
+	} catch {
+		return 0;
+	}
+	if (!Number.isFinite(micros) || micros <= 0) return 0;
+	const ms = Math.round(micros / 1000);
+	// 2020-01-01 to one day from now. A real session is inside that; a garbage tid is not.
+	return ms >= 1577836800000 && ms <= Date.now() + 86_400_000 ? ms : 0;
+}
+
+/** One session record from the network, or nothing usable. */
+export function fromSessionRecord(rec: Record<string, unknown> | undefined, rkey: string): SessionRow | undefined {
+	if (!rec || rec.$type !== SESSION || typeof rec.layout !== "string") return undefined;
+	return {
+		rkey,
+		layout: rec.layout,
+		atMs: sessionTimeMs(rkey),
+		chars: n(rec.chars),
+		errors: n(rec.errors),
+		// `ms` is the field name on the wire and means the session's wall-clock span. Renamed on the way in
+		// because every other ms in this app is a per-key timing, and a collision there is how charts lie.
+		ms: n(rec.ms),
+		// This field used to be dropped on read, which threw away every per-key history the app had ever
+		// recorded and left three integers to draw charts from.
+		stats: Array.isArray(rec.stats) ? statsFrom(rec.stats as KeyStat[]) : {},
+	};
 }
 
 /**
