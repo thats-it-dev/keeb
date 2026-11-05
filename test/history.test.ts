@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { dayKey, history, series } from "../src/stats/history.ts";
 import type { SessionRow } from "../src/atproto/records.ts";
 
-const DAY = 86_400_000;
-// Local noon, so bucketing is never a coin toss across midnight.
+// Local noon N CALENDAR days ago, via setDate rather than N x 86,400,000 ms. The difference is not cosmetic:
+// the week the clocks change, a 24-hour subtraction lands a day off, and series() walks the calendar, so
+// the two disagreed and every span assertion below drifted by one day for a few days each year.
 const noon = (daysAgo: number) => {
-	const d = new Date(Date.now() - daysAgo * DAY);
+	const d = new Date();
+	d.setDate(d.getDate() - daysAgo);
 	d.setHours(12, 0, 0, 0);
 	return d.getTime();
 };

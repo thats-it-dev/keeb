@@ -205,6 +205,22 @@ describe("crossed", () => {
 		expect(crossed(inOrder(rows), GOAL_MS)).toHaveLength(0);
 	});
 
+	it("agrees with the trends card about which keys are at goal", () => {
+		// The contradiction this pins: one card naming h, f and k as "at goal and holding" while the other
+		// insisted nothing had ever reached the goal. Both read the same records, so both must reach the same
+		// verdict about a key being under the line.
+		let stat = { ttMs16: 400 * 16, samples: 200, errors: 0 };
+		const rows = [row(0, one("h", stat))];
+		for (let i = 1; i <= 8; i += 1) {
+			stat = bumpTo(stat, i <= 3 ? 400 : 240, 30);
+			rows.push(row(i, one("h", stat)));
+		}
+		const atGoal = trends(inOrder(rows), GOAL_MS).plateaued.filter((k) => k.ms <= GOAL_MS).map((k) => k.keyId);
+		const credited = crossed(inOrder(rows), GOAL_MS).map((k) => k.keyId);
+		expect(atGoal).toContain("h");
+		expect(credited).toEqual(atGoal);
+	});
+
 	it("says nothing when the goal is not set", () => {
 		expect(crossed([row(0, one("a", { ttMs16: 100 * 16, samples: 400, errors: 0 }))], 0)).toEqual([]);
 	});
@@ -250,7 +266,7 @@ describe("panel", () => {
 	it("never prints a stat the copy then contradicts", () => {
 		for (const c of insightPanel([], GOAL_CPM)) {
 			if (c.stat === undefined) continue;
-			expect(c.body ?? "", c.id).not.toMatch(/nothing|no key|not listed/i);
+			expect(c.body ?? "", c.id).not.toMatch(/nothing|no key|no session|not listed/i);
 		}
 	});
 });

@@ -239,7 +239,7 @@ test("the insight panel is collapsed by default, opens, and remembers", async ({
 	await expect(page.locator("tt-insight-panel .body")).toBeVisible(); // remembered, without a click
 });
 
-test("an empty panel says so instead of showing four empty cards", async ({ page }) => {
+test("an empty panel explains itself instead of showing three blank cards", async ({ page }) => {
 	await page.goto("/");
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, [row({ rkey: "solo", atMs: noon(0), stats: {} })]);
@@ -247,7 +247,14 @@ test("an empty panel says so instead of showing four empty cards", async ({ page
 	await page.locator("button", { hasText: "Progress" }).click();
 	const panel = page.locator("tt-insight-panel");
 	await panel.locator(".toggle").click();
-	await expect(panel.locator('[data-id="milestones"] .say')).toContainText(/no key|not listed|starts out/i);
+	// A card with nothing to say is worse than no card: it reads as "zero", not as "unknown". So every card
+	// has to carry a sentence, and the one with a number must not contradict it.
+	for (const id of ["hesitation", "trends", "milestones"]) {
+		const say = (await panel.locator(`[data-id="${id}"] .say`).innerText()).trim();
+		expect(say.length, id).toBeGreaterThan(20);
+		expect(say, id).not.toMatch(/undefined|NaN|null/);
+	}
+	await expect(panel.locator('[data-id="milestones"] .say')).toContainText(/averages under|no session/i);
 });
 
 test("a collapsed panel takes no keyboard focus", async ({ page }) => {
@@ -294,4 +301,73 @@ test("the panel comes back the way you left it after a reload", async ({ page })
 	await page.locator("button", { hasText: "Progress" }).click();
 	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
 	await expect(page.locator("tt-insight-panel .toggle")).toHaveAttribute("aria-expanded", "false");
+});
+
+test("the panel collapses sideways, and the chart takes the width back", async ({ page }, testInfo) => {
+	const rows: Row[] = [];
+	let samples = 20;
+	for (let i = 0; i < 12; i += 1) {
+		samples += 25;
+		rows.push(row({ rkey: `w${i}`, atMs: noon(12 - i), chars: 120, ms: 90_000, stats: { a: { ttMs16: (300 - i * 8) * 16, samples, errors: 2 } } }));
+	}
+	await page.goto("/");
+	await page.locator("tt-practice .line").waitFor();
+	await seed(page, rows);
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+
+	// Bounding boxes through locators, not page.evaluate: app-main renders into a shadow root, so a
+	// document.querySelector for .chart or .hist finds nothing at all.
+	const box = async () => {
+		const panel = await page.locator("tt-insight-panel").boundingBox();
+		const chart = await page.locator(".hist .chart").boundingBox();
+		const hist = await page.locator(".hist").boundingBox();
+		if (!panel || !chart || !hist) throw new Error("panel, chart or section missing from the history screen");
+		// boundingBox() gives x/y/width/height only; there is no .right to read.
+		return { pw: Math.round(panel.width), ph: Math.round(panel.height), cw: Math.round(chart.width), hw: Math.round(hist.height), right: Math.round(panel.x + panel.width), histRight: Math.round(hist.x + hist.width) };
+	};
+
+	const panel = page.locator("tt-insight-panel");
+
+	if (testInfo.project.name === "phone") {
+		// 390px of viewport has no sideways room, and the pane deliberately falls back to a block under the
+		// chart. Assert the fallback rather than the desktop geometry it replaced.
+		// "nearly the whole row", not an exact width: the number depends on the scrollbar the runner shows.
+		const wide = await panel.boundingBox();
+		expect(wide!.width).toBeGreaterThan(300);
+		await expect(panel).toHaveCSS("position", "static");
+		await expect(page.locator(".hist-main")).toHaveCSS("padding-right", "0px");
+		const stacked = await panel.boundingBox();
+		const chart = await page.locator(".hist .chart").boundingBox();
+		expect(stacked!.y).toBeGreaterThan(chart!.y + chart!.height - 2);
+		await panel.locator(".toggle").click();
+		await expect(page.locator("tt-insight-panel .body")).toBeVisible();
+		return;
+	}
+
+	await expect(panel).toHaveCSS("width", "36px"); // 2.25rem rail
+	const closed = await box();
+	await panel.locator(".toggle").click();
+	await expect(page.locator("tt-insight-panel .body")).toBeVisible();
+	// The settled value, not a frame of the 0.18s width transition: measuring mid-animation is how this
+	// assertion first failed at 58px.
+	await expect(panel).toHaveCSS("width", "304px"); // 19rem open
+	const open = await box();
+
+	// Sideways, not downward: the panel's WIDTH is what changes, and by a wide margin.
+	expect(open.pw).toBeGreaterThan(closed.pw * 4);
+	// The pane is PINNED to the section's height in both states and scrolls its own cards, which is what makes
+	// it a sidebar rather than a drawer. The section itself does change height a little when opened, because
+	// the text column gets narrower and its summary cards re-wrap -- that is reflow, not the panel expanding
+	// downward, and the panel's own box proves the difference: it is exactly as tall as the section either way.
+	expect(Math.abs(open.ph - open.hw)).toBeLessThan(3);
+	expect(Math.abs(closed.ph - closed.hw)).toBeLessThan(3);
+	expect(await page.locator("tt-insight-panel .body").evaluate((el) => el.scrollHeight >= el.clientHeight)).toBe(true);
+	// The chart reclaims exactly what the panel gave up, which is the point of collapsing it.
+	expect(closed.cw).toBeGreaterThan(open.cw + 100);
+	// The rail hugs the right edge of the section in both states.
+	expect(Math.abs(closed.right - closed.histRight)).toBeLessThan(2);
+	expect(Math.abs(open.right - open.histRight)).toBeLessThan(2);
+	// Collapsed, the rail still spans the section's height, so it reads as a sidebar and not a floating chip.
+	expect(closed.ph).toBeGreaterThan(closed.pw * 3);
 });

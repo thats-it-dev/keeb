@@ -11,7 +11,7 @@ import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { history as buildHistory, series, type Point } from "./stats/history.ts";
 import { demoSessions, isPreviewHost } from "./stats/demo.ts";
 import { insightPanel } from "./stats/panel.ts";
-import "./stats/panel-element.ts";
+import { PANEL_OPEN_KEY } from "./stats/panel-element.ts";
 import { scaleBand, scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
 import { max } from "d3-array";
@@ -80,7 +80,7 @@ const syncStore = {
 };
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, panelOpen: { state: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -140,10 +140,20 @@ export class AppMain extends LitElement {
 			.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
 			/* History: a line per day, broken at the days you skipped -- an unbroken slope through a rest day
 			 * would claim a decline that never happened. */
-			.hist { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: start; width: 100%; }
-			.hist > .chart, .hist > .grid, .hist > .empty, .hist > .demo-note { grid-column: 1; }
-			.hist > .head { grid-column: 1 / -1; }
-			@media (max-width: 46rem) { .hist { grid-template-columns: 1fr; } .hist > .chart, .hist > .grid, .hist > .empty, .hist > .demo-note { grid-column: 1; } }
+			/* The insight pane is an editor's sidebar, not a drawer: it is pinned to the height of the history
+			 * section and scrolls its own cards, and it collapses sideways. Flex or grid cannot give a spanning
+			 * item a height derived from its SIBLING -- the panel's own prose would grow the row instead -- so the
+			 * pane is absolutely positioned and the text column reserves the width it needs. Both animate on the
+			 * same transition, so the chart appears to stretch rather than jump. */
+			.hist { position: relative; width: 100%; }
+			.hist-main { display: grid; gap: 10px; align-content: start; padding-right: calc(2.25rem + 16px); transition: padding-right 0.18s ease; }
+			.hist[data-panel="open"] > .hist-main { padding-right: calc(19rem + 16px); }
+			.hist > tt-insight-panel { position: absolute; top: 0; right: 0; bottom: 0; }
+			@media (max-width: 46rem) {
+				/* No sideways room on a phone: the pane goes back to being a block under the chart. */
+				.hist-main, .hist[data-panel="open"] > .hist-main { padding-right: 0; }
+				.hist > tt-insight-panel { position: static; margin-top: 10px; }
+			}
 			.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.chart { width: 100%; height: 8rem; display: block; overflow: visible; }
 			.chart text { font-size: 8px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -176,6 +186,9 @@ export class AppMain extends LitElement {
 	view: "type" | "progress" = "type";
 	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
 	sessions: SessionRow[] = [];
+	// Which way the insight pane is folded. Read here and passed down, because the history section has to
+	// reserve the same width the pane takes -- a child that kept this to itself would overlap the chart.
+	panelOpen = localStorage.getItem(PANEL_OPEN_KEY) === "1";
 	// Fake history for previews, switched on by ?demo=1. Generated per render and never stored anywhere:
 	// a preview visit must not be able to write a made-up session into a real repo or a real device.
 	demo = new URLSearchParams(location.search).has("demo");
@@ -657,11 +670,13 @@ export class AppMain extends LitElement {
 			if (this.sessions.length || !isPreviewHost(location.hostname, __APP_NAME__)) return nothing;
 			return html`
 				<div class="hist">
-					<h3 class="head">history · ${geometryById(this.geometryId).name}</h3>
-					<p class="demo-note">
-						<b>preview</b> No synced sessions yet.
-						<button class="link" @click=${() => this.#demo(true)}>Show demo sessions</button>
-					</p>
+					<div class="hist-main">
+						<h3 class="head">history · ${geometryById(this.geometryId).name}</h3>
+						<p class="demo-note">
+							<b>preview</b> No synced sessions yet.
+							<button class="link" @click=${() => this.#demo(true)}>Show demo sessions</button>
+						</p>
+					</div>
 				</div>
 			`;
 		}
@@ -704,15 +719,16 @@ export class AppMain extends LitElement {
 			.y0((p) => y(p.wpm))
 			.y1((p) => y(p.strokeWpm));
 		return html`
-			<div class="hist">
-				<h3>history · ${geometryById(this.geometryId).name}</h3>
-				${this.demo
-					? html`<p class="demo-note">
-							<b>demo sessions</b> — nothing here is your progress, and none of it is stored or synced.
-							<button class="link" @click=${() => this.#demo(false)}>Use real data</button>
-						</p>`
-					: nothing}
-				<div class="grid">
+			<div class="hist" data-panel=${this.panelOpen ? "open" : "rail"}>
+				<div class="hist-main">
+					<h3>history · ${geometryById(this.geometryId).name}</h3>
+					${this.demo
+							? html`<p class="demo-note">
+										<b>demo sessions</b> — nothing here is your progress, and none of it is stored or synced.
+										<button class="link" @click=${() => this.#demo(false)}>Use real data</button>
+									</p>`
+							: nothing}
+					<div class="grid">
 					${card("sessions", `${h.sessions}`)} ${card("characters", `${h.chars}`)} ${card("practised", `${h.minutes} min`)} ${card("streak", `${h.streak} d`)}
 					${card("best day", `${h.best?.wpm ?? 0} wpm`)}
 				</div>
@@ -751,9 +767,15 @@ export class AppMain extends LitElement {
 					the newest 50 sessions per layout, so these totals are that window rather than your whole life
 					${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
 				</p>
-				<tt-insight-panel .cards=${insightPanel(mine, this.targetCpm)}></tt-insight-panel>
+					</div>
+				<tt-insight-panel .cards=${insightPanel(mine, this.targetCpm)} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}></tt-insight-panel>
 			</div>
 		`;
+	}
+
+	#panel(on: boolean): void {
+		this.panelOpen = on;
+		localStorage.setItem(PANEL_OPEN_KEY, on ? "1" : "0");
 	}
 
 	// Turning demo data on also puts it in the URL, so a preview link that shows a chart still shows one

@@ -5,12 +5,12 @@
 // missing? So a card says "not enough sessions yet" instead of inventing a zero.
 
 import type { SessionRow } from "../atproto/records.ts";
-import { hesitation, speedLoss, trends, type KeyTrend } from "./insights.ts";
+import { hesitation, keyDelta, speedLoss, trends, type KeyTrend } from "./insights.ts";
 import { targetTimeMs } from "./stats.ts";
 
 export type PanelCard = { id: string; title: string; body: string; stat?: string; sub?: string; rows?: { label: string; detail: string }[] };
 
-/** Half of them stuck, half of them improving, and one slow one to practise. */
+/** A trend needs at least this many sessions in each half before its slope means anything. */
 const MIN_TRACK_SESSIONS = 4;
 
 /** Demo rows carry no timestamps, so no insight that depends on "when" can be drawn from them. */
@@ -78,11 +78,11 @@ export function insightPanel(rows: SessionRow[], targetCpm: number): PanelCard[]
 							id: "milestones",
 							title: "Keys you reached",
 							stat: `${marks.length}`,
-							sub: `first recorded under ${goalMs} ms`,
+							sub: `first averaged under ${goalMs} ms`,
 							rows: marks.map((m) => ({ label: m.keyId, detail: fmtDay.format(new Date(m.atMs)) })),
-							body: `Judged on the mean of every stroke typed on the key, and dated to when it first enters the history the repo still keeps. A key learnt before that window is credited here too, because its records still say it was fast.`,
+							body: `Dated to the first session whose own average beat ${goalMs} ms on that key. A key already fast when this window opens is credited here at the start, because the records that would date it properly have been pruned.`,
 						}
-					: { id: "milestones", title: "Keys you reached", body: `Nothing in this history starts out under ${goalMs} ms. Either you are still on the first keys, or the records that would show it have been pruned.` },
+					: { id: "milestones", title: "Keys you reached", body: `No session in this window averages under ${goalMs} ms on any key yet.` },
 	);
 
 	return cards;
@@ -94,34 +94,31 @@ function gain(k: KeyTrend): string {
 }
 
 /**
- * When each key was already fast enough to count as learned.
+ * When each key first averaged under the goal.
  *
- * The date is when that key first appears in the retained history, and the measure is the running mean on
- * that record: every stroke ever typed on it, which is what "can you do it" means. Three sessions in a row
- * would have been the naive version of this, and it is wrong twice -- a key that had already settled reports
- * nothing at all, and the last session where the delta happens to dip under the goal is not when it was
- * learnt. Watching a 1/16-weighted cumulative mean "cross" a line measures noise, not a milestone.
+ * The measure is the session's OWN recovered mean -- the same basis the trends card uses -- because two
+ * cards on one screen must not disagree about whether a key is at goal. Judging a key by the cumulative mean
+ * on its first record instead made that happen: "h at 267 ms, at goal and holding" sat directly above
+ * "nothing in this history starts out under 300 ms", and both were true of different quantities.
+ *
+ * A key that was already fast when the retained window opens is credited at that first session. The day it
+ * was actually learnt is not recoverable -- those records are pruned -- and the copy says so.
  */
 export function crossed(rows: SessionRow[], goalMs: number): { keyId: string; atMs: number; sessions: number }[] {
 	if (goalMs <= 0) return [];
 	const timed = dated(rows);
-	// A key is judged by the running mean stored on its FIRST record, which is the average of every stroke
-	// the learner has ever typed on it. The old rule watched the trajectory cross a line, but a cumulative
-	// mean that had already settled before our window begins never crosses anything in it -- so a learner
-	// who got good at `a` two months ago would never be credited for `a`, and the card reported a session
-	// number that the data did not support.
-	const settled = new Map<string, { atMs: number; sessions: number }>();
+	const hit = new Map<string, { atMs: number; sessions: number }>();
 	for (let i = 0; i < timed.length; i += 1) {
 		const prev = i > 0 ? timed[i - 1].stats : undefined;
 		for (const [id, stat] of Object.entries(timed[i].stats)) {
-			if (prev?.[id]?.samples) continue; // not this key's first appearance in the window
-			if (stat.samples < MIN_CREDIT_SAMPLES) continue;
-			const ms = Math.round(stat.ttMs16 / 16);
-			if (ms > 0 && ms <= goalMs) settled.set(id, { atMs: timed[i].atMs, sessions: i + 1 });
+			if (hit.has(id)) continue;
+			const d = keyDelta(prev?.[id], stat);
+			if (!d.moved || d.strokes < MIN_CREDIT_STROKES) continue;
+			if (d.ms > 0 && d.ms <= goalMs) hit.set(id, { atMs: timed[i].atMs, sessions: i + 1 });
 		}
 	}
-	return [...settled].map(([keyId, v]) => ({ keyId, ...v })).sort((a, b) => a.atMs - b.atMs || (a.keyId < b.keyId ? -1 : 1));
+	return [...hit].map(([keyId, v]) => ({ keyId, ...v })).sort((a, b) => a.atMs - b.atMs || (a.keyId < b.keyId ? -1 : 1));
 }
 
-/** A mean built from two keystrokes is not evidence that a key was ever learned. */
-const MIN_CREDIT_SAMPLES = 30;
+/** A session with fewer strokes than this is not evidence a key was learnt -- a lucky pair of taps. */
+const MIN_CREDIT_STROKES = 8;
