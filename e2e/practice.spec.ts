@@ -147,21 +147,19 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 	expect(cursor).toBeGreaterThan(10);
 });
 
-test("progress screen ranks keys instead of saturating every bar", async ({ page }, testInfo) => {
+test("the progress screen names every key it measured", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
 	for (let i = 0; i < 40; i += 1) {
 		const ch = await wanted(page);
 		if (ch === "") break;
-		// Deliberate pauses, so some keys end up measurably slower than others. A run of uniform synthetic
-		// taps types every key at the same speed, which would make "different times give different widths"
-		// vacuous and let a scale that cannot rank anything pass.
+		// A held key is one intention, not twenty, so the loop pauses now and then to make the timings
+		// unequal in the way a hand does.
 		if (i % 5 === 4) await page.waitForTimeout(60);
 		await tap(page, ch);
 	}
 	await page.locator("button", { hasText: "Progress" }).click();
-	const rows = page.locator(".krow");
-	expect(await rows.count()).toBeGreaterThan(3);
+	expect(await page.locator(".krow").count()).toBeGreaterThan(3);
 	// Only keys with timing get a row. A key never struck has no bar to draw, and 40 empty rows used to
 	// bury the handful that meant something; they get chips instead.
 	expect(await page.locator(".chip").count()).toBeGreaterThan(0);
@@ -173,33 +171,71 @@ test("progress screen ranks keys instead of saturating every bar", async ({ page
 	expect(caps.length).toBeGreaterThan(3);
 	expect(caps.every((c) => c.trim() !== "")).toBe(true);
 	expect(caps).toContain("space");
-	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => (e as HTMLElement).style.width));
-	expect(widths.every((w) => parseFloat(w) <= 100 && parseFloat(w) >= 2)).toBe(true);
-	// The regression this screen was missing: bars scaled against the goal pinned anything faster than 2x
-	// goal at 100% and the chart ranked nothing. Different times must give different widths.
-	const times = await page.locator(".krow .num").allInnerTexts();
-	const msOf = (t: string) => Number(t.match(/(\d+)ms/)?.[1] ?? -1);
-	const pairs = widths.map((w, i) => ({ ms: msOf(times[i]!), w: parseFloat(w) })).filter((p) => p.ms > 0);
-	const distinct = [...new Set(pairs.map((p) => p.ms))];
-	expect(distinct.length).toBeGreaterThan(1);
+	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => parseFloat((e as HTMLElement).style.width)));
+	expect(widths.every((w) => w <= 100 && w >= 2)).toBe(true);
+	// Ordering is all this path can honestly claim: a scripted loop strikes every key in a millisecond or
+	// two, which against the 300 ms default goal is 150-300x goal speed -- deep inside the scale's 100%
+	// clamp (measured: barWidth pins at 100 below goal/3.9). Asking those rows to look different from each
+	// other is a claim about the machine's clock, not about typing. test/scale.test.ts and the seeded test
+	// below own the ranking.
+	const pairs = widths.map((w, i) => ({ ms: Number((nums[i] ?? "").match(/(\d+)ms/)?.[1] ?? -1), w })).filter((p) => p.ms > 0);
+	expect(pairs.length).toBeGreaterThan(3);
 	for (const a of pairs) for (const b of pairs) if (a.ms < b.ms) expect(a.w).toBeGreaterThanOrEqual(b.w);
-	// The strict version, and the one that actually catches the old scale: different times must produce
-	// different bars, not merely non-inverted ones. The goal-relative formula clamped anything faster than
-	// 2x goal to 100%, so a fast run gave one uniform set of widths.
-	//
-	// The scale is logarithmic, so "can the bars differ at all" is a question about RATIO: measured against
-	// barWidth(), one width point costs 2^(1/25) - 1 = 2.81% of ms, at every goal speed. Two points of spread
-	// is the smallest difference this screen could possibly draw, and below that the browser is not testing
-	// the scale -- it is testing how precisely the runner timestamps synthetic keystrokes. When the spread is
-	// that narrow the check is annotated rather than silently dropped, and test/scale.test.ts is what holds
-	// the ranking property in that case.
-	const ratio = Math.max(...pairs.map((p) => p.ms)) / Math.min(...pairs.map((p) => p.ms));
-	if (ratio >= Math.pow(2, 2 / 25)) {
-		expect(new Set(pairs.map((p) => p.w)).size).toBeGreaterThan(1);
-	} else {
-		testInfo.annotations.push({ type: "note", description: `keystroke spread was ${(ratio.toFixed(4))}x, below the scale's 5.7% resolution; ranking asserted in test/scale.test.ts` });
-	}
-	// The tick is the goal, so it belongs at the same x in every row: the scale's midpoint.
+});
+
+test("bar widths rank a spread of timings instead of saturating", async ({ page }) => {
+	// The regression this replaces: bars scaled against the goal linearly pinned anything faster than 2x
+	// goal at 100%, and the chart ranked nothing. Seeded means straddling that knee -- 40 ms to 900 ms
+	// against a 300 ms goal -- are what a learner's first weeks look like, and they are the only version of
+	// this claim that does not depend on how fast the runner can fire keydown events.
+	await page.goto("/");
+	await ready(page);
+	// Key ids are positional on this board (L_C3R2), so the letters have to be resolved through the keymap
+	// rather than written down as ids.
+	const means: Record<string, number> = { a: 40, s: 120, d: 300, f: 460, g: 900 };
+	const ids: Record<string, string> = {};
+	for (const ch of Object.keys(means)) ids[ch] = await idFor(page, ch);
+	expect(Object.values(ids).every((i) => i !== "")).toBe(true);
+
+	await page.evaluate(
+		([m, id]) =>
+			new Promise<void>((res, rej) => {
+				const db = indexedDB.open("keeb");
+				db.onsuccess = () => {
+					const value = Object.fromEntries(Object.entries(m).map(([ch, ms]) => [id[ch], { ttMs16: Math.round((ms as number) * 16), samples: 120, errors: 0 }]));
+					const tx = db.result.transaction("stats", "readwrite");
+					tx.objectStore("stats").put({ layout: "go60+qwerty", value });
+					tx.oncomplete = () => {
+						db.result.close();
+						res();
+					};
+					tx.onerror = () => rej(tx.error);
+				};
+				db.onerror = () => rej(db.error);
+			}),
+		[means, ids] as [Record<string, number>, Record<string, string>],
+	);
+	await page.reload();
+	await ready(page);
+	await page.locator("button", { hasText: "Progress" }).click();
+	// The rows render only once the store has answered; reading .krow before that yields an empty list, and
+	// every .every() below would then pass vacuously.
+	await page.locator(".krow").first().waitFor();
+
+	// Rows are identified by the label they show: .krow carries no id attribute, and the label is the thing a
+	// learner reads next to the bar anyway.
+	const rows = await page.locator(".krow").evaluateAll((els) =>
+		els.map((e) => ({ cap: (e.querySelector(".cap") as HTMLElement).textContent?.trim() ?? "", w: parseFloat((e.querySelector(".bar") as HTMLElement).style.width) })),
+	);
+	const byCap = new Map(rows.map((r) => [r.cap, r.w]));
+	const widths = ["a", "s", "d", "g"].map((ch) => byCap.get(ch));
+	expect(widths.every((w) => w !== undefined)).toBe(true);
+	// Distinct: 40 ms and 120 ms are both under the goal, and a scale that saturates draws them alike.
+	expect(new Set(widths).size).toBe(widths.length);
+	// And strictly shorter as the key gets slower, which is the direction the bars mean.
+	for (let i = 1; i < widths.length; i += 1) expect(widths[i]).toBeLessThan(widths[i - 1]!);
+	// Exactly at goal sits at the midpoint, and the tick that marks it is at the same x in every row.
+	expect(byCap.get("d"), "the key at exactly goal").toBe(50);
 	const marks = await page.locator(".krow .mark").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
 	expect(marks).toEqual(["50%"]);
 	await expect(page.locator(".card").first()).toContainText("wpm");
