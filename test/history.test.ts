@@ -145,3 +145,54 @@ describe("history", () => {
 		expect(h.days.map((d) => d.day)).toEqual(before);
 	});
 });
+
+describe("the typing-only line", () => {
+	// One session per day, first appearance of the key: then the snapshot IS the session, and the stroke
+	// time is samples x mean. That is the arithmetic the shaded band between the two lines is drawn from.
+	const typed = (daysAgo: number, strokes: number, msEach: number, wallMs: number) =>
+		s({ atMs: noon(daysAgo), chars: strokes, ms: wallMs, stats: { a: { ttMs16: Math.round(msEach * 16), samples: strokes, errors: 0 } } });
+
+	it("is the same characters over less time, so it never sits below the clock line", () => {
+		const h = history([typed(0, 100, 300, 60_000)]);
+		expect(h.days[0]!.wpm).toBe(20); // 100 chars over 60 s
+		expect(h.days[0]!.strokeWpm).toBe(40); // the same 100 chars over the 30 s they actually took
+		expect(h.days[0]!.strokeWpm).toBeGreaterThanOrEqual(h.days[0]!.wpm);
+	});
+
+	it("clamps at the wall clock, because stroke time cannot exceed the session that contained it", () => {
+		// A merged record can carry a mean that implies more keystroke time than the session lasted. The
+		// band would otherwise be drawn upside down, or the line would run off the top of the chart.
+		const h = history([typed(0, 100, 900, 10_000)]);
+		expect(h.days[0]!.strokeWpm).toBe(h.days[0]!.wpm);
+		expect(h.days[0]!.strokeMinutes).toBeLessThanOrEqual(h.days[0]!.minutes);
+	});
+
+	it("pools characters over stroke time across a day rather than averaging the sessions", () => {
+		// Same shape as the clock line's rule, and the same trap: a short fast session and a long slow one
+		// are not two equal votes about how the day went.
+		const day = noon(0);
+		const rows = [s({ atMs: day, chars: 20, ms: 6_000, stats: { a: { ttMs16: 100 * 16, samples: 20, errors: 0 } } }), s({ atMs: day, chars: 200, ms: 60_000, stats: { a: { ttMs16: 250 * 16, samples: 200, errors: 0 } } })];
+		// Both fixtures above share an rkey, which real records cannot do. That is the point of the second
+		// assertion: a stroke map keyed by rkey would hand one session's number to both and double-count it.
+		const h = history(rows);
+		expect(h.days[0]!.strokeWpm).toBe(Math.round(220 / (47_000 / 60000) / 5)); // 20 strokes at 100 ms, then 180 more at 250 ms
+		expect(h.days[0]!.strokeWpm).toBeLessThan(Math.round(220 / (2000 / 60000) / 5)); // not the first session's timing reused
+		expect(h.days[0]!.sessions).toBe(2);
+	});
+
+	it("measures nothing for a session that carries no per-key stats", () => {
+		// Records from before stats existed, and any row seeded without them. The honest output is 0, which
+		// makes the chart draw the clock line and leave the band out -- the alternative is to shade the whole
+		// area under the curve as "time not typing", which is a claim about the data rather than the data.
+		const h = history([s({ atMs: noon(0), chars: 100, ms: 60_000 })]);
+		expect(h.days[0]!.strokeWpm).toBe(0);
+		expect(series(h)[0]!.strokeWpm).toBe(0);
+	});
+
+	it("counts an undated session in the totals but on no day", () => {
+		const h = history([s({ atMs: 0, chars: 100, ms: 60_000, stats: { a: { ttMs16: 300 * 16, samples: 100, errors: 0 } } }), typed(1, 100, 300, 60_000)]);
+		expect(h.days).toHaveLength(1);
+		expect(h.strokeWpm).toBeGreaterThan(0);
+		expect(h.strokeWpm).toBeGreaterThanOrEqual(h.wpm);
+	});
+});

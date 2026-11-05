@@ -53,29 +53,38 @@ export function demoSessions(layout: string, opts: { seed?: number; days?: numbe
 			// chars follows from wpm and minutes by definition (5 characters to a word), so the derived
 			// speed on the chart equals the ramp above instead of drifting from it.
 			const chars = wpm * 5 * minutes;
-			// Roughly one third of the alphabet per session, faster as the ramp goes up, and each keystroke
-			// moves the stored mean the way engine.bump() would move it.
-			const strokesPerKey = Math.max(1, Math.round(chars / 18));
-			for (const keyId of taught) {
-				if (r() > 0.4) continue;
+			// Rounded like every other number here: a float is what the atproto data model cannot carry, and
+			// a generator that drifts from the shape of real rows would stop being a test of that shape.
+			const ms = Math.round((minutes + r()) * 60_000);
+			// The two lines of the chart are only honest if the stroke total is LESS than the wall clock by a
+			// deliberate margin. Distributing chars/18 strokes to every key that happened to be struck made the
+			// stroke total unrelated to `chars` -- on a session that struck ten keys it came out around half the
+			// wall time, which drew a typing line roughly twice the clock line, in a demo whose whole job is to
+			// look like a plausible learner.
+			const pauseShare = 0.1 + r() * 0.16; // 10-26% of the session spent not typing
+			const perChar = (ms * (1 - pauseShare)) / chars;
+			const struck = taught.filter(() => r() < 0.4);
+			if (!struck.length) struck.push(taught[Math.floor(r() * taught.length)]!);
+			// Stroke counts per key sum to exactly `chars`: an even share, with the remainder handed to the
+			// first keys. Anything else re-breaks the relationship above.
+			const each = Math.floor(chars / struck.length);
+			struck.forEach((keyId, i) => {
+				const strokes = each + (i < chars - each * struck.length ? 1 : 0);
 				let stat = running[keyId] ?? { ttMs16: 0, samples: 0, errors: 0 };
-				const goal = 60000 / (wpm * 5);
-				for (let i = 0; i < strokesPerKey; i += 1) {
-					const ms = Math.max(20, Math.round(goal * (0.6 + r() * 0.9)) * 16);
-					stat = { ttMs16: stat.samples === 0 ? ms : stat.ttMs16 + (ms - stat.ttMs16) / 16, samples: stat.samples + 1, errors: stat.errors };
+				for (let k = 0; k < strokes; k += 1) {
+					const strokeMs = Math.max(20, Math.round(perChar * (0.7 + r() * 0.6))); // mean 1.0 x perChar
+					stat = { ttMs16: stat.samples === 0 ? strokeMs * 16 : stat.ttMs16 + (strokeMs * 16 - stat.ttMs16) / 16, samples: stat.samples + 1, errors: stat.errors };
 					if (r() < 0.02) stat = { ...stat, errors: stat.errors + 1 };
 				}
 				running[keyId] = stat;
-			}
+			});
 			rows.push({
 				rkey: `${tidAt(atMs)}-${rows.length}`,
 				layout,
 				atMs,
 				chars,
 				errors: Math.round(chars * (0.004 + r() * 0.02)),
-				// Rounded like every other number here: a float is what the atproto data model cannot carry, and
-				// a generator that drifts from the shape of real rows would stop being a test of that shape.
-				ms: Math.round((minutes + r()) * 60_000),
+				ms,
 				stats: { ...running },
 			});
 		}

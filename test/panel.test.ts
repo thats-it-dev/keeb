@@ -224,42 +224,31 @@ describe("panel", () => {
 		for (let i = 1; i <= 10; i += 1) {
 			slow.push(row(i, one("q", bumpTo(slow[i - 1].stats.q, i <= 5 ? 400 : 620, 20))));
 		}
-		const cards = insightPanel(slow, {}, GOAL_CPM);
+		const cards = insightPanel(slow, GOAL_CPM);
 		const t = cards.find((c) => c.id === "trends");
 		expect(t?.rows?.map((r) => r.label)).toContain("q");
 		expect(t?.body ?? "").toMatch(/slipping/i);
 	});
 
-	it("always returns the same four cards, in order, whatever the data", () => {
-		const cards = insightPanel([row(0, stats, { atMs: 0 })], stats, GOAL_CPM);
-		expect(cards.map((c) => c.id)).toEqual(["hesitation", "trends", "milestones", "drill"]);
-	});
+	it("returns three history cards, and none of them repeats the key bars", () => {
+			// "Slowest right now" was here, and it restated the bars on the screen directly above it in a worse
+			// format. The panel's whole claim to exist is that it says things the chart and the bars cannot.
+			const cards = insightPanel([row(0, stats, { atMs: 0 })], GOAL_CPM);
+			expect(cards.map((c) => c.id)).toEqual(["hesitation", "trends", "milestones"]);
+		});
 
 	it("explains itself with no data instead of showing nothing", () => {
-		for (const c of insightPanel([], {}, GOAL_CPM)) expect(c.body || c.rows?.length).toBeTruthy();
-	});
-
-	it("names the slowest keys relative to the goal, not to an absolute number", () => {
-		const cards = insightPanel([], stats, GOAL_CPM);
-		const drill = cards.find((c) => c.id === "drill");
-		expect(drill?.rows?.map((r) => r.label)).toEqual(["q"]);
-	});
-
-	it("says there is nothing to blame when every key is near goal", () => {
-		const near: StatMap = { a: { ttMs16: 260 * 16, samples: 500, errors: 0 }, s: { ttMs16: 255 * 16, samples: 400, errors: 2 } };
-		const drill = insightPanel([], near, GOAL_CPM).find((c) => c.id === "drill");
-		expect(drill?.rows).toEqual([]);
-		expect(drill?.body).toContain("1.6×");
+		for (const c of insightPanel([], GOAL_CPM)) expect(c.body || c.rows?.length).toBeTruthy();
 	});
 
 	it("does not claim a hesitation number it cannot derive", () => {
 		// One session is not a trend, and the card would be quoting a single sample as if it were a rate.
-		const cards = insightPanel([row(0, one("a", { ttMs16: 300 * 16, samples: 50, errors: 0 }))], {}, GOAL_CPM);
+		const cards = insightPanel([row(0, one("a", { ttMs16: 300 * 16, samples: 50, errors: 0 }))], GOAL_CPM);
 		expect(cards.find((c) => c.id === "hesitation")?.stat).toBeUndefined();
 	});
 
 	it("never prints a stat the copy then contradicts", () => {
-		for (const c of insightPanel([], stats, GOAL_CPM)) {
+		for (const c of insightPanel([], GOAL_CPM)) {
 			if (c.stat === undefined) continue;
 			expect(c.body ?? "", c.id).not.toMatch(/nothing|no key|not listed/i);
 		}

@@ -132,21 +132,50 @@ export type Hesitation = { atMs: number; wpm: number; strokeWpm: number; typingM
 
 export type HesitationPoint = { atMs: number; wpm: number; strokeWpm: number; pausedShare: number };
 
+/**
+ * Stroke time for one session, undoing the running average.
+ *
+ * `prev` is the same key's stat on the PREVIOUS session. Pass nothing and there is no diff to take, which
+ * is the case for the first record of a key rather than the case of a key that was not typed.
+ */
+export function strokeMsFor(s: SessionRow, prev?: StatMap): number {
+	let ms = 0;
+	for (const [id, stat] of Object.entries(s.stats)) {
+		const d = keyDelta(prev?.[id], stat);
+		if (d.moved) ms += d.strokes * d.ms;
+	}
+	if (ms > 0) return ms;
+	// No diffable history -- the first record this key has, or a session written before records carried
+	// stats. The snapshot mean times the character count is the only estimate left, and it is the weaker one.
+	const means = Object.values(s.stats)
+		.map((x) => x.ttMs16 / 16)
+		.filter((x) => x > 0);
+	return means.length ? s.chars * median(means) : 0;
+}
+
+/**
+ * Session stroke times, keyed by the row itself.
+ *
+ * Keyed by identity, not by rkey: rkey is a record key and is unique in what comes off the PDS, but a
+ * caller that builds rows by hand (a test fixture, a merge of two caches) can hand in the same rkey twice,
+ * and a Map keyed by rkey would quietly keep one stroke time and apply it to both sessions.
+ */
+export function sessionStrokeMs(rows: SessionRow[]): Map<SessionRow, number> {
+	const ordered = inOrder(rows);
+	const out = new Map<SessionRow, number>();
+	for (let i = 0; i < ordered.length; i += 1) out.set(ordered[i], strokeMsFor(ordered[i], i > 0 ? ordered[i - 1].stats : undefined));
+	return out;
+}
+
 export function hesitation(rows: SessionRow[]): { points: HesitationPoint[]; avgPausedShare: number; slowestPaused: HesitationPoint | undefined } {
 	const ordered = inOrder(rows);
 	const points: HesitationPoint[] = [];
 	for (let i = 0; i < ordered.length; i += 1) {
 		const s = ordered[i];
 		if (s.ms <= 0 || s.chars <= 0 || s.atMs <= 0) continue;
-		const prev = i > 0 ? ordered[i - 1].stats : undefined;
-		let strokeMs = 0;
-		for (const [id, stat] of Object.entries(s.stats)) {
-			const d = keyDelta(prev?.[id], stat);
-			if (d.moved) strokeMs += d.strokes * d.ms;
-		}
-		// A snapshot that disagrees with the character count is a merged or partial record; trust the
-		// count, and clamp so the panel never reports negative pausing.
-		if (strokeMs <= 0) strokeMs = s.chars * median(Object.values(s.stats).map((x) => x.ttMs16 / 16).filter((x) => x > 0));
+		const strokeMs = strokeMsFor(s, i > 0 ? ordered[i - 1].stats : undefined);
+		// Clamp so a merged record that implies more stroke time than the session lasted cannot report
+		// negative pausing.
 		const typingMs = Math.min(s.ms, Math.round(strokeMs));
 		const pausedMs = s.ms - typingMs;
 		points.push({

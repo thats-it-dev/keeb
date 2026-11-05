@@ -156,6 +156,57 @@ test("?demo=1 draws a labelled curve and stores nothing", async ({ page }) => {
 	await expect(page.locator(".hist")).toHaveCount(0);
 });
 
+test("the chart draws the pausing, and refuses to draw it without the data", async ({ page }) => {
+	const withStats = (i: number, strokes: number) =>
+		row({
+			rkey: `s${String(i).padStart(3, "0")}`,
+			atMs: noon(23 - i), // consecutive days, so the line is one run rather than four single-point segments
+			chars: strokes,
+			ms: 120_000,
+			// Cumulative, the way a record is: the snapshot is the state of the key when the session ended.
+			stats: { a: { ttMs16: 300 * 16, samples: strokes * (i + 1), errors: 0 } },
+		});
+	const rows = [withStats(0, 60), withStats(1, 60), withStats(2, 60), withStats(3, 60)];
+	await page.goto("/");
+	await page.locator("tt-practice .line").waitFor();
+	await seed(page, rows);
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+
+	const paths = await page.locator(".chart").evaluate((svg) => {
+		const d = (sel: string) => svg.querySelector(sel)?.getAttribute("d") ?? "";
+		return { trend: d(".trend"), typing: d(".typing"), gap: d(".gap") };
+	});
+	expect(paths.trend).not.toBe("");
+	// Two separate lines: the clock speed, and the same characters over the stroke time alone.
+	expect(paths.typing).not.toBe("");
+	expect(paths.typing).not.toBe(paths.trend);
+	// A higher wpm is a smaller y in SVG space, so every point of the typing line sits ABOVE the clock line
+	// on the same day, and the band between them is the time that was not spent typing.
+	expect(paths.gap).not.toBe("");
+	expect(paths.typing.split("L").length).toBe(4); // one run, four consecutive days
+	const ys = (d: string) => [...d.matchAll(/([\d.]+),([\d.]+)/g)].map((m) => Number(m[2]));
+	const clockY = ys(paths.trend);
+	const typingY = ys(paths.typing);
+	expect(typingY).toHaveLength(clockY.length);
+	typingY.forEach((y, i) => expect(y, `day ${i}`).toBeLessThan(clockY[i]!));
+
+	// Now the same days with the per-key snapshot removed. Records written before stats existed look like
+	// this, and the honest chart draws one line and no band -- not a band filled all the way to the axis,
+	// which would read as "every second of this session was spent hesitating".
+	await seed(page, rows.map((r) => ({ ...r, stats: {} })));
+	await page.reload();
+	await page.locator("button", { hasText: "Progress" }).click();
+	const bare = await page.locator(".chart").evaluate((svg) => ({
+		trend: svg.querySelector(".trend")?.getAttribute("d") ?? "",
+		typing: svg.querySelector(".typing")?.getAttribute("d") ?? "",
+		gap: svg.querySelector(".gap")?.getAttribute("d") ?? "",
+	}));
+	expect(bare.trend).not.toBe("");
+	expect(bare.typing).toBe("");
+	expect(bare.gap).toBe("");
+});
+
 test("the insight panel is collapsed by default, opens, and remembers", async ({ page }) => {
 	const rows: Row[] = [];
 	let samples = 20;
@@ -173,7 +224,7 @@ test("the insight panel is collapsed by default, opens, and remembers", async ({
 	const panel = page.locator("tt-insight-panel");
 	await expect(panel).toBeVisible();
 	// Closed: the cards exist in the DOM but are hidden, so opening costs no re-render of the chart.
-	await expect(panel.locator(".card")).toHaveCount(4);
+	await expect(panel.locator(".card")).toHaveCount(3);
 	await expect(panel.locator(".body")).toBeHidden();
 	await expect(panel.locator(".toggle")).toHaveAttribute("aria-expanded", "false");
 

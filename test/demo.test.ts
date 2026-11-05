@@ -73,3 +73,37 @@ describe("isPreviewHost", () => {
 		expect(isPreviewHost("a.b.keeb.pages.dev", "keeb")).toBe(false);
 	});
 });
+
+describe("the demo's hesitation band", () => {
+	// The chart's shaded band comes from the same generator as everything else in the demo, so a generator
+	// whose stroke totals were unrelated to its character counts would draw a learner pausing half the time.
+	// A PR screenshot is a claim about what real progress looks like.
+	it("puts the typing line within a plausible margin of the clock line", () => {
+		for (const seed of [20261104, 7, 99, 1234]) {
+			const h = history(demoSessions("go60+qwerty", { seed }));
+			const ratio = h.strokeWpm / Math.max(1, h.wpm);
+			expect(ratio, `seed ${seed} typing/clock`).toBeGreaterThanOrEqual(1.05);
+			expect(ratio, `seed ${seed} band too wide to be a learner`).toBeLessThan(1.6);
+		}
+	});
+
+	it("keeps stroke time inside the wall clock on every day", () => {
+		for (const rows of [demoSessions("go60+qwerty", { seed: 5 }), demoSessions("corne+colemak_dh", { seed: 6, days: 30 })]) {
+			for (const d of history(rows).days) {
+				expect(d.strokeMinutes).toBeLessThanOrEqual(d.minutes);
+				if (d.wpm > 0) expect(d.strokeWpm).toBeGreaterThanOrEqual(d.wpm);
+			}
+		}
+	});
+
+	it("still sums the per-key strokes to the session's own character count", () => {
+		// The relationship the band's width is built from: strokes are distributed over `chars`, not invented
+		// beside it. Checked against the recovered deltas, which is what the chart consumes.
+		const rows = demoSessions("go60+qwerty", { seed: 20261104 });
+		const ordered = [...rows].sort((a, b) => a.rkey.localeCompare(b.rkey));
+		for (let i = 1; i < ordered.length; i += 1) {
+			const strokes = Object.keys(ordered[i].stats).reduce((n, k) => n + (ordered[i].stats[k].samples - (ordered[i - 1].stats[k]?.samples ?? 0)), 0);
+			expect(Math.abs(strokes - ordered[i].chars)).toBeLessThanOrEqual(1);
+		}
+	});
+});

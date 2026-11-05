@@ -9,6 +9,7 @@
 // dividing total characters by total time answers the question the chart is actually asking.
 
 import { CHARS_PER_WORD } from "./stats.ts";
+import { sessionStrokeMs } from "./insights.ts";
 import type { SessionRow } from "../atproto/records.ts";
 
 export type Day = {
@@ -21,6 +22,10 @@ export type Day = {
 	errors: number;
 	/** Wall-clock minutes spent practising. */
 	minutes: number;
+	/** Minutes of that which were keystrokes rather than pauses. Never above `minutes`. */
+	strokeMinutes: number;
+	/** What the fingers produced, with the thinking taken out. Always >= wpm, and equal to it on a good day. */
+	strokeWpm: number;
 	wpm: number;
 	errPct: number;
 };
@@ -31,6 +36,8 @@ export type History = {
 	sessions: number;
 	chars: number;
 	minutes: number;
+	/** Fingers-only speed across the window, from total characters over total stroke time. */
+	strokeWpm: number;
 	wpm: number;
 	errPct: number;
 	/** Days with at least one session, and the run of consecutive days ending today or yesterday. */
@@ -57,29 +64,36 @@ function prevDay(day: string): string {
 
 const wpmOf = (chars: number, ms: number): number => (ms <= 0 || chars <= 0 ? 0 : Math.round(chars / (ms / 60000) / CHARS_PER_WORD));
 
-type Acc = { day: string; atMs: number; sessions: number; chars: number; errors: number; ms: number };
+type Acc = { day: string; atMs: number; sessions: number; chars: number; errors: number; ms: number; strokeMs: number };
 
 export function history(rows: SessionRow[], nowMs = Date.now()): History {
 	const byDay = new Map<string, Acc>();
+	// Stroke time has to come from the sessions in typed order, because each record's per-key stats are a
+	// cumulative snapshot: the time a session's keystrokes cost is the difference it made to that snapshot.
+	const strokes = sessionStrokeMs(rows);
 	let chars = 0;
 	let errors = 0;
 	let ms = 0;
+	let strokeMs = 0;
 	let undated = 0;
 
 	for (const r of rows) {
+		const sMs = Math.min(r.ms, strokes.get(r) ?? 0); // never more stroke time than the session lasted
 		chars += r.chars;
 		errors += r.errors;
 		ms += r.ms;
+		strokeMs += sMs;
 		if (!r.atMs) {
 			undated += 1;
 			continue; // in the totals, out of the chart
 		}
 		const key = dayKey(r.atMs);
-		const d = byDay.get(key) ?? { day: key, atMs: r.atMs, sessions: 0, chars: 0, errors: 0, ms: 0 };
+		const d = byDay.get(key) ?? { day: key, atMs: r.atMs, sessions: 0, chars: 0, errors: 0, ms: 0, strokeMs: 0 };
 		d.sessions += 1;
 		d.chars += r.chars;
 		d.errors += r.errors;
 		d.ms += r.ms;
+		d.strokeMs += sMs;
 		d.atMs = Math.min(d.atMs, r.atMs);
 		byDay.set(key, d);
 	}
@@ -92,6 +106,8 @@ export function history(rows: SessionRow[], nowMs = Date.now()): History {
 			chars: d.chars,
 			errors: d.errors,
 			minutes: Math.round(d.ms / 60000),
+			strokeMinutes: Math.round(d.strokeMs / 60000),
+			strokeWpm: wpmOf(d.chars, d.strokeMs),
 			wpm: wpmOf(d.chars, d.ms),
 			errPct: d.chars ? Math.round((d.errors / d.chars) * 1000) / 10 : 0,
 		}))
@@ -102,6 +118,7 @@ export function history(rows: SessionRow[], nowMs = Date.now()): History {
 		sessions: rows.length,
 		chars,
 		minutes: Math.round(ms / 60000),
+		strokeWpm: wpmOf(chars, strokeMs),
 		wpm: wpmOf(chars, ms),
 		errPct: chars ? Math.round((errors / chars) * 1000) / 10 : 0,
 		activeDays: days.length,
@@ -144,12 +161,12 @@ export function series(h: History, limit = 30): Point[] {
 		// Walking backwards from the newest day and emitting oldest-first, by index: no copy, no reverse.
 		const day = shiftDay(newest, -i);
 		const d = byDay.get(day);
-		out.push({ day, wpm: d?.wpm ?? 0, minutes: d?.minutes ?? 0, sessions: d?.sessions ?? 0 });
+		out.push({ day, wpm: d?.wpm ?? 0, strokeWpm: d?.strokeWpm ?? 0, minutes: d?.minutes ?? 0, sessions: d?.sessions ?? 0 });
 	}
 	return out;
 }
 
-export type Point = { day: string; wpm: number; minutes: number; sessions: number };
+export type Point = { day: string; wpm: number; strokeWpm: number; minutes: number; sessions: number };
 
 /** The day `delta` days from `day`, in local time. Noon arithmetic keeps DST from shifting the date. */
 function shiftDay(day: string, delta: number): string {

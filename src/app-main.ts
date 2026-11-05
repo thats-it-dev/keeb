@@ -13,7 +13,7 @@ import { demoSessions, isPreviewHost } from "./stats/demo.ts";
 import { insightPanel } from "./stats/panel.ts";
 import "./stats/panel-element.ts";
 import { scaleBand, scaleLinear } from "d3-scale";
-import { line } from "d3-shape";
+import { area, line } from "d3-shape";
 import { max } from "d3-array";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
@@ -152,7 +152,14 @@ export class AppMain extends LitElement {
 			.chart .goal { stroke: var(--text-muted); stroke-width: 0.75; stroke-dasharray: 3 2; }
 			.chart circle.ok { fill: var(--primary); }
 			.chart circle.under { fill: var(--accent); }
+			.chart .gap { fill: var(--accent); opacity: 0.13; stroke: none; }
+			.chart .typing { fill: none; stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 4 2.5; stroke-linejoin: round; opacity: 0.85; }
 			.chart .trend { fill: none; stroke: var(--primary); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
+			.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: 0; font-size: 0.75rem; color: var(--text-muted); grid-column: 1; }
+			.legend .key { display: inline-block; width: 16px; border-top: 2px solid; margin-right: 5px; vertical-align: middle; }
+			.legend .key.clock { border-top-color: var(--primary); }
+			.legend .key.typing { border-top-style: dashed; border-top-color: var(--text-muted); }
+			.legend .gapkey { display: inline-block; width: 16px; height: 8px; background: var(--accent); opacity: 0.13; margin-right: 5px; }
 			/* Demo data announces itself. A chart that looks like progress and is not progress is the one
 			 * failure mode this screen has been built to avoid. */
 			.demo-note { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 8px 10px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--text-muted); font-size: 0.85rem; }
@@ -667,7 +674,7 @@ export class AppMain extends LitElement {
 		const x = scaleBand<string>().domain(pts.map((p) => p.day)).range([CH.pad.l, CH.w - CH.pad.r]).padding(0.3);
 		// .nice() after the domain is set -- scaleLinear([0, n]) would read that array as the RANGE.
 		const y = scaleLinear()
-			.domain([0, Math.max(goal * 1.2, max(pts, (p) => p.wpm) ?? 0, 10)])
+			.domain([0, Math.max(goal * 1.2, max(pts, (p) => Math.max(p.wpm, p.strokeWpm)) ?? 0, 10)])
 			.range([CH.h - CH.pad.b, CH.pad.t])
 			.nice();
 		const every = Math.max(1, Math.ceil(pts.length / 5)); // about five date labels at any span
@@ -681,6 +688,21 @@ export class AppMain extends LitElement {
 			.defined((p) => p.sessions > 0)
 			.x((p) => mid(p.day))
 			.y((p) => y(p.wpm));
+		// A day whose sessions carry no per-key stats has no stroke measurement at all. It must draw the clock
+		// line and nothing else: treating strokeWpm 0 as "zero typing time" would shade the entire band under
+		// the curve as pausing, which is the opposite of what is known about that day.
+		const stroked = (p: Point) => p.sessions > 0 && p.strokeWpm > 0;
+		const typing = line<Point>()
+			.defined(stroked)
+			.x((p) => mid(p.day))
+			.y((p) => y(p.strokeWpm));
+		// The band between the two lines IS the hesitation: same characters, the gap is the time they did not
+		// take. Filled rather than left as white space, because the emptiness is the finding.
+		const gap = area<Point>()
+			.defined(stroked)
+			.x((p) => mid(p.day))
+			.y0((p) => y(p.wpm))
+			.y1((p) => y(p.strokeWpm));
 		return html`
 			<div class="hist">
 				<h3>history · ${geometryById(this.geometryId).name}</h3>
@@ -694,7 +716,12 @@ export class AppMain extends LitElement {
 					${card("sessions", `${h.sessions}`)} ${card("characters", `${h.chars}`)} ${card("practised", `${h.minutes} min`)} ${card("streak", `${h.streak} d`)}
 					${card("best day", `${h.best?.wpm ?? 0} wpm`)}
 				</div>
-				<svg viewBox="0 0 ${CH.w} ${CH.h}" class="chart" role="img" aria-label=${`${h.activeDays} days practised, best day ${h.best?.wpm ?? 0} wpm, goal ${goal} wpm`}>
+				<svg
+					viewBox="0 0 ${CH.w} ${CH.h}"
+					class="chart"
+					role="img"
+					aria-label=${`${h.activeDays} days practised. Typing speed ${h.strokeWpm} wpm, with pauses ${h.wpm} wpm. Best day ${h.best?.wpm ?? 0} wpm, goal ${goal} wpm.`}
+				>
 					${y
 						.ticks(4)
 							.filter((v) => v > 0)
@@ -704,20 +731,27 @@ export class AppMain extends LitElement {
 								`,
 							)}
 					<line class="axis" x1=${CH.pad.l} x2=${CH.w - CH.pad.r} y1=${y(0)} y2=${y(0)} />
+					<path class="gap" d=${gap(pts) ?? ""} />
 					<line class="goal" x1=${CH.pad.l} x2=${CH.w - CH.pad.r} y1=${y(goal)} y2=${y(goal)} />
+					<path class="typing" d=${typing(pts) ?? ""} />
 					<path class="trend" d=${trend(pts) ?? ""} />
-					${data.map((p) => svg`<circle data-day=${p.day} cx=${mid(p.day)} cy=${y(p.wpm)} r="2.4" class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm over ${p.minutes} min, ${p.sessions} session(s)`}</title></circle>`)}
+					${data.map((p) => svg`<circle data-day=${p.day} cx=${mid(p.day)} cy=${y(p.wpm)} r="2.4" class=${p.wpm >= goal ? "ok" : "under"}><title>${`${p.day}: ${p.wpm} wpm with pauses, ${p.strokeWpm} wpm typing only, over ${p.minutes} min, ${p.sessions} session(s)`}</title></circle>`)}
 					${pts
 						.filter((_, i) => i % every === 0)
 						.map((p) => svg`<text class="tick" x=${mid(p.day)} y=${CH.h - CH.pad.b + 11} text-anchor="middle">${fmt.format(parseDay(p.day))}</text>`)}
 					<text class="goal-label" x=${CH.w - CH.pad.r} y=${y(goal)} dy="-3" text-anchor="end">goal ${goal}</text>
 				</svg>
+				<p class="legend">
+					<span class="key typing"></span>typing only
+					<span class="gapkey"></span>time spent not typing
+					<span class="key clock"></span>what the clock said
+				</p>
 				<p class="empty">
 					${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${source.length > mine.length ? `, plus ${source.length - mine.length} session(s) on other boards` : ""}. The repo keeps
 					the newest 50 sessions per layout, so these totals are that window rather than your whole life
 					${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
 				</p>
-				<tt-insight-panel .cards=${insightPanel(mine, this.stats, this.targetCpm)}></tt-insight-panel>
+				<tt-insight-panel .cards=${insightPanel(mine, this.targetCpm)}></tt-insight-panel>
 			</div>
 		`;
 	}

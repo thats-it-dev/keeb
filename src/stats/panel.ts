@@ -6,7 +6,7 @@
 
 import type { SessionRow } from "../atproto/records.ts";
 import { hesitation, speedLoss, trends, type KeyTrend } from "./insights.ts";
-import { targetTimeMs, type StatMap } from "./stats.ts";
+import { targetTimeMs } from "./stats.ts";
 
 export type PanelCard = { id: string; title: string; body: string; stat?: string; sub?: string; rows?: { label: string; detail: string }[] };
 
@@ -16,11 +16,12 @@ const MIN_TRACK_SESSIONS = 4;
 /** Demo rows carry no timestamps, so no insight that depends on "when" can be drawn from them. */
 const dated = (rows: SessionRow[]): SessionRow[] => rows.filter((r) => r.atMs > 0);
 
-export function insightPanel(rows: SessionRow[], stats: StatMap, targetCpm: number): PanelCard[] {
+export function insightPanel(rows: SessionRow[], targetCpm: number): PanelCard[] {
 	const timed = dated(rows);
 	const cards: PanelCard[] = [];
 
-	// 1. Hesitation. The one number the history chart cannot show, and the one that changes what you do.
+	// 1. Hesitation. The chart now draws this as the band between its two lines; the card states how big the
+	// band is as one number, because a shaded gap is hard to compare week to week and a number is not.
 	const hes = hesitation(timed);
 	const loss = speedLoss(hes.points);
 	if (hes.points.length >= 3) {
@@ -84,24 +85,6 @@ export function insightPanel(rows: SessionRow[], stats: StatMap, targetCpm: numb
 					: { id: "milestones", title: "Keys you reached", body: `Nothing in this history starts out under ${goalMs} ms. Either you are still on the first keys, or the records that would show it have been pruned.` },
 	);
 
-	// 4. What to practise tonight. The bar is relative to the learner's own goal: 600 ms is slow at 40 wpm
-	// and normal at 8 wpm, and a fixed cut-off silently killed this card for anyone below it.
-	const drillBar = goalMs || 250;
-	const drill = Object.entries(stats)
-		.filter(([id, s]) => s.samples >= 8 && timeMs(s) > drillBar * 1.6 && /^[a-z]$/i.test(id))
-		.sort((a, b) => timeMs(b[1]) - timeMs(a[1]))
-		.slice(0, 3);
-	cards.push({
-		id: "drill",
-		title: "Slowest right now",
-		stat: drill.length ? `${Math.round((timeMs(drill[0][1]) / drillBar - 1) * 100)}%` : undefined,
-		sub: drill.length ? `over goal on ${drill[0][0]}` : undefined,
-		rows: drill.map(([id, s]) => ({ label: id, detail: `${timeMs(s)} ms · ${Math.round((s.errors / s.samples) * 100)}% wrong` })),
-		body: drill.length
-			? `These are the keys costing the most time against a ${Math.round(60000 / drillBar / 5)} wpm goal. They are also the ones the lesson is already weighted toward.`
-			: "Nothing is over 1.6× your goal speed on this layout, so there is no single key to blame for the pace you are at.",
-	});
-
 	return cards;
 }
 
@@ -109,8 +92,6 @@ function gain(k: KeyTrend): string {
 	const pct = k.firstMs > 0 ? Math.round((100 * (k.firstMs - k.lastMs)) / k.firstMs) : 0;
 	return `${k.firstMs} → ${k.lastMs} ms (${pct}% faster)`;
 }
-
-const timeMs = (s: StatMap[string]): number => (s.samples === 0 ? 0 : Math.round(s.ttMs16 / 16));
 
 /**
  * When each key was already fast enough to count as learned.
