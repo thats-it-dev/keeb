@@ -3,7 +3,7 @@
 import type { Page } from "@playwright/test";
 import { loadConfig } from "../vite/config.ts";
 import { expect, test } from "./csp.ts";
-import { keyName } from "./keys.ts";
+import { keyName, openPane } from "./keys.ts";
 
 const cfg = loadConfig();
 const heading = cfg.heading ?? cfg.title; // the h1 shows the heading; the tab shows the title
@@ -147,25 +147,26 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 	expect(cursor).toBeGreaterThan(10);
 });
 
-test("the progress screen exits by typing, not by a button", async ({ page }) => {
+test("the progress bars are a pane section, not a screen to navigate to", async ({ page }) => {
+	// There used to be a "Progress" button and a "Back to typing" button, and a screen between them. The
+	// bars and the chart are sections of the insight pane now, so the whole navigation question is gone:
+	// the keyboard stays on screen, and folding the pane out is not a mode change.
 	await page.goto("/");
 	await ready(page);
-	for (let i = 0; i < 6; i += 1) await tap(page, await wanted(page));
-	await page.locator("button", { hasText: "Progress" }).click();
-	await page.locator(".stats").waitFor();
-	// There used to be a "Back to typing" button here. It said out loud what every key already did -- the
-	// progress screen is a look at the numbers, not a mode the lesson pauses for -- so it is gone, and the
-	// heading carries the hint instead.
+	for (let i = 0; i < 10; i += 1) await tap(page, await wanted(page));
+	await expect(page.locator("button", { hasText: "Progress" })).toHaveCount(0);
 	await expect(page.locator("button", { hasText: "Back to typing" })).toHaveCount(0);
-	await expect(page.locator(".stats h2")).toContainText("type to return");
-	// Scrolling keys must not count as typing: reading a chart with Page Down should keep the chart up.
-	await page.keyboard.press("PageDown");
-	await page.keyboard.press("ArrowRight");
-	await expect(page.locator(".stats")).toBeVisible();
-	// One real keystroke, and the line is back.
+	// Closed: the section exists in the DOM but is not on screen.
+		// Closed: the section exists in the DOM but is not on screen.
+	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
+	await openPane(page);
+	await expect(page.locator(".krow").first()).toBeVisible();
+	await expect(page.locator("tt-insight-panel > .stats")).toHaveCount(1);
+	// And typing still works while the pane is out: reading your bars must not pause the lesson.
+	const before = await cursorOf(page);
 	await tap(page, await wanted(page));
-	await expect(page.locator(".stats")).toHaveCount(0);
-	await expect(page.locator("button", { hasText: "Progress" })).toBeVisible();
+	expect(await cursorOf(page)).toBeGreaterThan(before);
+	await expect(page.locator(".krow").first()).toBeVisible(); // still there, not swapped away
 });
 
 test("the progress screen names every key it measured", async ({ page }) => {
@@ -179,7 +180,7 @@ test("the progress screen names every key it measured", async ({ page }) => {
 		if (i % 5 === 4) await page.waitForTimeout(60);
 		await tap(page, ch);
 	}
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 	expect(await page.locator(".krow").count()).toBeGreaterThan(3);
 	// Only keys with timing get a row. A key never struck has no bar to draw, and 40 empty rows used to
 	// bury the handful that meant something; they get chips instead.
@@ -192,7 +193,7 @@ test("the progress screen names every key it measured", async ({ page }) => {
 	expect(caps.length).toBeGreaterThan(3);
 	expect(caps.every((c) => c.trim() !== "")).toBe(true);
 	expect(caps).toContain("space");
-	const widths = await page.locator(".krow .bar").evaluateAll((els) => els.map((e) => parseFloat((e as HTMLElement).style.width)));
+	const widths = await page.locator(".krow .kbar").evaluateAll((els) => els.map((e) => parseFloat((e as HTMLElement).style.width)));
 	expect(widths.every((w) => w <= 100 && w >= 2)).toBe(true);
 	// Ordering is all this path can honestly claim: a scripted loop strikes every key in a millisecond or
 	// two, which against the 300 ms default goal is 150-300x goal speed -- deep inside the scale's 100%
@@ -238,7 +239,7 @@ test("bar widths rank a spread of timings instead of saturating", async ({ page 
 	);
 	await page.reload();
 	await ready(page);
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 	// The rows render only once the store has answered; reading .krow before that yields an empty list, and
 	// every .every() below would then pass vacuously.
 	await page.locator(".krow").first().waitFor();
@@ -246,7 +247,7 @@ test("bar widths rank a spread of timings instead of saturating", async ({ page 
 	// Rows are identified by the label they show: .krow carries no id attribute, and the label is the thing a
 	// learner reads next to the bar anyway.
 	const rows = await page.locator(".krow").evaluateAll((els) =>
-		els.map((e) => ({ cap: (e.querySelector(".cap") as HTMLElement).textContent?.trim() ?? "", w: parseFloat((e.querySelector(".bar") as HTMLElement).style.width) })),
+		els.map((e) => ({ cap: (e.querySelector(".cap") as HTMLElement).textContent?.trim() ?? "", w: parseFloat((e.querySelector(".kbar") as HTMLElement).style.width) })),
 	);
 	const byCap = new Map(rows.map((r) => [r.cap, r.w]));
 	const widths = ["a", "s", "d", "g"].map((ch) => byCap.get(ch));

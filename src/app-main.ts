@@ -80,7 +80,7 @@ const syncStore = {
 };
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, view: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, panelOpen: { type: Boolean, attribute: "data-panel-open", reflect: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, panelOpen: { type: Boolean, attribute: "data-panel-open", reflect: true } };
 	static styles = [
 		sharedStyles,
 		css`
@@ -140,8 +140,10 @@ export class AppMain extends LitElement {
 			.sync { display: flex; gap: 8px; align-items: center; }
 			.sync input { width: 100%; max-width: 12rem; }
 			/* Stats screen: one line per key, so the eye lands on the shortest bars first. */
-			.stats { width: 100%; display: grid; gap: 16px; }
-			.stats h2 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+			/* The progress section is a pane section now, so it is narrower than the page it used to fill:
+			   tighter gaps, and the same heading type the history section above it uses. */
+			.stats { width: 100%; display: grid; gap: 10px; }
+			.stats h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 14px; }
 			.card { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--code-bg); }
 			.card b { font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -151,8 +153,8 @@ export class AppMain extends LitElement {
 			.krow .cap { font-weight: 600; }
 			.krow .num { text-align: right; color: var(--text-muted); font-size: 0.8rem; }
 			.track { position: relative; height: 8px; border-radius: 4px; background: var(--code-bg); overflow: hidden; }
-			.bar { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--primary); }
-			.bar.bad { background: var(--accent); }
+			.kbar { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--primary); }
+			.kbar.bad { background: var(--accent); }
 			/* The goal line: without it a half-full bar cannot be read as slow or as on target. */
 			.mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-muted); }
 			.next { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--radius); }
@@ -205,10 +207,6 @@ export class AppMain extends LitElement {
 
 	geometryId = saved().g;
 	settingsOpen = false;
-	// Which pane is showing. Typing stays the default: a returning learner came to type, and the button is
-	// how the stats screen remains one click away instead of hiding behind a modal. Deliberately not
-	// persisted — losing it on reload costs nothing, and a stored flag is one more thing to get stale.
-	view: "type" | "progress" = "type";
 	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
 	sessions: SessionRow[] = [];
 	// Which way the insight pane is folded. Read here and passed down, because the page has to reserve the same
@@ -366,10 +364,6 @@ export class AppMain extends LitElement {
 	async #type(ch: string): Promise<void> {
 		const p = this.#practice;
 		if (!p) return;
-		// The progress screen is a look, not a mode: the keyboard keeps working underneath it, so the first
-		// keystroke brings the line back rather than typing into a screen the learner can no longer see. That
-		// replaces a "Back to typing" button, which was the only control saying what the keys already did.
-		if (this.view !== "type") this.view = "type";
 		if (!this.#startedAt) this.#startSession();
 		this.#armIdle();
 		this.lastId = p.key(ch, performance.now()) ?? "";
@@ -674,10 +668,8 @@ export class AppMain extends LitElement {
 					<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
 					<div class="row">
 						<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
-						${this.view === "type" ? html`<button class="btn ghost" @click=${() => (this.view = "progress")}>Progress</button>` : nothing}
 						${this.#status(r)}
 					</div>
-				${this.view === "progress" && this.ready ? this.#stats() : nothing}
 					${this.#notice(geo)}
 				</div>
 			</main>
@@ -685,6 +677,7 @@ export class AppMain extends LitElement {
 				desktop and is what dismisses the drawer on a phone. -->
 			<div class="scrim" ?inert=${!this.panelOpen} @click=${() => this.#panel(false)}></div>
 			<tt-insight-panel .cards=${this.#cards()} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}>
+				${this.ready ? this.#stats() : nothing}
 				${this.#history()}
 			</tt-insight-panel>
 		`;
@@ -726,7 +719,7 @@ export class AppMain extends LitElement {
 		const row = (k: (typeof o.keys)[number]) => html`
 			<div class="krow ${k.next ? "next" : ""}">
 				<span class="cap">${k.label}</span>
-				<span class="track"><span class="bar ${k.conf < 1 ? "bad" : ""}" style="width:${barWidth(k.ms, this.#goalMs())}%"></span><span class="mark" style="left:${GOAL_AT}%"></span></span>
+				<span class="track"><span class="kbar ${k.conf < 1 ? "bad" : ""}" style="width:${barWidth(k.ms, this.#goalMs())}%"></span><span class="mark" style="left:${GOAL_AT}%"></span></span>
 				<span class="num">${k.wpm} wpm · ${k.ms}ms${k.errors ? ` · ${k.errors} miss` : ""}</span>
 			</div>
 		`;
@@ -746,8 +739,8 @@ export class AppMain extends LitElement {
 				`
 			: html`<p class="empty">A key gets a bar once you have hit it correctly. Hit the highlighted letter to start.</p>`;
 		return html`
-			<section class="stats">
-				<h2>progress <span class="label">type to return</span></h2>
+			<section class="stats" slot="stats">
+				<h3>progress</h3>
 				${keys}
 			</section>
 		`;

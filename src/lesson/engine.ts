@@ -1,5 +1,5 @@
 import type { Resolved } from "../keyboard/resolve.ts";
-import { emptyStat, type StatMap } from "../stats/stats.ts";
+import { emptyStat, observe, type StatMap } from "../stats/stats.ts";
 import { ladder } from "../stats/ladder.ts";
 import { lesson } from "../lesson/generator.ts";
 
@@ -62,10 +62,10 @@ function idOf(r: Resolved, char: string): string {
 	return r.byChar.get(char.toLowerCase()) ?? "";
 }
 
-// Fixed-point EWMA, same as stats.observe: 1/16 weight on the newest sample.
+// The one EWMA, in stats.ts, shared with every reader of progress. This file kept its own copy of the
+// update rule, which is how the two came to disagree about what an unmeasurable interval means.
 function bump(stat: { ttMs16: number; samples: number; errors: number }, elapsedMs: number) {
-	const s = Math.max(0, Math.round(elapsedMs)) * 16;
-	return { ttMs16: stat.samples === 0 ? s : stat.ttMs16 + (s - stat.ttMs16) / 16, samples: stat.samples + 1, errors: stat.errors };
+	return observe(stat, elapsedMs);
 }
 
 function markError(stat: { ttMs16: number; samples: number; errors: number }) {

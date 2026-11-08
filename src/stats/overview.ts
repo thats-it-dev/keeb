@@ -38,17 +38,17 @@ export function barWidth(ms: number, goalMs: number): number {
 export const GOAL_AT = 50;
 
 export type Overview = {
-	/** Every key of the current layout, worst first; never practised sinks to the bottom. */
+	/** Every key of the current layout, worst first; anything unmeasured sinks to the bottom. */
 	keys: KeyRow[];
 	unlocked: number;
 	total: number;
-	/** Mean over practised keys only. */
+	/** Mean over keys with a measured speed -- see `measured` for why struck is not the same as timed. */
 	avgMs: number;
 	avgWpm: number;
-	/** Distinct keys with at least one sample — a count of exposure, never of strokes. See below. */
+	/** Distinct keys with a measured speed — a count of exposure, never of strokes. See below. */
 	covered: number;
 	errPct: number;
-	/** Share of practised keys at or above goal. */
+	/** Share of timed keys at or above goal. */
 	readyPct: number;
 	/** 0-100 of the samples that fell on the left hand; 50 when there is no data to balance. */
 	handBalance: number;
@@ -56,12 +56,13 @@ export type Overview = {
 	rightSamples: number;
 	/** Worst five, for "practise these". */
 	slowest: KeyRow[];
-	/** Rows with at least one sample, in the same order as `keys`. The bar list draws these and nothing
-   else; a key with no data has no bar to draw and 40 empty rows bury the 20 that mean something. */
+	/** Keys with a measured speed, in the same order as `keys`. The bar list draws these and nothing else: a
+	 *  key never struck has no bar to draw, and 40 empty rows bury the handful that mean something. A key
+	 *  struck only as the first stroke of a run has no measurement either, so it waits with the rest. */
 	measured: KeyRow[];
-	/** Keys with no samples and no bar, in layout order: still locked, or unlocked and never tried. */
+	/** Keys with no measurement and no bar, in layout order: still locked, or unlocked and never tried. */
 	waiting: KeyRow[];
-	/** Keys the ladder has opened but that carry no samples: unlocked, never used. */
+	/** Keys the ladder has opened but never measured: unlocked, never used in a way this screen can time. */
 	untried: KeyRow[];
 };
 
@@ -107,11 +108,17 @@ export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], unl
 		return d !== 0 ? d : b.err - a.err;
 	});
 
-	const practised = rows.filter((r) => r.samples > 0);
+	// "Has been struck" and "has a measured speed" are different things, and conflating them is what let the average come out faster than
+	// every key inside it: a struck-but-never-timed key contributes ms 0 to sumMs, and 0 divided by a count is
+	// a very fast keyboard. Sample counts still add up below, because the strokes did happen.
+	const practised = rows.filter((r) => r.ms > 0);
 	const sumMs = practised.reduce((t, r) => t + r.ms, 0);
-	const errSum = practised.reduce((t, r) => t + r.errors, 0);
-	const sampleSum = practised.reduce((t, r) => t + r.samples, 0);
-	const leftSamples = practised.filter((r) => handOf(keys, r.id) === "left").reduce((t, r) => t + r.samples, 0);
+	// Errors and exposure count every stroke that happened, including the ones with no measurable interval --
+	// a mistype at the start of a run is still a mistype. Only the SPEED mean is restricted to timed strokes.
+	const struck = rows.filter((r) => r.samples > 0);
+	const errSum = struck.reduce((t, r) => t + r.errors, 0);
+	const sampleSum = struck.reduce((t, r) => t + r.samples, 0);
+	const leftSamples = struck.filter((r) => handOf(keys, r.id) === "left").reduce((t, r) => t + r.samples, 0);
 	const rightSamples = sampleSum - leftSamples;
 
 	return {
@@ -128,8 +135,8 @@ export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], unl
 		rightSamples,
 		slowest: practised.slice(0, 5),
 		measured: practised,
-		waiting: rows.filter((r) => r.samples === 0),
-		untried: rows.filter((r) => r.samples === 0 && unlocked.includes(r.id)),
+		waiting: rows.filter((r) => r.ms === 0),
+		untried: rows.filter((r) => r.ms === 0 && unlocked.includes(r.id)),
 	};
 }
 

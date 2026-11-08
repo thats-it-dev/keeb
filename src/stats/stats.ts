@@ -19,8 +19,21 @@ export function emptyStat(): KeyStat {
 }
 
 export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
-	const s = Math.max(0, Math.round(elapsedMs)) * 16;
-	return { ttMs16: stat.samples === 0 ? s : stat.ttMs16 + ALPHA16 * (s - stat.ttMs16), samples: stat.samples + 1, errors: stat.errors };
+	// 0 ms is not a speed, it is the absence of one: the first keystroke of a run has no earlier stroke to
+	// measure against, and so does two strokes inside the same millisecond. Folding that into the mean as a
+	// measurement credited the key that happened to START a line with infinite speed -- measured: a key at
+	// 28 ms while every other row on the screen sat at 230, and an average (59 wpm) faster than all of them.
+	// The keystroke still counts, because it happened: it is a character typed and a sample of exposure. It
+	// just contributes no observation of time.
+	if (!(elapsedMs > 0)) return { ...stat, samples: stat.samples + 1 };
+	const s = Math.round(elapsedMs) * 16;
+	return { ttMs16: hasTiming(stat) ? stat.ttMs16 + ALPHA16 * (s - stat.ttMs16) : s, samples: stat.samples + 1, errors: stat.errors };
+}
+
+/** True when at least one keystroke of this key was actually timed. `samples` alone is not enough: a key can
+ *  have been struck ten times and never once with a measurable gap. */
+export function hasTiming(stat: KeyStat): boolean {
+	return stat.ttMs16 > 0;
 }
 
 export function observeError(stat: KeyStat, elapsedMs: number): KeyStat {
@@ -28,7 +41,8 @@ export function observeError(stat: KeyStat, elapsedMs: number): KeyStat {
 }
 
 export function timeToTypeMs(stat: KeyStat): number {
-	return stat.samples === 0 ? 0 : Math.round(stat.ttMs16 / 16);
+	// 0 means "unknown", not "instant" -- which is what the callers below assume.
+	return hasTiming(stat) ? Math.round(stat.ttMs16 / 16) : 0;
 }
 
 export function errorRate(stat: KeyStat): number {
@@ -73,10 +87,16 @@ export function confidence(stat: KeyStat, targetCpm: number): number {
 export function merge(a: KeyStat, b: KeyStat): KeyStat {
 	if (a.samples === 0) return { ...b };
 	if (b.samples === 0) return { ...a };
-	const n = a.samples + b.samples;
+	// Only the keys that were actually TIMED get a vote in the mean. Counting an untimed key's samples here
+	// is how the phantom 0 ms of a run boundary travelled into a merged record: measured locally, a key at
+	// 100 ms x 16 merging with a device that only ever struck it first-in-run came out at 63 ms -- the other
+	// device's untimed strokes contributed 3 observations of zero, and 3/8ths of the mean was fiction.
+	const ta = hasTiming(a) ? a.samples : 0;
+	const tb = hasTiming(b) ? b.samples : 0;
+	const n = ta + tb;
 	return {
-		ttMs16: Math.round((a.ttMs16 * a.samples + b.ttMs16 * b.samples) / n),
-		samples: n,
+		ttMs16: n === 0 ? 0 : Math.round((a.ttMs16 * ta + b.ttMs16 * tb) / n),
+		samples: a.samples + b.samples,
 		errors: a.errors + b.errors,
 	};
 }

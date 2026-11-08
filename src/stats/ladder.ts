@@ -1,6 +1,6 @@
 import type { Resolved } from "../keyboard/resolve.ts";
 import { roleOf } from "../keyboard/geometry.ts";
-import { emptyStat, type StatMap } from "./stats.ts";
+import { emptyStat, hasTiming, type StatMap } from "./stats.ts";
 
 export type Ladder = {
 	// Key ids in teaching order: home row first, then outward, alternating hands.
@@ -49,6 +49,10 @@ export function ready(id: string | undefined, stats: StatMap, targetCpm: number)
 	const s = stats[id] ?? emptyStat();
 	const goal = targetCpm <= 0 ? 0 : Math.round(60000 / targetCpm); // ms per key
 	if (s.samples < MIN_SAMPLES || goal === 0) return false;
+	// A key that has never been TIMED has no speed. 0 ms is the absence of a measurement, not a very fast
+	// one: an untimed keystroke still raises `samples` (it happened) while ttMs16 stays 0, and comparing that
+	// against the goal would unlock the ladder on strokes we learned nothing from.
+	if (!hasTiming(s)) return false;
 	// ttMs16 is the mean in ms x 16, so compare against goal x 16. Multiplying by samples here
 	// made every key pass after two samples, no matter how slow the learner was.
 	return goal * 16 >= s.ttMs16;
