@@ -11,6 +11,15 @@ type Call = { path: string; params: Record<string, string>; body?: Record<string
 
 const DID = "did:plc:example1234567890abcdefgh";
 
+/** Params a real PDS refuses to answer without. Validating them here is the thing that was missing: the fake
+ *  used to ignore the query string entirely, so pull() calling listRecords without `repo` answered 200 and
+ *  every test stayed green while production returned 400 InvalidRequest on every single read. */
+const REQUIRED: Record<string, string[]> = {
+	"com.atproto.repo.listRecords": ["repo", "collection"],
+	"com.atproto.repo.putRecord": ["repo", "collection", "rkey"],
+	"com.atproto.repo.deleteRecord": ["repo", "collection", "rkey"],
+};
+
 /** A PDS that answers from a map of collection -> records, and remembers what it was asked to do. */
 function fake(rows: Record<string, { uri: string; value: Record<string, unknown> }[]>, fail = false) {
 	const calls: Call[] = [];
@@ -24,9 +33,13 @@ function fake(rows: Record<string, { uri: string; value: Record<string, unknown>
 			const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
 			calls.push({ path: path!, params, body });
 			if (fail) return jsonResponse(502, { error: "ServiceUnavailable", message: "pds is down" });
+			// GET carries params in the query, POST in the body -- the real endpoints differ here too.
+			const field = (k: string) => (init?.method === "GET" || !body ? params[k] : body[k] === undefined ? undefined : String(body[k]));
+			const missing = (REQUIRED[path ?? ""] ?? []).filter((k) => !field(k));
+			if (missing.length) return jsonResponse(400, { error: "InvalidRequest", message: `Invalid ${path} params: Missing required key "${missing[0]}"` });
 			if (path === "com.atproto.repo.listRecords") return jsonResponse(200, { records: rows[params.collection!] ?? [] });
 			if (path === "com.atproto.repo.putRecord") {
-				stored[`${params.collection ?? ""}/${body?.rkey ?? ""}`] = body?.record as Record<string, unknown>;
+				stored[`${body?.collection ?? ""}/${body?.rkey ?? ""}`] = body?.record as Record<string, unknown>;
 				return jsonResponse(200, { uri: `${DID}/${body?.rkey}`, cid: "bafy" });
 			}
 			if (path === "com.atproto.repo.deleteRecord") {

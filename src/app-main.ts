@@ -450,33 +450,45 @@ export class AppMain extends LitElement {
 		if (!this.#sync) return;
 		this.syncNote = "";
 		const key = layoutKey(this.geometryId, this.keymapId);
-		const { settings, progress, sessions } = await this.#sync.pull();
-		// Cached only once the network has actually answered. saveHistory replaces the cache wholesale, so
-		// calling it on a failed pull would erase the history the offline chart is drawing.
-		await saveHistory(sessions);
-		this.sessions = sessions;
-		const remote = progress[key];
-		if (remote) {
-			const merged = mergeProgress(this.stats, remote);
-			await saveStats(key, merged);
-			this.stats = merged;
-			// The engine holds its own copy; rebuilding the lesson is what makes the merged speed count.
-			void this.#load({ g: this.geometryId, k: this.keymapId });
-		}
-		// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
+		const notes: string[] = [];
+		try {
+			const { settings, progress, sessions } = await this.#sync.pull();
+			// Cached only once the network has actually answered. saveHistory replaces the cache wholesale, so
+			// calling it on a failed pull would erase the history the offline chart is drawing.
+			await saveHistory(sessions);
+			this.sessions = sessions;
+			const remote = progress[key];
+			if (remote) {
+				const merged = mergeProgress(this.stats, remote);
+				await saveStats(key, merged);
+				this.stats = merged;
+				// The engine holds its own copy; rebuilding the lesson is what makes the merged speed count.
+				void this.#load({ g: this.geometryId, k: this.keymapId });
+			}
+			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
 		// over on a quiet page: at boot, or when they press Sync.
-		if (adapt && (settings.geometry || settings.keymap || settings.targetCpm)) {
-			const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : this.geometryId;
-			const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : this.keymapId;
-			if (settings.targetCpm) this.targetCpm = settings.targetCpm;
-			if (g !== this.geometryId || k !== this.keymapId) {
-				this.geometryId = g;
-				this.keymapId = k;
-			} else void this.#load({ g, k });
+			if (adapt && (settings.geometry || settings.keymap || settings.targetCpm)) {
+				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : this.geometryId;
+				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : this.keymapId;
+				if (settings.targetCpm) this.targetCpm = settings.targetCpm;
+				if (g !== this.geometryId || k !== this.keymapId) {
+					this.geometryId = g;
+					this.keymapId = k;
+				} else void this.#load({ g, k });
+			}
+		} catch (err) {
+			// A failed read must not cancel the writes below. The reason this device has anything queued is
+			// that a write failed earlier; if the read had to succeed first, an unreachable PDS would strand the
+			// outbox forever -- and it is how an InvalidRequest on pull() came to silence Sync entirely.
+			notes.push(`read failed: ${(err as Error).message}`);
 		}
-		await this.#sync.pushSettings({ geometry: this.geometryId, keymap: this.keymapId, targetCpm: this.targetCpm, unlocked: [] }, Date.now());
+		try {
+			await this.#sync.pushSettings({ geometry: this.geometryId, keymap: this.keymapId, targetCpm: this.targetCpm, unlocked: [] }, Date.now());
+		} catch (err) {
+			notes.push(`settings not sent: ${(err as Error).message}`);
+		}
 		const queued = await this.#sync.flush(Date.now());
-		this.syncNote = queued.error ?? (queued.sent ? `${queued.sent} session(s) sent` : "up to date");
+		this.syncNote = [...notes, queued.error ?? (queued.sent ? `${queued.sent} session(s) sent` : "up to date")].join(" · ");
 	}
 
 	async #signIn(): Promise<void> {
