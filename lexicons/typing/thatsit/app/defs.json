@@ -11,6 +11,21 @@
 				"split": {
 					"type": "boolean"
 				},
+				"rowRoles": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"knownValues": [
+							"number",
+							"upper",
+							"home",
+							"lower",
+							"thumb",
+							"extra"
+						]
+					},
+					"maxLength": 32
+				},
 				"keys": {
 					"type": "array",
 					"items": {

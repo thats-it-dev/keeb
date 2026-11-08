@@ -4,9 +4,10 @@
 // coercion, the additive merge, and which sessions get pruned. The client in sync.ts is thin because
 // all the decisions live here.
 import { TID } from "@atproto/common-web";
-import { PROGRESS, SETTINGS, SESSION } from "./lexicons.ts";
+import { LAYOUT, PROGRESS, SETTINGS, SESSION } from "./lexicons.ts";
 import { mergeAll, type KeyStat, type StatMap } from "../stats/stats.ts";
-import type { Geometry, Key } from "../keyboard/types.ts";
+import { ROW_ROLE_VALUES, type Geometry, type Key, type Keymap, type RowRole } from "../keyboard/types.ts";
+import { rolesForRows } from "../layout/parse.ts";
 import type { Settings } from "../data/store.ts";
 
 /** Seconds since the epoch, as the records store it. */
@@ -38,36 +39,90 @@ export type KeyChar = { id: string; char: string };
 export type WireKeyId = { keyId?: string; id?: string };
 const wireKeyId = (s: WireKeyId): string => str(s.keyId ?? s.id);
 
-export type KeyGeometryRecord = { split: boolean; keys: ({ keyId: string } & WireKeyId & { hand: string; row: number; col: number; x: number; y: number; w: number; h: number; rot: number; label: string })[] };
+export type KeyGeometryRecord = { split: boolean; rowRoles?: string[]; keys: ({ keyId: string } & WireKeyId & { hand: string; row: number; col: number; x: number; y: number; w: number; h: number; rot: number; label: string })[] };
 
-// The geometry half of a layout: where the keys are. Nothing about characters travels in it, so one
-// geometry can be paired with any keymap on the receiving device too.
+// The geometry half of a layout: where the keys are, and what each physical row is for. No characters
+// travel here, so one geometry can be paired with any keymap on the receiving device too.
 export function keyGeometry(g: Geometry): KeyGeometryRecord {
 	return {
 		split: !!g.split,
+		rowRoles: (g.rowRoles ?? []).map((r) => str(r, 20)),
 		keys: g.keys.map((k: Key) => ({ keyId: k.id, hand: k.hand, row: n(k.row), col: n(k.col), x: n(k.x), y: n(k.y), w: n(k.w), h: n(k.h), rot: n(k.rot), label: str(k.label, 20) })),
 	};
 }
 
-export function geometryFromRecord(rec: KeyGeometryRecord): Pick<Geometry, "split" | "keys"> {
+export function geometryFromRecord(rec: KeyGeometryRecord): Pick<Geometry, "split" | "rowRoles" | "keys"> {
+	const keys = (rec?.keys ?? []).map((k) => ({
+		id: wireKeyId(k),
+		hand: k.hand === "r" ? "r" : "l",
+		row: n(k.row),
+		col: n(k.col),
+		x: n(k.x),
+		y: n(k.y),
+		w: n(k.w) || 100,
+		h: n(k.h) || 100,
+		rot: n(k.rot),
+		label: str(k.label, 20),
+	})) as Key[];
+	// A record written before rowRoles existed still has to say which row is the home row, so the same
+	// ladder parse.ts applies to an imported file fills in from the row indices. One table, not two.
+	const given: RowRole[] = Array.isArray(rec?.rowRoles) ? rec.rowRoles.map((r) => ((ROW_ROLE_VALUES as string[]).includes(String(r)) ? (String(r) as RowRole) : "extra")) : [];
+	const rows = [...new Set(keys.map((k) => k.row))].sort((a, b) => a - b);
 	return {
 		split: !!rec?.split,
-		keys: (rec?.keys ?? []).map((k) => ({
-			id: wireKeyId(k),
-			hand: k.hand === "r" ? "r" : "l",
-			row: n(k.row),
-			col: n(k.col),
-			x: n(k.x),
-			y: n(k.y),
-			w: n(k.w) || 100,
-			h: n(k.h) || 100,
-			rot: n(k.rot),
-			label: str(k.label, 20),
-		})) as Key[],
+		rowRoles: given.length ? given : rolesForRows(rows),
+		keys,
 	};
 }
 
 export const charMap = (keys: KeyChar[]) => ({ chars: keys.map((k) => ({ keyId: str(k.id), char: [...k.char].slice(0, 4).join("") })) });
+
+export type LayoutRecord = { $type: string; name: string; source: string; geometry: KeyGeometryRecord; charMap: { chars: { keyId: string; char: string }[] } };
+
+/**
+ * The board on screen as one record: where the keys are, what each row is for, and what each key produces.
+ * Characters are resolved from geometry x keymap rather than copied from a keymap, which is what lets an
+ * imported board and a shipped one share a format.
+ */
+export function layoutRecord(name: string, source: string, g: Geometry, chars: KeyChar[]): LayoutRecord {
+	return { $type: LAYOUT, name: str(name), source: str(source, 300), geometry: keyGeometry(g), charMap: charMap(chars) };
+}
+
+// The id a shared layout carries on every device: the record's rkey, which is the one thing two browsers
+// cannot disagree about. Built-in ids are never prefixed, so nothing can collide with a shipped board.
+export const SHARED_PREFIX = "shared:";
+
+/**
+ * The board and the keymap a shared layout record implies, with the ids every device will use. Characters
+ * ride per key rather than per row position: an imported board has letters on keys the 3x6 grid has no slot
+ * for, and a keymap built from rows alone would quietly drop them.
+ */
+export function boardFromLayout(rkey: string, s: SharedLayout): { geometry: Geometry; keymap: Keymap } {
+	const id = SHARED_PREFIX + rkey;
+	const name = s.name || "Shared layout";
+	const source = s.source || "a shared atproto record";
+	return {
+		geometry: { id, name, source, verified: false, split: s.geometry.split, rowRoles: s.geometry.rowRoles, keys: s.geometry.keys },
+		keymap: { id, name, source, rows: {}, byKey: s.byKey },
+	};
+}
+
+export type SharedLayout = { name: string; source: string; geometry: Pick<Geometry, "split" | "rowRoles" | "keys">; byKey: Record<string, string> };
+
+/** A layout record, or nothing usable. A record with no keys is not a board, so it is dropped rather than
+ *  registered as an empty one. */
+export function layoutFromRecord(rec: Record<string, unknown> | undefined): SharedLayout | undefined {
+	if (!rec || rec.$type !== LAYOUT) return undefined;
+	const geo = geometryFromRecord(rec.geometry as KeyGeometryRecord);
+	if (!geo.keys.length) return undefined;
+	const byKey: Record<string, string> = {};
+	for (const c of (rec.charMap as { chars?: ({ char?: unknown } & WireKeyId)[] } | undefined)?.chars ?? []) {
+		const id = wireKeyId(c ?? {});
+		const ch = typeof c?.char === "string" ? c.char : "";
+		if (id && ch) byKey[id] = ch;
+	}
+	return { name: str(rec.name), source: str(rec.source, 300), geometry: geo, byKey };
+}
 
 // The wire form of a StatMap. Sorted by key id so two devices that never met still produce byte-equal
 // arrays for the same progress, which makes a diff during debugging mean something.

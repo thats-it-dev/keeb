@@ -62,6 +62,10 @@ export const defs = {
 			required: ["keys"],
 			properties: {
 				split: { type: "boolean" },
+				// Physical row -> what that row is for. It travels because a receiving device cannot infer it:
+				// without it there is no way to tell the home row from the number row on a board it has never
+				// seen, and the lesson engine, fingering and taught-key logic all key off it.
+				rowRoles: { type: "array", items: { type: "string", knownValues: ["number", "upper", "home", "lower", "thumb", "extra"] }, maxLength: 32 },
 				keys: { type: "array", items: { type: "ref", ref: "#key" }, maxLength: 200 },
 			},
 		},

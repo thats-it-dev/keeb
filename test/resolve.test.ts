@@ -53,4 +53,19 @@ describe("resolve", () => {
 		expect(r.viewBox.width).toBeGreaterThan(Math.max(...r.keys.map((k) => k.x + k.w)));
 		expect(r.viewBox.height).toBeGreaterThan(Math.max(...r.keys.map((k) => k.y + k.h)));
 	});
+
+	it("lets a shared layout's per-key characters outrank the row grid", () => {
+		// A shared record says what each physical key produces, so it wins over the position grid -- including on
+		// a home-row key, where the grid would otherwise have the final word. The character has an accent because
+		// every plain one is already claimed by some key on this board, and byChar would then describe whichever
+		// registered last rather than the key under test (that collision is what this assertion first caught).
+		const home = GO.keys.find((k) => roleOf(GO, k.row) === "home" && k.hand === "l" && k.col === 1)!;
+		const map = { id: "shared:test", name: "Shared", source: "test", rows: keymapById("qwerty").rows, byKey: { [home.id]: "\u00e9" } };
+		expect(charFor(GO, keymapById("qwerty"), home)).toBe("a"); // what the grid alone would say
+		expect(charFor(GO, map, home)).toBe("\u00e9");
+		const r = resolve(GO, map);
+		expect(r.byId.get(r.byChar.get("\u00e9")!)?.id).toBe(home.id);
+		expect(r.byId.get(home.id)!.taught).toBe(true); // overriding a character does not un-teach the key
+	});
+
 });

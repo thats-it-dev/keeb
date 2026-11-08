@@ -79,7 +79,7 @@ floating point type, so the numbers that work in the browser are already the num
 | M4 atproto: OAuth sign-in, `settings`/`progress`/`session` records | shipped on `main` |
 | M5 publish the lexicons, DNS authority, stats screen | shipped on `main` |
 | M5.1 practice history — read the session records back and chart them | in review |
-| M6 shareable layouts — publish a `layout` record, browse and load one | planned |
+| M6 shareable layouts — publish a `layout` record, browse and load one | in review |
 
 ## Data model
 
@@ -143,6 +143,27 @@ loop waits for a network. What sync does, and why:
   keyboard out from under the learner, so that merge happens at boot or when you press Sync.
 - **Failures queue.** An unreachable PDS leaves the session in an IndexedDB outbox; the next session, or
   the next Sync, tries again. Nothing is ever dropped because a server was having a moment.
+
+## Sharing a layout (M6)
+
+A board you imported is one `app.thatsit.typing.layout` record: where the keys are, what each physical row
+is for, and what each key produces. Settings, progress and sessions all name a layout by its ids, so a
+second device that has never seen your file can still be told which board to draw.
+
+- **The record's tid is the board's id.** Both devices derive `shared:<rkey>` from the same record, so a
+  settings record that says `shared:2222abc` means the same keyboard everywhere. An id made from a filename
+  would not survive the second browser, which is where `import:<name>` ids stop being useful.
+- **Row roles travel with the positions.** Without them a receiving device cannot tell the home row from
+  the number row on a board it has never seen, and the lesson engine, the fingering and the unlock ladder
+  all key off that.
+- **Characters are per key, not per row position.** A shared record fills `Keymap.byKey`, because a board
+  that came out of someone's own file has letters on keys the classic 3x6 grid has no slot for. The row
+  grid still decides for the shipped boards, and a `byKey` entry wins wherever both exist.
+- **Publishing re-uses one record.** The rkey is remembered in the sync state, so pressing Publish twice
+  updates a layout instead of growing a second near-duplicate that the other device would also adopt.
+- **Boards are adopted before settings.** Shared layouts land first, because the check that adopts a remote
+  board only accepts an id it can resolve — and this browser may have got that id from the record it
+  downloaded two lines earlier.
 
 The OAuth client is a first-party web app: `client_metadata.json` is served from
 `/.well-known/oauth-client/`, the token flow is PKCE with DPoP and no client secret, and the library

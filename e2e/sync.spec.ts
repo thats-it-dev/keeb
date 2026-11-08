@@ -53,3 +53,14 @@ test("progress is stored locally with nobody signed in", async ({ page }) => {
 	const keys = await page.evaluate(() => Object.keys((document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { stats: object } }).engine.stats).length);
 	expect(keys).toBeGreaterThan(0);
 });
+
+test("publishing a layout is offered only once there is an account to publish to", async ({ page }) => {
+	// Nobody is signed in on a fresh browser, so the control that writes an app.thatsit.typing.layout
+	// record is absent rather than sitting there disabled: a button that can only fail invites the report
+	// that it failed.
+	await page.goto("/");
+	await expect(page.locator("tt-practice .line")).toBeVisible();
+	await page.locator("button[aria-label='Settings']").click();
+	await expect(page.locator("button", { hasText: "Sign in" })).toBeVisible();
+	await expect(page.locator("button", { hasText: "Publish this layout" })).toHaveCount(0);
+});

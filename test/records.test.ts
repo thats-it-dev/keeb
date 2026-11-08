@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
-import { PROGRESS, SETTINGS, SESSION, defs, layout, progress, session, settings } from "../src/atproto/lexicons.ts";
-import { charMap, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, mergeProgress, newKey, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
+import { LAYOUT, PROGRESS, SETTINGS, SESSION, defs, layout, progress, session, settings } from "../src/atproto/lexicons.ts";
+import { boardFromLayout, charMap, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, layoutFromRecord, layoutRecord, mergeProgress, newKey, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
@@ -173,4 +173,48 @@ describe("session rows", () => {
 		const bare = fromSessionRecord({ $type: SESSION, layout: "go60+qwerty" }, "self");
 		expect(bare).toEqual({ rkey: "self", layout: "go60+qwerty", atMs: 0, chars: 0, errors: 0, ms: 0, stats: {} });
 	});
+
+	it("carries a shared layout: positions, row roles and characters in one record", () => {
+		const rec = layoutRecord("My Go60", "moergo manual", GO60, r.keys.map((k) => ({ id: k.id, char: k.char })));
+		expect(rec.$type).toBe(LAYOUT);
+		expect(rec.geometry.rowRoles).toEqual([...GO60.rowRoles]);
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		expect(back.name).toBe("My Go60");
+		expect(back.source).toBe("moergo manual");
+		expect(back.geometry.rowRoles).toEqual([...GO60.rowRoles]);
+		// The characters have to land on the same physical keys they left from, or the receiving device
+		// draws a board it cannot type on.
+		const a = back.geometry.keys.find((k) => k.id === "L_C5R3")!;
+		expect(back.byKey[a.id]).toBe("a");
+		for (const k of back.geometry.keys) expect(Number.isInteger(k.x)).toBe(true);
+	});
+
+	it("drops a layout record that could not be a board", () => {
+		expect(layoutFromRecord({ $type: LAYOUT, name: "x", geometry: { keys: [] }, charMap: { chars: [] } })).toBeUndefined();
+		expect(layoutFromRecord({ $type: PROGRESS })).toBeUndefined();
+		expect(layoutFromRecord(undefined)).toBeUndefined();
+	});
+
+	it("reads the row ladder from row indices when a record predates rowRoles", () => {
+		const rec = { ...(keyGeometry(GO60) as Record<string, unknown>) };
+		delete rec.rowRoles;
+		const back = geometryFromRecord(rec as never);
+		expect(back.rowRoles.length).toBeGreaterThan(2);
+		expect(back.rowRoles).toContain("home");
+	});
+
+
+	it("gives a shared layout the same id on every device, because the id is the rkey", () => {
+		const rec = layoutRecord("Go60", "keeb", GO60, r.keys.map((k) => ({ id: k.id, char: k.char })));
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		const { geometry, keymap } = boardFromLayout("2222sharedrkey", back);
+		expect(geometry.id).toBe("shared:2222sharedrkey");
+		expect(keymap.id).toBe(geometry.id); // one id for both halves, so layoutKey() stays readable
+		expect(geometry.verified).toBe(false); // nobody has stood at this board
+		expect(geometry.keys.length).toBe(GO60.keys.length);
+		expect(Object.keys(keymap.byKey!).length).toBe(GO60.keys.length);
+		// Registered twice (a pull on a device that already adopted it) must not be the thing that duplicates.
+		expect(boardFromLayout("2222sharedrkey", back).geometry.id).toBe(geometry.id);
+	});
+
 });

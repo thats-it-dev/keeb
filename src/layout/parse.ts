@@ -165,8 +165,18 @@ function rolesFor(rows: number[], problems: string[]): RowRole[] {
 	const ladder = ROW_ROLES[rows.length];
 	if (!ladder) {
 		problems.push(`${rows.length} rows: too few to tell apart, everything is treated as a typing row`);
-		return rows.map((_, i) => (i < 3 ? (["upper", "home", "lower"] as RowRole[])[i] : "extra"));
+		return rolesForRows(rows);
 	}
 	if (shifted) problems.push(`rows are numbered ${rows.join(", ")} rather than 0..${rows.length - 1}; they are read in that order`);
 	return ladder;
+}
+
+/**
+ * What a board with these physical row indices reads as, without complaining about it. Shared with
+ * records.ts: a layout record written before `rowRoles` was a field still has to be reconstructed the same
+ * way an imported file is, and two ladders would drift.
+ */
+export function rolesForRows(rows: number[]): RowRole[] {
+	const ladder = ROW_ROLES[rows.length];
+	return ladder ?? rows.map((_, i) => (i < 3 ? (["upper", "home", "lower"] as RowRole[])[i] : "extra"));
 }
