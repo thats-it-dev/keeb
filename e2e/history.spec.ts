@@ -2,6 +2,7 @@
 // the cache directly -- signing in from a browser test would need a real account and a real PKCE dance.
 import type { Page } from "@playwright/test";
 import { expect, test } from "./csp.ts";
+import { closePane, openPane } from "./keys.ts";
 
 type Stat = { ttMs16: number; samples: number; errors: number };
 type Row = { rkey: string; layout: string; atMs: number; chars: number; errors: number; ms: number; stats: Record<string, Stat> };
@@ -41,14 +42,6 @@ const seed = (page: Page, rows: Row[]) =>
 		});
 	}, rows);
 
-// Fold the pane out, whichever shape it took. On a desktop the rail is the button; on a phone the whole pane
-// sits off-canvas, so its rail is not clickable and the header button is the opener.
-const openPane = async (page: Page) => {
-	const rail = page.locator("tt-insight-panel .bar");
-	if (await rail.isVisible()) await rail.click();
-	else await page.locator("app-main .head button[aria-label=\"Insights\"]").click();
-	await expect(page.locator("tt-insight-panel .body")).toBeVisible();
-};
 
 // The app reads the cache once, on boot, so seed first and then load.
 const seedAndOpen = async (page: Page, rows: Row[]) => {
@@ -58,8 +51,9 @@ const seedAndOpen = async (page: Page, rows: Row[]) => {
 	await page.reload();
 	await expect(page.locator("tt-practice .line")).toBeVisible();
 	await page.evaluate(() => document.fonts.ready);
-	await page.locator("button", { hasText: "Progress" }).click();
-	// The history is a section of the insight pane now, and the pane arrives folded.
+	// There is no Progress screen to navigate to any more: the history and the key bars are sections of the
+	// insight pane, and the pane arrives folded. Opening it is the whole of what used to be a click on
+	// "Progress" plus a click on the rail.
 	await openPane(page);
 };
 
@@ -103,10 +97,12 @@ test("history from another board does not leak into this one's chart", async ({ 
 		row({ rkey: "c2", atMs: noon(1), layout: "corne+colemak_dh", chars: 900 }),
 	]);
 	// Speed on a Corne says nothing about the same fingers on a Go60, so the section is simply absent.
+	// The section is absent, not merely hidden: #history() renders nothing at all when no session names this
+	// layout, which is what a count of 0 used to prove when the chart lived on the page.
 	await expect(page.locator(".hist")).toHaveCount(0);
 	// The progress pane is still there and still talking about this board -- the history was filtered out,
 	// not the screen. Nothing has been typed locally, so it shows the "hit a key first" state.
-	await expect(page.locator(".stats h2")).toContainText("progress");
+	await expect(page.locator(".stats h3")).toContainText("progress");
 	await expect(page.locator(".stats")).toContainText("A key gets a bar");
 });
 
@@ -124,17 +120,17 @@ test("with nothing synced there is no history section", async ({ page }) => {
 	await page.goto("/");
 	await expect(page.locator("tt-practice .line")).toBeVisible();
 	await page.evaluate(() => document.fonts.ready);
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 	await expect(page.locator(".hist")).toHaveCount(0);
 	// The key-progress part of the pane still works offline.
-	await expect(page.locator(".stats h2")).toContainText("progress");
+	await expect(page.locator(".stats h3")).toContainText("progress");
 });
 
 test("?demo=1 draws a labelled curve and stores nothing", async ({ page }) => {
 	await page.goto("/?demo=1");
 	await expect(page.locator("tt-practice .line")).toBeVisible();
 	await page.evaluate(() => document.fonts.ready);
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 	// The demo prompt lives in the history section, which lives in the pane. On a real branch preview the pane
 	// starts open; this is localhost, so the test folds it out by hand.
 	await openPane(page);
@@ -166,7 +162,7 @@ test("?demo=1 draws a labelled curve and stores nothing", async ({ page }) => {
 	expect(page.url()).not.toContain("demo");
 	await page.reload();
 	await expect(page.locator("tt-practice .line")).toBeVisible();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 	await expect(page.locator(".hist")).toHaveCount(0);
 });
 
@@ -185,7 +181,7 @@ test("the chart draws the pausing, and refuses to draw it without the data", asy
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, rows);
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 
 	const paths = await page.locator(".chart").evaluate((svg) => {
 		const d = (sel: string) => svg.querySelector(sel)?.getAttribute("d") ?? "";
@@ -210,7 +206,7 @@ test("the chart draws the pausing, and refuses to draw it without the data", asy
 	// which would read as "every second of this session was spent hesitating".
 	await seed(page, rows.map((r) => ({ ...r, stats: {} })));
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 	const bare = await page.locator(".chart").evaluate((svg) => ({
 		trend: svg.querySelector(".trend")?.getAttribute("d") ?? "",
 		typing: svg.querySelector(".typing")?.getAttribute("d") ?? "",
@@ -234,7 +230,7 @@ test("the insight panel is collapsed by default, opens, and remembers", async ({
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, rows);
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await closePane(page); // folded on purpose; see the note in closePane about inherited state
 
 	const panel = page.locator("tt-insight-panel");
 	await expect(panel).toBeVisible();
@@ -243,16 +239,17 @@ test("the insight panel is collapsed by default, opens, and remembers", async ({
 	// host in the DOM tree, not of .body, so naming .card bare would also count the five history totals.
 	await expect(panel.locator(".body .card")).toHaveCount(3);
 	await expect(panel.locator(".body")).toBeHidden();
-	await expect(panel.locator(".bar")).toHaveAttribute("aria-expanded", "false");
+	await expect(panel.locator(".rail")).toHaveAttribute("aria-expanded", "false");
 
-	await panel.locator(".bar").click();
+	await panel.locator(".rail").click();
 	await expect(panel.locator(".body")).toBeVisible();
-	await expect(panel.locator(".bar")).toHaveAttribute("aria-expanded", "true");
+	await expect(panel.locator(".rail")).toHaveAttribute("aria-expanded", "true");
 	// The hesitation card is the reason the panel exists, so it must carry a number, not just prose.
 	await expect(panel.locator('[data-id="hesitation"] .big')).toContainText("wpm");
 
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	// No openPane() here: the claim IS that nothing needs clicking. Opening it by hand would pass the test
+	// and defeat it.
 	await expect(page.locator("tt-insight-panel .body")).toBeVisible(); // remembered, without a click
 });
 
@@ -262,9 +259,9 @@ test("an empty panel explains itself instead of showing three blank cards", asyn
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, [row({ rkey: "solo", atMs: noon(0), stats: {} })]);
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await openPane(page);
 	const panel = page.locator("tt-insight-panel");
-	await panel.locator(".bar").click();
+	await panel.locator(".rail").click();
 	// A card with nothing to say is worse than no card: it reads as "zero", not as "unknown". So every card
 	// has to carry a sentence, and the one with a number must not contradict it.
 	for (const id of ["hesitation", "trends", "milestones"]) {
@@ -281,13 +278,14 @@ test("a collapsed panel takes no keyboard focus", async ({ page }, testInfo) => 
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, [row({ rkey: "one", atMs: noon(0) })]);
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await closePane(page);
 	const panel = page.locator("tt-insight-panel");
+	// Folded, and that is the whole claim: a closed pane must not hold focus.
 	await expect(panel.locator(".body")).toBeHidden();
 	await expect(panel.locator(".body")).toHaveAttribute("inert");
 	// Tab from the top of the screen: the toggle is reachable, the cards inside it are not. One focus() on a
 	// card is the whole claim -- inert makes focus() a no-op, so activeElement stays where it was.
-	const toggle = page.locator("tt-insight-panel .bar");
+	const toggle = page.locator("tt-insight-panel .rail");
 	await toggle.focus();
 	await expect(toggle).toBeFocused();
 	await page.locator("tt-insight-panel .body .card").first().evaluate((el) => (el as HTMLElement).focus());
@@ -301,26 +299,25 @@ test("the panel comes back the way you left it after a reload", async ({ page },
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, [row({ rkey: "one", atMs: noon(0) })]);
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await closePane(page); // the test's first claim is about a folded pane
 	const panel = page.locator("tt-insight-panel");
-	await expect(panel.locator(".body")).toBeHidden();
 
 	// Open it, then reload: the state must survive without a click.
-	await panel.locator(".bar").click();
+	await panel.locator(".rail").click();
 	await expect(panel.locator(".body")).toBeVisible();
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	// No clicking here either: surviving the reload without a click IS the assertion.
 	await expect(page.locator("tt-insight-panel .body")).toBeVisible();
-	await expect(page.locator("tt-insight-panel .bar")).toHaveAttribute("aria-expanded", "true");
+	await expect(page.locator("tt-insight-panel .rail")).toHaveAttribute("aria-expanded", "true");
 
 	// Close it, then reload again. This is the half that a presence-based attribute gets wrong: storage holds
 	// "0", and reading that as "anything present means open" would silently reopen the panel forever.
-	await page.locator("tt-insight-panel .bar").click();
+	await page.locator("tt-insight-panel .rail").click();
 	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	// Nothing clicked: storage says "0", and reading a present key as "open" would reopen this forever.
 	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
-	await expect(page.locator("tt-insight-panel .bar")).toHaveAttribute("aria-expanded", "false");
+	await expect(page.locator("tt-insight-panel .rail")).toHaveAttribute("aria-expanded", "false");
 });
 
 test("the pane is a full-height shell column, not a card in the section", async ({ page }, testInfo) => {
@@ -335,7 +332,7 @@ test("the pane is a full-height shell column, not a card in the section", async 
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, rows);
 	await page.reload();
-	await page.locator("button", { hasText: "Progress" }).click();
+	await closePane(page); // this test measures the rail and the open column in turn
 	const panel = page.locator("tt-insight-panel");
 	const vp = page.viewportSize()!;
 
@@ -353,11 +350,14 @@ test("the pane is a full-height shell column, not a card in the section", async 
 	await expect(panel).toHaveCSS("border-bottom-width", "0px");
 	await expect(panel).toHaveCSS("border-left-width", "1px");
 
+	// Settled, not in flight: both the pane width and the host's padding-right are transitioned, and a box
+	// measured mid-ease reports a number that is true of no state the app has ever been in (30.68px).
+	await expect(panel).toHaveCSS("width", "36px");
 	const closed = await panel.boundingBox();
 	const hostPad = await page.locator("app-main").evaluate((el) => getComputedStyle(el).paddingRight);
 	expect(hostPad).toBe("36px"); // the document steps aside by the rail's width
 
-	await panel.locator(".bar").click();
+	await panel.locator(".rail").click();
 	await expect(panel.locator(".body")).toBeVisible();
 	// The settled width, not a frame of the transition.
 	await expect(panel).toHaveCSS("width", "304px");

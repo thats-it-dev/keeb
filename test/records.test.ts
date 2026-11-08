@@ -217,4 +217,20 @@ describe("session rows", () => {
 		expect(boardFromLayout("2222sharedrkey", back).geometry.id).toBe(geometry.id);
 	});
 
+
+	it("merges two devices without letting an untimed key vote on the speed", () => {
+		// The second face of the run-boundary bug. A key struck only ever as someone's first keystroke
+		// carries samples but no observation of time, and averaging it in as a 0 ms measurement rewrote the
+		// other device's honest mean: 100 ms became 63.
+		const timed = { a: { ttMs16: 1600, samples: 5, errors: 0 } }; // 100ms
+		const untimed = { a: { ttMs16: 0, samples: 3, errors: 0 } }; // struck, never measured
+		const m = mergeProgress(timed, untimed);
+		expect(m.a!.ttMs16).toBe(1600); // the one device that measured anything carries the mean
+		expect(m.a!.samples).toBe(8); // and every stroke still counts as a stroke
+		// Two devices that both measured weight by exposure, as before.
+		const both = mergeProgress({ b: { ttMs16: 1600, samples: 5, errors: 0 } }, { b: { ttMs16: 400, samples: 5, errors: 1 } });
+		expect(both.b!.ttMs16).toBe(1000); // 100ms and 25ms average to 62.5ms
+		expect(both.b!.samples).toBe(10);
+	});
+
 });
