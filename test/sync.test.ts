@@ -1,7 +1,7 @@
 // M4: what sync sends and what it keeps when a PDS is unreachable. The session is a fake that records
 // every XRPC call, so the assertions are about the wire, not about the object graph.
 import { describe, expect, it } from "vitest";
-import { PROGRESS, SESSION, SETTINGS } from "../src/atproto/lexicons.ts";
+import { LAYOUT, PROGRESS, SESSION, SETTINGS } from "../src/atproto/lexicons.ts";
 import { Sync, emptyState, type SyncState, type SyncStore } from "../src/atproto/sync.ts";
 import { newKey } from "../src/atproto/records.ts";
 import type { Session } from "../src/atproto/auth.ts";
@@ -197,4 +197,28 @@ describe("sync", () => {
 		const bad = { ...session, fetchHandler: async () => jsonResponse(400, { error: "InvalidRequest", message: "no such collection" }) };
 		await expect(new Sync(bad, memStore()).pull()).rejects.toThrow(/InvalidRequest|no such collection/);
 	});
+
+	it("publishes a layout and keeps one record per layout rather than one per press", async () => {
+		const rec = { $type: LAYOUT, name: "Go60", source: "manual", geometry: { keys: [{ keyId: "k1", hand: "l", row: 2, col: 1, x: 100, y: 200, w: 100, h: 100, rot: 0, label: "a" }] }, charMap: { chars: [{ keyId: "k1", char: "a" }] } };
+		const rows = { [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [], [LAYOUT]: [] };
+		const { session, calls, stored } = fake(rows);
+		const sync = new Sync(session, memStore());
+		const first = await sync.pushLayout("go60+qwerty", rec as never);
+		const second = await sync.pushLayout("go60+qwerty", rec as never);
+		expect(second).toBe(first); // reusing the rkey is what makes an adopted layout's id stable
+		const puts = calls.filter((c) => c.path === "com.atproto.repo.putRecord" && c.body?.collection === LAYOUT);
+		expect(puts.map((p) => p.body?.rkey)).toEqual([first, first]);
+		expect(Object.keys(stored)).toEqual([`${LAYOUT}/${first}`]);
+	});
+
+	it("brings shared layouts back ordered by tid, skipping what is not one", async () => {
+		const lay = (rkey: string, name: string) => ({ uri: `at://${DID}/${LAYOUT}/${rkey}`, value: { $type: LAYOUT, name, source: "s", geometry: { keys: [{ keyId: "k1", hand: "l", row: 1, col: 1, x: 100, y: 0, w: 100, h: 100, rot: 0, label: "" }] }, charMap: { chars: [{ keyId: "k1", char: "q" }] } } });
+		const rows = { [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [], [LAYOUT]: [lay("5555newer", "Newer"), lay("1111older", "Older"), { uri: `at://${DID}/${LAYOUT}/9999junk`, value: { $type: PROGRESS } }] };
+		const { session } = fake(rows);
+		const res = await new Sync(session, memStore()).pull();
+		expect(res.layouts.map((l) => l.layout.name)).toEqual(["Older", "Newer"]);
+		expect(res.layouts[0]!.rkey).toBe("1111older");
+		expect(res.layouts[0]!.layout.byKey.k1).toBe("q");
+	});
+
 });

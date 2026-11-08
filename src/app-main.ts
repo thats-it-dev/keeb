@@ -4,8 +4,8 @@ import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeomet
 import { KEYMAPS, allKeymaps, forgetKeymap, keymapById, registerKeymap } from "./data/keymaps.ts";
 import { deleteBoard, deleteMap, layoutKey, loadBoards, loadHistory, loadMaps, loadSettings, loadStats, loadSyncState, saveBoard, saveHistory, saveMap, saveSettings, saveStats, saveSyncState, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { auth } from "./atproto/auth.ts";
-import { Sync, type SyncState } from "./atproto/sync.ts";
-import { mergeProgress, type SessionRow } from "./atproto/records.ts";
+import { Sync, type SharedLayoutRow, type SyncState } from "./atproto/sync.ts";
+import { boardFromLayout, layoutRecord, mergeProgress, SHARED_PREFIX, type SessionRow } from "./atproto/records.ts";
 import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { history as buildHistory, series, type Point } from "./stats/history.ts";
@@ -445,6 +445,47 @@ export class AppMain extends LitElement {
 		if (Number.isFinite(v) && v >= 15 && v <= 120) this.targetCpm = wpmToCpm(v);
 	}
 
+	/** Register and store one shared layout, if this browser does not already have it. Idempotent by id. */
+	async #adoptShared(row: SharedLayoutRow): Promise<void> {
+		const { geometry, keymap } = boardFromLayout(row.rkey, row.layout);
+		if (!allGeometries().some((x) => x.id === geometry.id)) {
+			registerGeometry(geometry);
+			await saveBoard(geometry);
+			this.boards = [...this.boards, geometry];
+		}
+		if (!allKeymaps().some((x) => x.id === keymap.id)) {
+			registerKeymap(keymap);
+			await saveMap(keymap);
+			this.maps = [...this.maps, keymap];
+		}
+	}
+
+	/**
+	 * Publish the layout on screen, then adopt the record this device just wrote. Adopting is not a courtesy
+	 * to the other browser: without it this one keeps typing under `import:whatever` while the account says
+	 * `shared:<rkey>`, and the two never recognize each other again.
+	 */
+	async #publishLayout(): Promise<void> {
+		if (!this.#sync) return;
+		this.syncNote = "";
+		const g = geometryById(this.geometryId);
+		const k = keymapById(this.keymapId);
+		const r = this.#resolved;
+		const byKey: Record<string, string> = {};
+		for (const key of r.keys) byKey[key.id] = key.char;
+		try {
+			const rkey = await this.#sync.pushLayout(layoutKey(g.id, k.id), layoutRecord(g.name, g.source, g, r.keys.map((key) => ({ id: key.id, char: key.char }))));
+			await this.#adoptShared({ rkey, layout: { name: g.name, source: g.source, geometry: { split: g.split, rowRoles: g.rowRoles, keys: g.keys }, byKey } });
+			const id = SHARED_PREFIX + rkey;
+			this.#pick("g", id);
+			this.#pick("k", id);
+			await this.#syncNow(false);
+			this.syncNote = "layout published";
+		} catch (err) {
+			this.syncNote = `layout not published: ${(err as Error).message}`;
+		}
+	}
+
 	// Bring the account and this browser into line, in whichever direction each piece is newer.
 	async #syncNow(adapt = true): Promise<void> {
 		if (!this.#sync) return;
@@ -452,9 +493,10 @@ export class AppMain extends LitElement {
 		const key = layoutKey(this.geometryId, this.keymapId);
 		const notes: string[] = [];
 		try {
-			const { settings, progress, sessions } = await this.#sync.pull();
-			// Cached only once the network has actually answered. saveHistory replaces the cache wholesale, so
-			// calling it on a failed pull would erase the history the offline chart is drawing.
+			const { settings, progress, sessions, layouts } = await this.#sync.pull();
+			// Shared boards land before anything reads the settings record: the account may name a layout this
+			// browser has never seen, and the adoption check below only accepts an id it can resolve.
+			for (const row of layouts) await this.#adoptShared(row);
 			await saveHistory(sessions);
 			this.sessions = sessions;
 			const remote = progress[key];
@@ -604,6 +646,7 @@ export class AppMain extends LitElement {
 							${this.did
 								? html`<span class="label">${this.did}</span>
 										<button class="btn ghost" @click=${() => void this.#syncNow()}>Sync now</button>
+						<button class="btn ghost" @click=${() => void this.#publishLayout()}>Publish this layout</button>
 										<button class="x" aria-label="Sign out" @click=${() => void this.#signOut()}>${iconX}</button>`
 								: html`<input
 										aria-label="atproto handle"

@@ -20,6 +20,10 @@ export function isTaught(g: Geometry, k: Key): boolean {
 }
 
 export function charFor(g: Geometry, kmap: Keymap, k: Key): string {
+	// A shared layout names this exact key, so its character wins outright. The row grid is the shape that
+	// shipped before records existed and stays the fallback for the built-in boards.
+	const named = kmap.byKey?.[k.id];
+	if (named) return named;
 	if (!isTaught(g, k)) return k.label;
 	const role = roleOf(g, k.row) as "upper" | "home" | "lower";
 	return kmap.rows[role]?.[k.hand][k.col] || k.label;

@@ -3,8 +3,8 @@
 // Two rules. Nothing here is required for the app to work: every function throws, and the caller carries
 // on as if there were no network. And the local copy stays authoritative while you type — sync happens
 // around a session, never inside a keystroke, because a slow PDS must not show up as a slow typist.
-import { PROGRESS, SESSION, SETTINGS } from "./lexicons.ts";
-import { fromProgressRecord, fromSessionRecord, fromSettingsRecord, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, type SessionRow } from "./records.ts";
+import { LAYOUT, PROGRESS, SESSION, SETTINGS } from "./lexicons.ts";
+import { fromProgressRecord, fromSessionRecord, fromSettingsRecord, layoutFromRecord, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, type LayoutRecord, type SessionRow, type SharedLayout } from "./records.ts";
 import type { Settings } from "../data/store.ts";
 import type { StatMap } from "../stats/stats.ts";
 import type { Session } from "./auth.ts";
@@ -12,14 +12,21 @@ import type { Session } from "./auth.ts";
 /** The bits of local state sync needs to remember between runs: which record belongs to which layout. */
 export type SyncState = {
 	progressRkeys: Record<string, string>;
+	/** Which record carries which shared board. Reusing the rkey is what keeps an adopted layout's id —
+	 *  derived from it — stable across republishes, so a second device does not grow a near-duplicate. */
+	layoutRkeys: Record<string, string>;
 	/** Sessions written locally but not yet accepted by a PDS. */
 	outbox: { layout: string; chars: number; errors: number; ms: number; stats: StatMap }[];
 	lastPull: number;
 };
 
-export const emptyState = (): SyncState => ({ progressRkeys: {}, outbox: [], lastPull: 0 });
+export const emptyState = (): SyncState => ({ progressRkeys: {}, layoutRkeys: {}, outbox: [], lastPull: 0 });
 
 export type SyncStore = { load(): Promise<SyncState>; save(s: SyncState): Promise<void> };
+
+/** One shared layout as the repo holds it. The rkey is the whole point of the row: it is the id every
+ *  device adopts for the board, which is how two browsers converge on one entry instead of two. */
+export type SharedLayoutRow = { rkey: string; layout: SharedLayout };
 
 type StoredRecord = { uri: string; cid?: string; value: Record<string, unknown> };
 
@@ -73,12 +80,11 @@ export class Sync {
 
 	/**
 	 * Everything the network knows that this browser does not. Returns the settings to adopt, the progress
-	 * to merge per layout, and every session the repo still keeps; the caller decides when local typing
-	 * stops being in the way.
+	 * to merge per layout, every session the repo still keeps, and the shared boards to register.
 	 */
-	async pull(): Promise<{ settings: Partial<Settings>; progress: Record<string, StatMap>; sessions: SessionRow[] }> {
+	async pull(): Promise<{ settings: Partial<Settings>; progress: Record<string, StatMap>; sessions: SessionRow[]; layouts: SharedLayoutRow[] }> {
 		const state = await this.store.load();
-		const [records, settings, sessions] = await Promise.all([list(this.s, PROGRESS), list(this.s, SETTINGS), list(this.s, SESSION)]);
+		const [records, settings, sessions, layouts] = await Promise.all([list(this.s, PROGRESS), list(this.s, SETTINGS), list(this.s, SESSION), list(this.s, LAYOUT)]);
 		const progress: Record<string, StatMap> = {};
 		const seen = new Map<string, number>();
 		for (const rec of records) {
@@ -96,6 +102,12 @@ export class Sync {
 		}
 		state.lastPull = Math.round(Date.now() / 1000);
 		await this.store.save(state);
+		// A shared layout's identity is its rkey, and a tid sorts chronologically, so ordering by it gives the
+		// picker a stable order that two devices reach independently.
+		const shares = layouts
+			.map((r) => ({ rkey: rkeyOf(r.uri), layout: layoutFromRecord(r.value) }))
+			.filter((r): r is SharedLayoutRow => !!r.layout)
+			.sort((a, b) => (a.rkey < b.rkey ? -1 : 1));
 		// The newest settings record wins. Picked rather than sorted: sorting mutates the array the caller
 		// handed us nothing about, and one pass with a comparator says the same thing without the side effect.
 		const newest = settings.reduce<{ at: number; value: Record<string, unknown> } | undefined>((top, r) => {
@@ -109,7 +121,22 @@ export class Sync {
 				const parsed = fromSessionRecord(r.value, rkeyOf(r.uri));
 				return parsed ? [parsed] : [];
 			}),
+			layouts: shares,
 		};
+	}
+
+	/**
+	 * Publish the layout on screen, or update the record that already carries it. The rkey is the identity:
+	 * a board adopted from a shared record keeps the same id on every device precisely because the id comes
+	 * from the rkey rather than from wherever the file was first dropped.
+	 */
+	async pushLayout(key: string, rec: LayoutRecord): Promise<string> {
+		const state = await this.store.load();
+		const rkey = state.layoutRkeys[key] ?? newKey();
+		await put(this.s, LAYOUT, rkey, rec);
+		state.layoutRkeys[key] = rkey;
+		await this.store.save(state);
+		return rkey;
 	}
 
 	async pushSettings(s: Settings, nowMs: number): Promise<void> {
