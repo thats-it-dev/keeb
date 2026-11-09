@@ -126,4 +126,46 @@ describe("lesson engine", () => {
 		expect(count("s")).toBeGreaterThan(count("i") / 4);
 		expect(text.length).toBeGreaterThan(40);
 	});
+
+	it("does not credit the first keystroke of a run with infinite speed", () => {
+		// The bug this pins: press() sets stamp to 0 at a run boundary so the pause between runs is never
+		// charged to a key -- correct intent, wrong consequence. elapsedMs came out as 0, and 0 went into the
+		// EWMA as a measurement of "instantly". A key that happened to START a line came out at 429 wpm while
+		// every other row sat near 230ms, and the screen's average read faster than every key inside it.
+		const e = start(r, {}, TARGET);
+		const first = [...e.text][0]!;
+		const res = press(e, r, first, 5000, TARGET);
+		const stat = res.engine.stats[res.targetId]!;
+		expect(stat.samples).toBe(1); // the stroke happened, so it counts as a character typed
+		expect(stat.ttMs16).toBe(0); // but nothing was measured, so the mean has no observation in it
+		expect(timeToTypeMs(stat)).toBe(0); // which reads as "unknown", not as "0ms"
+		// And the next stroke, which DOES have an earlier stroke to measure against, is timed properly.
+		const want2 = [...res.engine.text][res.engine.index]!;
+		const second = press(res.engine, r, want2, 5200, TARGET);
+		const after = second.engine.stats[second.targetId]!;
+		expect(after.ttMs16).toBe(200 * 16); // the 200ms gap, in fixed point, not a third of it and not 0
+	});
+
+	it("keeps an average from coming out faster than every key it averages", () => {
+		// Michael's report was exactly this: the headline said 59 wpm, the rows said 51-53. An untimed
+		// keystroke at a run boundary dragged one key's mean toward zero, and the mean of means followed it.
+		const e = start(r, {}, TARGET);
+		let engine = e;
+		let now = 1000;
+		for (let i = 0; i < 400 && [...engine.text][engine.index] !== undefined; i += 1) {
+			const want = [...engine.text][engine.index]!;
+			const res = press(engine, r, want, now, TARGET);
+			engine = res.engine;
+			now += 230; // a fixed, machine-honest cadence
+		}
+		const rows = Object.values(engine.stats).filter((s) => timeToTypeMs(s) > 0);
+		expect(rows.length).toBeGreaterThan(3);
+		const slowest = Math.max(...rows.map((s) => timeToTypeMs(s)));
+		const fastest = Math.min(...rows.map((s) => timeToTypeMs(s)));
+		// Every observation came from the same 230ms cadence, so no key may be timed under it, and the
+		// EWMA's floor is the first real interval after a run boundary.
+		expect(fastest).toBeGreaterThanOrEqual(200);
+		expect(slowest).toBeLessThan(600);
+	});
+
 });

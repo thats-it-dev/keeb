@@ -51,8 +51,10 @@ class InsightPanel extends LitElement {
 			}
 			:host([data-open]) { width: 19rem; }
 
-			/* Closed: the rail IS the widget, so its parts sit in a vertical line. */
-			.bar {
+			/* Closed: the rail IS the widget, so its parts sit in a vertical line. It is called .rail, not .bar:
+			   a progress bar in a slotted section already owns that name, and two meanings for one selector
+			   is how a test that clicks "the bar" starts clicking a key's speed instead. */
+			.rail {
 				display: flex;
 				align-items: center;
 				justify-content: center;
@@ -73,7 +75,7 @@ class InsightPanel extends LitElement {
 				writing-mode: vertical-rl;
 			}
 			/* Open: a header row, label left, count and collapse affordance right. */
-			:host([data-open]) .bar { flex-direction: row; justify-content: flex-start; padding: 0 10px; height: 2.5rem; writing-mode: horizontal-tb; }
+			:host([data-open]) .rail { flex-direction: row; justify-content: flex-start; padding: 0 10px; height: 2.5rem; writing-mode: horizontal-tb; }
 			.chev { color: var(--text-muted); flex: 0 0 auto; }
 			:host([data-open]) .t { flex: 1 1 auto; font-weight: 600; }
 			/* Open, the header reads like an editor's pane title: label at the left, the count and the collapse
@@ -100,7 +102,7 @@ class InsightPanel extends LitElement {
 			.card { padding: 14px 12px; border-bottom: 1px solid var(--line); }
 			/* Slotted content is styled by the tree it came from, so the parent's sheet draws the section; all the
 			   pane can do from here is give it an edge and breathe its own padding. */
-			::slotted(.hist) { padding: 14px 12px; border-bottom: 1px solid var(--line); }
+			::slotted(.hist), ::slotted(.stats) { padding: 14px 12px; border-bottom: 1px solid var(--line); }
 			h3 { margin: 0 0 6px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 			.big { margin: 0; font-size: 1.4rem; font-weight: 700; }
 			.big .sub { display: block; font-size: 0.75rem; font-weight: 400; color: var(--text-muted); }
@@ -123,8 +125,8 @@ class InsightPanel extends LitElement {
 					transition: transform 0.25s ease, visibility 0s linear 0.25s;
 				}
 				:host([data-open]) { width: min(85vw, 20rem); transform: none; visibility: visible; transition: transform 0.25s ease, visibility 0s; }
-				.bar { writing-mode: horizontal-tb; flex-direction: row; justify-content: flex-start; height: 2.5rem; padding: 0 10px; }
-				.bar .chev { transform: none; order: 2; }
+				.rail { writing-mode: horizontal-tb; flex-direction: row; justify-content: flex-start; height: 2.5rem; padding: 0 10px; }
+				.rail .chev { transform: none; order: 2; }
 				:host(:not([data-open])) .chev { transform: rotate(180deg); }
 				.t { flex: 1 1 auto; font-weight: 600; order: 0; }
 				.n { order: 1; }
@@ -144,13 +146,14 @@ class InsightPanel extends LitElement {
 
 	render() {
 		return html`
-			<button class="bar" @click=${this.#toggle} aria-expanded=${this.open ? "true" : "false"} aria-label=${this.open ? "Collapse insights" : "Open insights"}>
+			<button class="rail" @click=${this.#toggle} aria-expanded=${this.open ? "true" : "false"} aria-label=${this.open ? "Collapse insights" : "Open insights"}>
 				<span class="chev">›</span><span class="t">Insights</span><span class="n">${countItems(this.cards)}</span>
 			</button>
 			<!-- inert, not merely hidden: a closed pane's cards stay out of tab order and screen readers -->
 			<div class="body" ?inert=${!this.open}>
 				<!-- The history section is the parent's own DOM, slotted in ahead of the cards: it is built from d3
 					     scales and SVG templates that only that file owns. -->
+					<slot name="stats"></slot>
 					<slot name="hist"></slot>
 				${this.cards.map(cardHtml)}
 				${this.cards.length ? nothing : html`<p class="empty">Type a few sessions, and this fills itself.</p>`}
