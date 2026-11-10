@@ -29,13 +29,11 @@
 					"updatedAt": {
 						"type": "integer"
 					},
-					"unlocked": {
-						"type": "array",
-						"items": {
-							"type": "string",
-							"maxGraphemes": 20
-						},
-						"maxLength": 200
+					"keyboardOrder": {
+						"type": "boolean"
+					},
+					"realWords": {
+						"type": "boolean"
 					}
 				}
 			}

@@ -2,7 +2,7 @@
 // app actually writes, means a malformed schema fails a test today rather than in M5 when they go public.
 import { describe, expect, it } from "vitest";
 import { Lexicons, parseLexiconDoc } from "@atproto/lexicon";
-import { LEXICONS, PROGRESS, SESSION, SETTINGS } from "../src/atproto/lexicons.ts";
+import { LEXICONS, PROGRESS, SESSION, SETTINGS, settings } from "../src/atproto/lexicons.ts";
 import { charMap, geometryFromRecord, keyGeometry, progressRecord, sessionRecord, settingsRecord, statsFrom } from "../src/atproto/records.ts";
 import { GO60 } from "../src/data/go60.ts";
 
@@ -36,6 +36,15 @@ describe("lexicons", () => {
 		// Which letters are open is a verdict about this learner's numbers, not a preference, so it is not
 		// something a record is allowed to carry.
 		expect(rec).not.toHaveProperty("unlocked");
+	});
+
+	it("names every field the settings record carries", () => {
+		// Validation passes an undeclared property, so a field can reach the wire without the schema ever
+		// saying so, and a reader that learns the shape from the published lexicon would not know it is there.
+		const declared = Object.keys(settings.defs.main.record.properties);
+		const written = Object.keys(settingsRecord({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: true, realWords: true }, 0)).filter((k) => k !== "$type");
+		expect(written.filter((k) => !declared.includes(k))).toEqual([]);
+		expect(declared).not.toContain("unlocked");
 	});
 
 	it("accept a progress record and read it back unchanged", () => {
