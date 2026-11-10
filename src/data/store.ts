@@ -1,4 +1,5 @@
 import { mergeAll, progressGrowth, type StatMap } from "../stats/stats.ts";
+import { foldDaily, type DailyRow } from "../stats/daily.ts";
 import { emptyState as emptySyncState, type SyncState } from "../atproto/sync.ts";
 import type { SessionRow } from "../atproto/records.ts";
 import type { Geometry, Keymap } from "../keyboard/types.ts";
@@ -13,6 +14,7 @@ const BOARDS = "boards"; // layout files the learner imported (M3)
 const MAPS = "maps"; // keymaps read out of a layout editor export (M3)
 const SYNC = "sync"; // one row: which record is which, and what is waiting to be sent (M4)
 const HISTORY = "history"; // session records read from the PDS, keyed by rkey, so the chart works offline (M5)
+const DAILY = "daily"; // one row per local calendar day: minutes practised on THIS device
 const SYNC_KEY = "state";
 
 export type Settings = {
@@ -24,15 +26,19 @@ export type Settings = {
 	keyboardOrder: boolean;
 	// Practise words from the corpus instead of words the letter model invents.
 	realWords: boolean;
+	// Minutes of practice the daily bar aims for each day. Optional and never on the wire: it is device
+	// furniture like the tally it measures, and loadSettings fills the default. An old record or an old
+	// row without it keeps the default rather than turning the bar off.
+	dailyGoalMin?: number;
 };
 
-export const DEFAULT_SETTINGS: Settings = { geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false };
+export const DEFAULT_SETTINGS: Settings = { geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false, dailyGoalMin: 15 };
 
 let dbp: Promise<IDBDatabase> | undefined;
 
 function open(): Promise<IDBDatabase> {
 	dbp ??= new Promise((res, rej) => {
-		const req = indexedDB.open(DB, 5);
+		const req = indexedDB.open(DB, 6);
 		req.onupgradeneeded = () => {
 			const db = req.result;
 			if (!db.objectStoreNames.contains(STATS)) db.createObjectStore(STATS, { keyPath: "layout" });
@@ -46,6 +52,9 @@ function open(): Promise<IDBDatabase> {
 			// v5: the session rows pulled from the PDS. They live on the network, but a history that is
 			// blank until you are online is not a history an offline-first app can show.
 			if (!db.objectStoreNames.contains(HISTORY)) db.createObjectStore(HISTORY, { keyPath: "rkey" });
+			// v6: the daily tally. Not derived from HISTORY because that store only fills from a synced repo,
+			// and today's minutes have to read correctly on a device that has never been online.
+			if (!db.objectStoreNames.contains(DAILY)) db.createObjectStore(DAILY, { keyPath: "day" });
 		};
 		req.onsuccess = () => res(req.result);
 		req.onerror = () => rej(req.error);
@@ -214,6 +223,35 @@ export async function loadHistory(): Promise<SessionRow[]> {
 		r.onsuccess = () => res((r.result as SessionRow[]) ?? []);
 		r.onerror = () => rej(r.error);
 	});
+}
+
+/** The whole daily tally, oldest first. The bar only reads today; the rest is fold history. */
+export async function loadDaily(): Promise<DailyRow[]> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const r = db.transaction(DAILY).objectStore(DAILY).getAll();
+		r.onsuccess = () => res(((r.result as DailyRow[]) ?? []).filter((x) => x && typeof x.day === "string"));
+		r.onerror = () => rej(r.error);
+	});
+}
+
+/**
+ * Charge `ms` to today and return the rows the screen should now read. Writing is wholesale — read,
+ * fold, clear, put — because the fold prunes as it goes, and a second app-main on another tab folding
+ * against a stale copy loses at most its own prune, never a day the bar shows.
+ */
+export async function addDaily(nowMs: number, ms: number): Promise<DailyRow[]> {
+	const rows = foldDaily(await loadDaily(), nowMs, ms);
+	const db = await open();
+	await new Promise<void>((res, rej) => {
+		const tx = db.transaction(DAILY, "readwrite");
+		const store = tx.objectStore(DAILY);
+		store.clear();
+		for (const r of rows) store.put(r);
+		tx.oncomplete = () => res();
+		tx.onerror = () => rej(tx.error);
+	});
+	return rows;
 }
 
 export async function loadSyncState(): Promise<SyncState> {

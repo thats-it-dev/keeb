@@ -46,6 +46,10 @@ export const appStyles = [
 		.metric { display: grid; gap: 2px; justify-items: center; font-variant-numeric: tabular-nums; }
 		.metric b { font-weight: 600; font-size: 1.05rem; }
 		.row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; justify-content: center; }
+		/* Today's minutes under the numbers: the track takes the middle, the words hold both ends. */
+		.daily { display: flex; gap: 10px; align-items: center; width: 100%; max-width: 30rem; }
+		.daily .track { flex: 1; }
+		.daily .num { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 0.8rem; white-space: nowrap; }
 		.hit { color: var(--primary); font-weight: 600; }
 		.warn { color: var(--text-muted); }
 		.full { grid-column: 1 / -1; }

@@ -10,6 +10,8 @@ export type SettingsProps = {
 	keymapId: string;
 	/** The goal as the learner types it, in words per minute; storage keeps characters. */
 	goalWpm: number;
+	/** Minutes of practice today's bar aims for; 0 turns the bar off. Local to this device. */
+	dailyGoalMin: number;
 	/** Teach in keyboard order rather than by how often the language uses each letter. */
 	keyboardOrder: boolean;
 	/** Take words from the corpus instead of inventing them from the letter model. */
@@ -24,6 +26,7 @@ export type SettingsProps = {
 	onClick: (e: MouseEvent) => void;
 	onPick: (part: "g" | "k", value: string) => void;
 	onGoal: (e: Event) => void;
+	onDailyGoal: (e: Event) => void;
 	/** A curriculum switch: which letters come next, and where the words come from. */
 	onCurriculum: (part: "keyboardOrder" | "realWords", on: boolean) => void;
 	onUpload: (e: Event) => void;
@@ -59,6 +62,7 @@ export function settingsDialog(p: SettingsProps) {
 						${p.keymaps.map((k) => html`<option value=${k.id} ?selected=${k.id === p.keymapId}>${k.name}</option>`)}
 					</select></label>
 				<label><span class="label">goal wpm</span><input type="number" min="15" max="120" step="5" .value=${String(p.goalWpm)} @change=${p.onGoal} /></label>
+				<label><span class="label">daily goal (min)</span><input type="number" min="5" max="240" step="5" .value=${String(p.dailyGoalMin)} @change=${p.onDailyGoal} /></label>
 				<!-- The curriculum switches, in words a learner has. Both change what the next line contains,
 				     so neither belongs in a place you discover by accident. -->
 				<label class="full"><input type="checkbox" .checked=${p.keyboardOrder} @change=${(e: Event) => p.onCurriculum("keyboardOrder", (e.target as HTMLInputElement).checked)} /> <span class="label">teach in keyboard order</span></label>

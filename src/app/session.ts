@@ -9,6 +9,8 @@ export type RecorderHost = {
 	writeStats(stats: StatMap): void;
 	note(line: string): void;
 	connected(): boolean;
+	/** Wall-clock ms of a finished session, charged to today's tally on this device. */
+	recordDay(ms: number): void;
 	deliver(session: { chars: number; errors: number; ms: number; stats: StatMap }): Promise<{ sent?: number; error?: string }>;
 };
 
@@ -59,6 +61,13 @@ export class SessionRecorder {
 		await saveSettings(key, { ...settings, geometry: g, keymap: k, targetCpm });
 	}
 
+	/** How long the session open right now has been running; 0 when nothing is open. The daily bar adds
+	 *  this to the stored tally, so it moves while you type instead of waiting for the silence that
+	 *  closes the session. */
+	elapsed(): number {
+		return this.#startedAt ? Date.now() - this.#startedAt : 0;
+	}
+
 	/** Close the session: the characters since it opened become one row on the repo, if there is an account. */
 	async end(): Promise<void> {
 		if (!this.#startedAt) return;
@@ -69,6 +78,9 @@ export class SessionRecorder {
 		const errors = now.errors - this.#baseline.errors;
 		const ms = Date.now() - this.#startedAt;
 		this.#startedAt = 0;
+		// The day is charged whether or not the session reaches a repo: time spent practising is time
+		// spent, on a signed-out device just as on a synced one.
+		if (chars > 0 && ms > 0) this.host.recordDay(ms);
 		if (chars <= 0 || !this.host.connected()) return; // offline-first: the practice data is already in IndexedDB
 		const res = await this.host.deliver({ chars, errors, ms, stats: this.host.read().stats });
 		this.host.note(res.error ?? (res.sent ? `synced ${chars} characters` : ""));
