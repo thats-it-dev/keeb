@@ -132,17 +132,12 @@ export class AppMain extends LitElement {
 
 	override updated(changed: Map<string, unknown>): void {
 		if (changed.has("geometryId") || changed.has("keymapId")) void this.#load({ g: this.geometryId, k: this.keymapId });
-		if (changed.has("settingsOpen")) this.#syncDialog();
+		if (changed.has("settingsOpen")) syncDialog(this.renderRoot, this.settingsOpen);
 		if (this.ready && !this.#bound) {
 			window.addEventListener("keydown", this.#onKey);
 			window.addEventListener("keydown", this.#onEsc);
 			this.#bound = true;
 		}
-	}
-
-	// showModal() and close() are imperative, so the reactive flag drives them once per update.
-	#syncDialog(): void {
-		syncDialog(this.renderRoot, this.settingsOpen);
 	}
 
 	async #load(sel: { g: string; k: string }): Promise<void> {
@@ -203,9 +198,9 @@ export class AppMain extends LitElement {
 
 	#pick(part: "g" | "k", value: string): void {
 		// Close the session while the old layout is still selected. #load replaces this.stats with the new
-		// layout's map, and #endSession computes a delta against the baseline it took from the OLD one — that
-		// difference is usually negative, and a negative delta is discarded, so switching mid-session would
-		// silently lose the characters you had just typed.
+		// layout's map, and the session's end computes a delta against the baseline it took from the OLD one —
+		// that difference is usually negative, and a negative delta is discarded, so switching mid-session
+		// would silently lose the characters you had just typed.
 		if (part === "g" ? value !== this.geometryId : value !== this.keymapId) void this.#session.end();
 		if (part === "g") this.geometryId = value;
 		else this.keymapId = value;
@@ -216,24 +211,6 @@ export class AppMain extends LitElement {
 	#goal(e: Event): void {
 		const v = Number((e.target as HTMLInputElement).value);
 		if (Number.isFinite(v) && v >= 15 && v <= 120) this.targetCpm = wpmToCpm(v);
-	}
-
-	// Sync, sign-in and publishing are the account's business; see app/account.ts. These are the three
-	// hooks the screen needs, and every one of them leaves the note for the learner on this.#account.note.
-	async #syncNow(adapt = true): Promise<void> {
-		await this.#account.syncNow(adapt);
-	}
-
-	async #signIn(): Promise<void> {
-		await this.#account.signIn();
-	}
-
-	async #signOut(): Promise<void> {
-		await this.#account.signOut();
-	}
-
-	async #publishLayout(): Promise<void> {
-		await this.#account.publish(geometryById(this.geometryId), this.#resolved.keys.map((key) => ({ id: key.id, char: key.char })));
 	}
 
 	// Read a layout file the learner picked. Two shapes arrive here: a keyboard-layout-editor
@@ -306,10 +283,12 @@ export class AppMain extends LitElement {
 					onGoal: (e) => this.#goal(e),
 					onUpload: (e) => void this.#upload(e),
 					onHandle: (v) => (this.#account.handle = v),
-					onSignIn: () => void this.#signIn(),
-					onSignOut: () => void this.#signOut(),
-					onSync: () => void this.#syncNow(),
-					onPublish: () => void this.#publishLayout(),
+					// Signing in, syncing and publishing are the account's business; see app/account.ts. Each leaves
+					// the note the learner reads on this.#account.note.
+					onSignIn: () => void this.#account.signIn(),
+					onSignOut: () => void this.#account.signOut(),
+					onSync: () => void this.#account.syncNow(),
+					onPublish: () => void this.#account.publish(geometryById(this.geometryId), r.keys.map((key) => ({ id: key.id, char: key.char }))),
 					onRemoveBoard: (id) => void this.#removeBoard(id),
 					onRemoveMap: (id) => void this.#removeMap(id),
 				})}
@@ -330,7 +309,7 @@ export class AppMain extends LitElement {
 				desktop and is what dismisses the drawer on a phone. -->
 			<div class="scrim" ?inert=${!this.panelOpen} @click=${() => this.#panel(false)}></div>
 			<tt-insight-panel .cards=${this.#cards()} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}>
-				${this.ready ? this.#stats() : nothing}
+				${this.ready ? progressSection(this.#overview(), targetTimeMs(this.targetCpm)) : nothing}
 				${this.#history()}
 			</tt-insight-panel>
 		`;
@@ -344,11 +323,6 @@ export class AppMain extends LitElement {
 		const unlocked = this.settings.unlocked?.length ? this.settings.unlocked : keys.map((k) => k.id).slice(0, 9);
 		return overview(this.stats, this.targetCpm, keys, unlocked);
 	}
-
-	#stats() {
-		return progressSection(this.#overview(), targetTimeMs(this.targetCpm));
-	}
-
 
 	#history() {
 		return historySection({
