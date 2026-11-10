@@ -159,11 +159,3 @@ export function mergeAll(a: StatMap, b: StatMap): StatMap {
 	for (const [id, stat] of Object.entries(b)) out[id] = out[id] ? merge(out[id], stat) : { ...stat };
 	return out;
 }
-
-// Slowest first, ties broken by error rate: this is the order the lesson generator drills.
-export function ranked(stats: StatMap, targetCpm: number): string[] {
-	return Object.keys(stats).sort((x, y) => {
-		const d = confidence(stats[x], targetCpm) - confidence(stats[y], targetCpm);
-		return d !== 0 ? d : errorRate(stats[y]) - errorRate(stats[x]);
-	});
-}

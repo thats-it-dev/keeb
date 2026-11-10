@@ -84,16 +84,8 @@ export async function saveStats(key: string, stats: StatMap): Promise<void> {
 	await put(STATS, key, stats);
 }
 
-// Used after a sync pulls someone else's numbers down.
-export async function addStats(key: string, stats: StatMap): Promise<StatMap> {
-	const merged = mergeAll(await loadStats(key), stats);
-	await put(STATS, key, merged);
-	return merged;
-}
-
 /**
  * Fold one layout's progress record into this browser's numbers, exactly once.
- *
  * The record on the PDS is a shared accumulator: it contains the numbers this device pushed, plus whatever
  * another device added. So the only honest question is what it has learned since we last looked at it, and
  * `progressGrowth` answers that against the copy remembered in the sync row.
@@ -140,18 +132,6 @@ export async function loadSettings(key: string): Promise<Settings> {
 
 export async function saveSettings(key: string, s: Settings): Promise<void> {
 	await put(SETTINGS, key, s);
-}
-
-export async function wipe(): Promise<void> {
-	const db = await open();
-	for (const store of [STATS, SETTINGS, BOARDS, MAPS, SYNC, HISTORY]) {
-		await new Promise<void>((res, rej) => {
-			const tx = db.transaction(store, "readwrite");
-			tx.objectStore(store).clear();
-			tx.oncomplete = () => res();
-			tx.onerror = () => rej(tx.error);
-		});
-	}
 }
 
 // Imported boards survive a reload, and the picker is built from them before the first lesson starts.

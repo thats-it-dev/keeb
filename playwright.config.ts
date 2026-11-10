@@ -7,7 +7,8 @@ export default defineConfig({
 	testDir: "e2e",
 	timeout: 60_000,
 	expect: { timeout: 15_000 },
-	workers: 1,
+	// Tests share only the preview server, so they run in parallel.
+	workers: process.env.CI ? 2 : "50%",
 	use: { baseURL: base || "http://localhost:4317", trace: "retain-on-failure" },
 	projects: [
 		// No hasTouch: Chromium with a coarse pointer swallows synthetic keyboard events, so a

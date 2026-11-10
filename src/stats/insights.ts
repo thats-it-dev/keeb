@@ -205,6 +205,3 @@ function median(values: number[]): number {
 	const mid = Math.floor(sorted.length / 2);
 	return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 }
-
-export const trendLabel = (t: Trend): string =>
-	`${t.improving.length} getting faster · ${t.plateaued.length} stuck · ${t.slowing.length} slipping`;
