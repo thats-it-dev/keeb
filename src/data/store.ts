@@ -1,5 +1,5 @@
 import { mergeAll, progressGrowth, type StatMap } from "../stats/stats.ts";
-import { foldDaily, type DailyRow } from "../stats/daily.ts";
+import type { DailyRow } from "../stats/daily.ts";
 import { emptyState as emptySyncState, type SyncState } from "../atproto/sync.ts";
 import type { SessionRow } from "../atproto/records.ts";
 import type { Geometry, Keymap } from "../keyboard/types.ts";
@@ -26,13 +26,9 @@ export type Settings = {
 	keyboardOrder: boolean;
 	// Practise words from the corpus instead of words the letter model invents.
 	realWords: boolean;
-	// Minutes of practice the daily bar aims for each day. Optional and never on the wire: it is device
-	// furniture like the tally it measures, and loadSettings fills the default. An old record or an old
-	// row without it keeps the default rather than turning the bar off.
-	dailyGoalMin?: number;
 };
 
-export const DEFAULT_SETTINGS: Settings = { geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false, dailyGoalMin: 15 };
+export const DEFAULT_SETTINGS: Settings = { geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false };
 
 let dbp: Promise<IDBDatabase> | undefined;
 
@@ -236,12 +232,11 @@ export async function loadDaily(): Promise<DailyRow[]> {
 }
 
 /**
- * Charge `ms` to today and return the rows the screen should now read. Writing is wholesale — read,
- * fold, clear, put — because the fold prunes as it goes, and a second app-main on another tab folding
- * against a stale copy loses at most its own prune, never a day the bar shows.
+ * Persist the whole tally. The fold and the 7-day prune happen in the caller's copy (app/daily.ts),
+ * so what lands here is exactly what the screen shows — a write that races a torn-down tab can lose
+ * the session, but can never double-count one.
  */
-export async function addDaily(nowMs: number, ms: number): Promise<DailyRow[]> {
-	const rows = foldDaily(await loadDaily(), nowMs, ms);
+export async function saveDaily(rows: DailyRow[]): Promise<void> {
 	const db = await open();
 	await new Promise<void>((res, rej) => {
 		const tx = db.transaction(DAILY, "readwrite");
@@ -251,7 +246,6 @@ export async function addDaily(nowMs: number, ms: number): Promise<DailyRow[]> {
 		tx.oncomplete = () => res();
 		tx.onerror = () => rej(tx.error);
 	});
-	return rows;
 }
 
 export async function loadSyncState(): Promise<SyncState> {

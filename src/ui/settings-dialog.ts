@@ -62,7 +62,7 @@ export function settingsDialog(p: SettingsProps) {
 						${p.keymaps.map((k) => html`<option value=${k.id} ?selected=${k.id === p.keymapId}>${k.name}</option>`)}
 					</select></label>
 				<label><span class="label">goal wpm</span><input type="number" min="15" max="120" step="5" .value=${String(p.goalWpm)} @change=${p.onGoal} /></label>
-				<label><span class="label">daily goal (min)</span><input type="number" min="5" max="240" step="5" .value=${String(p.dailyGoalMin)} @change=${p.onDailyGoal} /></label>
+				<label><span class="label">daily goal (min)</span><input type="number" min="0" max="240" step="5" .value=${String(p.dailyGoalMin)} @change=${p.onDailyGoal} /></label>
 				<!-- The curriculum switches, in words a learner has. Both change what the next line contains,
 				     so neither belongs in a place you discover by accident. -->
 				<label class="full"><input type="checkbox" .checked=${p.keyboardOrder} @change=${(e: Event) => p.onCurriculum("keyboardOrder", (e.target as HTMLInputElement).checked)} /> <span class="label">teach in keyboard order</span></label>

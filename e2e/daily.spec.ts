@@ -59,6 +59,18 @@ test("a finished day says so in words, not only in a full bar", async ({ page })
 	await expect(num(page)).toHaveText("16 / 15 min · goal reached");
 });
 
+test("the goal follows the learner, not the board", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	await page.getByRole("button", { name: "Settings" }).click();
+	await page.locator("dialog").getByLabel("daily goal", { exact: false }).fill("30");
+	// Switching the board loads a different per-layout settings row. The goal lives outside that row,
+	// so the bar must come back on the new board still aimed at 30 minutes of the same tally.
+	await page.locator("dialog select").first().selectOption("corne");
+	await page.locator("dialog [aria-label='Close settings']").click();
+	await expect(page.locator("app-main").locator(".daily").locator(".num")).toHaveText("0 / 30 min");
+});
+
 test("the goal is the learner's to set", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
@@ -70,4 +82,9 @@ test("the goal is the learner's to set", async ({ page }) => {
 	await input.fill("30");
 	await page.locator("dialog [aria-label='Close settings']").click();
 	await expect(num(page)).toHaveText("12 / 30 min");
+	// 0 is the honest "no goal": the bar disappears rather than claiming an unreachable target.
+	await page.getByRole("button", { name: "Settings" }).click();
+	await input.fill("0");
+	await page.locator("dialog [aria-label='Close settings']").click();
+	await expect(bar(page)).toHaveCount(0);
 });

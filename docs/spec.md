@@ -285,8 +285,10 @@ The day belongs to keeb, not to the clone, so it is specified here rather than a
    The two sources are deliberately not merged, so a session charged to the tally is not also counted
    from the repo.
 3. The bar shows the open session's elapsed time immediately, so it moves while typing; the closed
-   part is charged once, at `SessionRecorder.end()`, whether or not it reaches a repo.
-4. The goal in minutes is per-device and never on the wire: `settingsRecord` keeps carrying exactly
-   the fields it carried before.
+   part is charged once, at `SessionRecorder.end()`, whether or not it reaches a repo. The fold lands
+   in memory before the write is attempted, so a tab torn down mid-write still shows the minutes.
+4. The goal in minutes lives in a browser-wide localStorage slot, not in the per-layout settings —
+   the tally it measures is device-wide — and never on the wire: `settingsRecord` keeps carrying
+   exactly the fields it carried before. 0 hides the bar.
 5. The tally keeps 7 local calendar days and the bar reads only today, so a stale row cannot stack a
    second charge onto a session already counted.

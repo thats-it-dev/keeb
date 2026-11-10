@@ -4,7 +4,7 @@ import { allKeymaps, keymapById } from "./data/keymaps.ts";
 import { layoutKey, loadHistory, loadSettings, loadStats, saveSettings, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { type SessionRow } from "./atproto/records.ts";
 import { dailyGoal } from "./stats/daily.ts";
-import { DailyTally, dailyGoalMin, setDailyGoalMin } from "./app/daily.ts";
+import { DailyTally, savedDailyGoalMin, setDailyGoalMin } from "./app/daily.ts";
 import { dailyBar } from "./ui/daily-bar.ts";
 import { cpmToWpm, targetTimeMs, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { ladder } from "./lesson/ladder.ts";
@@ -30,7 +30,7 @@ import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, settings: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true } };
 	static styles = appStyles;
 
 	geometryId = savedSelection().g;
@@ -53,8 +53,8 @@ export class AppMain extends LitElement {
 	// truth; these two fields are the render-visible copy it pushes through invalidate().
 	did = "";
 	syncNote = "";
-	// Today's minutes, counted on this device.
 	#tally = new DailyTally(() => this.requestUpdate());
+	dailyGoalMin = savedDailyGoalMin(); // this browser's slot, not per-layout settings: the minutes are device-wide
 	#account: Account = new Account({
 		read: () => ({ geometryId: this.geometryId, keymapId: this.keymapId, targetCpm: this.targetCpm, keyboardOrder: this.keyboardOrder, realWords: this.realWords, stats: this.stats, sessions: this.sessions, layouts: { boards: this.boards, maps: this.maps } }),
 		writeStats: (stats) => (this.stats = stats),
@@ -236,7 +236,7 @@ export class AppMain extends LitElement {
 		this.settings = { ...this.settings, [part]: on };
 		if (part === "keyboardOrder") this.keyboardOrder = on;
 		else this.realWords = on;
-		void saveSettings(layoutKey(this.geometryId, this.keymapId), this.settings);
+		void saveSettings(layoutKey(this.geometryId, this.keymapId), { ...this.settings, targetCpm: this.targetCpm });
 	}
 
 	// The file picker: what a layout file means is app/boards.ts's business, and this only says which list
@@ -301,7 +301,7 @@ export class AppMain extends LitElement {
 							geometryId: this.geometryId,
 							keymapId: this.keymapId,
 							goalWpm: cpmToWpm(this.targetCpm),
-							dailyGoalMin: dailyGoalMin(this.settings),
+							dailyGoalMin: this.dailyGoalMin,
 							keyboardOrder: this.keyboardOrder,
 							realWords: this.realWords,
 							did: this.did,
@@ -314,7 +314,7 @@ export class AppMain extends LitElement {
 							onClick: this.#onDialogClick,
 							onPick: (part, value) => this.#pick(part, value),
 							onGoal: (e) => this.#goal(e),
-							onDailyGoal: (e) => (this.settings = setDailyGoalMin(Number((e.target as HTMLInputElement).value), this.settings) ?? this.settings),
+							onDailyGoal: (e) => (this.dailyGoalMin = setDailyGoalMin(Number((e.target as HTMLInputElement).value)) ?? this.dailyGoalMin),
 							onCurriculum: (part, on) => this.#curriculum(part, on),
 							onUpload: (e) => void this.#upload(e),
 							onHandle: (v) => (this.#account.handle = v),
@@ -329,7 +329,7 @@ export class AppMain extends LitElement {
 						})}
 						<div class="col">
 							${o ? readout({ nowWpm: cpmToWpm(this.nowCpm), avgWpm: o.avgWpm, goalWpm: cpmToWpm(this.targetCpm), focusLabel: o.focusLabel }) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
-							${dailyBar(dailyGoal(this.#tally.rows, Date.now(), this.#session.elapsed(), dailyGoalMin(this.settings)))}
+							${dailyBar(dailyGoal(this.#tally.rows, Date.now(), this.#session.elapsed(), this.dailyGoalMin))}
 							${this.ready
 								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords}></tt-practice>`
 								: nothing}
