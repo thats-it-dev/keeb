@@ -9,19 +9,32 @@ export type RecorderHost = {
 	writeStats(stats: StatMap): void;
 	note(line: string): void;
 	connected(): boolean;
-	/** Wall-clock ms of a finished session, charged to today's tally on this device. */
+	/** Practice ms of a finished session — keystroke time only — charged to today's tally on this device. */
 	recordDay(ms: number): void;
 	deliver(session: { chars: number; errors: number; ms: number; stats: StatMap }): Promise<{ sent?: number; error?: string }>;
 };
 
+/** A keystroke gap counts toward practice time up to this cap. Longer than this is a pause — reading
+ *  the screen, hunting a finger position — and the part beyond the cap is never charged. */
+const GAP_CAP_MS = 10_000;
+
 /**
  * A session is the span between two silences, which is what the record is named for: it ends when the
  * learner walks away, and what they left behind becomes one row on their repo.
+ *
+ * The daily tally counts a different quantity from the record: keystroke time, gap by gap, capped. The
+ * whole span from the first key to the closing silence includes every pause, and a bar that creeps
+ * forward while nobody types teaches the learner to distrust it.
  */
 export class SessionRecorder {
 	// What the counters read when the current session started, so a session record holds a delta.
 	#baseline = { chars: 0, errors: 0 };
 	#startedAt = 0;
+	// Completed keystroke gaps of the open session, and the instant of its last keystroke. A gap longer
+	// than the cap is a pause, so the clock stops while the learner reads, and starts again at the key
+	// they land next — the pause itself is never charged, not even the part under the cap.
+	#typingMs = 0;
+	#lastKeyAt = 0;
 	#idleTimer: number | undefined;
 	// The stats exactly as they were last written, so a keystroke that changed nothing writes nothing.
 	#saved = "";
@@ -33,10 +46,18 @@ export class SessionRecorder {
 		this.#saved = JSON.stringify(stats);
 	}
 
-	/** The first keystroke of a span opens it. */
+	/** The first keystroke opens a span; every later one closes the gap before it onto the clock,
+	 *  capped, so the tally is the time between keys and not the time since the first of them. */
 	begin(): void {
-		if (this.#startedAt) return;
-		this.#startedAt = Date.now();
+		const t = Date.now();
+		if (this.#startedAt) {
+			this.#typingMs += Math.min(Math.max(0, t - this.#lastKeyAt), GAP_CAP_MS);
+			this.#lastKeyAt = t;
+			return;
+		}
+		this.#startedAt = t;
+		this.#lastKeyAt = t;
+		this.#typingMs = 0;
 		this.#baseline = totals(this.host.read().stats);
 	}
 
@@ -61,11 +82,11 @@ export class SessionRecorder {
 		await saveSettings(key, { ...settings, geometry: g, keymap: k, targetCpm });
 	}
 
-	/** How long the session open right now has been running; 0 when nothing is open. The daily bar adds
-	 *  this to the stored tally, so it moves while you type instead of waiting for the silence that
-	 *  closes the session. */
+	/** Practice time so far: the closed gaps plus the gap since the last key, which stops growing once
+	 *  it passes the cap. The daily bar reads this, so the clock runs with the fingers and stalls when
+	 *  they stop. */
 	elapsed(): number {
-		return this.#startedAt ? Date.now() - this.#startedAt : 0;
+		return this.#startedAt ? this.#typingMs + Math.min(Math.max(0, Date.now() - this.#lastKeyAt), GAP_CAP_MS) : 0;
 	}
 
 	/** Close the session: the characters since it opened become one row on the repo, if there is an account. */
@@ -73,14 +94,19 @@ export class SessionRecorder {
 		if (!this.#startedAt) return;
 		if (this.#idleTimer !== undefined) window.clearTimeout(this.#idleTimer);
 		this.#idleTimer = undefined;
-		const now = totals(this.host.read().stats);
-		const chars = now.chars - this.#baseline.chars;
-		const errors = now.errors - this.#baseline.errors;
-		const ms = Date.now() - this.#startedAt;
+		const statsNow = this.host.read().stats;
+		const totalsNow = totals(statsNow);
+		const chars = totalsNow.chars - this.#baseline.chars;
+		const errors = totalsNow.errors - this.#baseline.errors;
+		const t = Date.now();
+		const ms = t - this.#startedAt;
+		const typing = this.#typingMs + Math.min(Math.max(0, t - this.#lastKeyAt), GAP_CAP_MS);
 		this.#startedAt = 0;
+		this.#typingMs = 0;
+		this.#lastKeyAt = 0;
 		// The day is charged whether or not the session reaches a repo: time spent practising is time
 		// spent, on a signed-out device just as on a synced one.
-		if (chars > 0 && ms > 0) this.host.recordDay(ms);
+		if (chars > 0 && typing > 0) this.host.recordDay(typing);
 		if (chars <= 0 || !this.host.connected()) return; // offline-first: the practice data is already in IndexedDB
 		const res = await this.host.deliver({ chars, errors, ms, stats: this.host.read().stats });
 		this.host.note(res.error ?? (res.sent ? `synced ${chars} characters` : ""));
