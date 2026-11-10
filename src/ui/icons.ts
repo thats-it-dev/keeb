@@ -25,9 +25,3 @@ export const iconTrash = frame(svg`	<path d="M10 11v6" />
 	<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
 `);
 
-// The drawer affordance for a phone: an outlined pane with its divider on the right, which is where this
-// app's sidebar lives on a desktop.
-export const iconPanelRight = frame(svg`
-	<rect width="18" height="18" x="3" y="3" rx="2" />
-	<path d="M15 3v18" />
-`);

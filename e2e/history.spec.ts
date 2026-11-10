@@ -2,7 +2,7 @@
 // the cache directly -- signing in from a browser test would need a real account and a real PKCE dance.
 import type { Page } from "@playwright/test";
 import { expect, test } from "./csp.ts";
-import { closePane, openPane } from "./keys.ts";
+import { closePane, openPane, paneBody } from "./keys.ts";
 
 type Stat = { ttMs16: number; samples: number; errors: number };
 type Row = { rkey: string; layout: string; atMs: number; chars: number; errors: number; ms: number; stats: Record<string, Stat> };
@@ -230,27 +230,25 @@ test("the insight panel is collapsed by default, opens, and remembers", async ({
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, rows);
 	await page.reload();
-	await closePane(page); // folded on purpose; see the note in closePane about inherited state
+	await closePane(page); // hidden on purpose; see the note in closePane about inherited state
 
-	const panel = page.locator("tt-insight-panel");
-	await expect(panel).toBeVisible();
-	// Closed: the cards exist in the DOM but are hidden, so opening costs no re-render of the chart.
-	// Scoped to .body, which is where the panel's own cards are: the slotted history section is a child of the
-	// host in the DOM tree, not of .body, so naming .card bare would also count the five history totals.
-	await expect(panel.locator(".body .card")).toHaveCount(3);
-	await expect(panel.locator(".body")).toBeHidden();
-	await expect(panel.locator(".rail")).toHaveAttribute("aria-expanded", "false");
+	const toggle = page.locator("tk-header .aside-toggle");
+	// Closed: the cards exist in the DOM but are clipped to a 0-width column, so opening costs no re-render
+	// of the chart. Scoped to the insights' own children: naming .card bare would also count the history totals.
+	await expect(page.locator(".insights > .card")).toHaveCount(3);
+	await expect(paneBody(page)).toBeHidden();
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
 
-	await panel.locator(".rail").click();
-	await expect(panel.locator(".body")).toBeVisible();
-	await expect(panel.locator(".rail")).toHaveAttribute("aria-expanded", "true");
+	await toggle.click();
+	await expect(paneBody(page)).toBeVisible();
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
 	// The hesitation card is the reason the panel exists, so it must carry a number, not just prose.
-	await expect(panel.locator('[data-id="hesitation"] .big')).toContainText("wpm");
+	await expect(page.locator('[data-id="hesitation"] .big')).toContainText("wpm");
 
 	await page.reload();
 	// No openPane() here: the claim IS that nothing needs clicking. Opening it by hand would pass the test
 	// and defeat it.
-	await expect(page.locator("tt-insight-panel .body")).toBeVisible(); // remembered, without a click
+	await expect(paneBody(page)).toBeVisible(); // remembered, without a click
 });
 
 test("an empty panel explains itself instead of showing three blank cards", async ({ page }, testInfo) => {
@@ -260,8 +258,7 @@ test("an empty panel explains itself instead of showing three blank cards", asyn
 	await seed(page, [row({ rkey: "solo", atMs: noon(0), stats: {} })]);
 	await page.reload();
 	await openPane(page);
-	const panel = page.locator("tt-insight-panel");
-	await panel.locator(".rail").click();
+	const panel = page.locator(".insights");
 	// A card with nothing to say is worse than no card: it reads as "zero", not as "unknown". So every card
 	// has to carry a sentence, and the one with a number must not contradict it.
 	for (const id of ["hesitation", "trends", "milestones"]) {
@@ -279,18 +276,18 @@ test("a collapsed panel takes no keyboard focus", async ({ page }, testInfo) => 
 	await seed(page, [row({ rkey: "one", atMs: noon(0) })]);
 	await page.reload();
 	await closePane(page);
-	const panel = page.locator("tt-insight-panel");
-	// Folded, and that is the whole claim: a closed pane must not hold focus.
-	await expect(panel.locator(".body")).toBeHidden();
-	await expect(panel.locator(".body")).toHaveAttribute("inert");
+	const col = page.locator("aside[aria-label='Insights']");
+	// Hidden, and that is the whole claim: a closed panel must not hold focus. The shell marks the column inert.
+	await expect(paneBody(page)).toBeHidden();
+	await expect(col).toHaveAttribute("inert");
 	// Tab from the top of the screen: the toggle is reachable, the cards inside it are not. One focus() on a
 	// card is the whole claim -- inert makes focus() a no-op, so activeElement stays where it was.
-	const toggle = page.locator("tt-insight-panel .rail");
+	const toggle = page.locator("tk-header .aside-toggle");
 	await toggle.focus();
 	await expect(toggle).toBeFocused();
-	await page.locator("tt-insight-panel .body .card").first().evaluate((el) => (el as HTMLElement).focus());
+	await page.locator(".insights > .card").first().evaluate((el) => (el as HTMLElement).focus());
 	await expect(toggle).toBeFocused();
-	await expect(page.locator("tt-insight-panel .body .card").first()).not.toBeFocused();
+	await expect(page.locator(".insights > .card").first()).not.toBeFocused();
 });
 
 test("the panel comes back the way you left it after a reload", async ({ page }, testInfo) => {
@@ -299,25 +296,26 @@ test("the panel comes back the way you left it after a reload", async ({ page },
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, [row({ rkey: "one", atMs: noon(0) })]);
 	await page.reload();
-	await closePane(page); // the test's first claim is about a folded pane
-	const panel = page.locator("tt-insight-panel");
+	await closePane(page); // the test's first claim is about a hidden panel
+	const toggle = page.locator("tk-header .aside-toggle");
 
 	// Open it, then reload: the state must survive without a click.
-	await panel.locator(".rail").click();
-	await expect(panel.locator(".body")).toBeVisible();
+	await toggle.click();
+	await expect(paneBody(page)).toBeVisible();
 	await page.reload();
 	// No clicking here either: surviving the reload without a click IS the assertion.
-	await expect(page.locator("tt-insight-panel .body")).toBeVisible();
-	await expect(page.locator("tt-insight-panel .rail")).toHaveAttribute("aria-expanded", "true");
+	await expect(paneBody(page)).toBeVisible();
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
 	// Close it, then reload again. This is the half that a presence-based attribute gets wrong: storage holds
-	// "0", and reading that as "anything present means open" would silently reopen the panel forever.
-	await page.locator("tt-insight-panel .rail").click();
-	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
+	// "false", and reading that as "anything stored means open" would silently reopen the panel forever.
+	await toggle.click();
+	await expect(paneBody(page)).toBeHidden();
 	await page.reload();
-	// Nothing clicked: storage says "0", and reading a present key as "open" would reopen this forever.
-	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
-	await expect(page.locator("tt-insight-panel .rail")).toHaveAttribute("aria-expanded", "false");
+	// Nothing clicked: storage says the column is hidden, and reading a present key as "open" would reopen
+	// this forever.
+	await expect(paneBody(page)).toBeHidden();
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
 });
 
 test("the pane is a full-height shell column, not a card in the section", async ({ page }, testInfo) => {
@@ -332,47 +330,35 @@ test("the pane is a full-height shell column, not a card in the section", async 
 	await page.locator("tt-practice .line").waitFor();
 	await seed(page, rows);
 	await page.reload();
-	await closePane(page); // this test measures the rail and the open column in turn
-	const panel = page.locator("tt-insight-panel");
+	await closePane(page); // this test measures the closed and the open column in turn
+	const col = page.locator("aside[aria-label='Insights']");
 	const vp = page.viewportSize()!;
 
-	// It belongs to the shell: pinned to the viewport, flush with the right edge, top to bottom.
-	await expect(panel).toHaveCSS("position", "fixed");
-	const box = await panel.boundingBox();
+	// It belongs to the shell. Hidden, it is a 0-wide track with no border, so it cannot stick out of the track;
+	// and the grid track is transitioned, so measure only what has settled.
+	await expect(col).toHaveCSS("border-left-width", "0px");
+	await expect.poll(() => col.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(0);
+
+	await page.locator("tk-header .aside-toggle").click();
+	await expect(paneBody(page)).toBeVisible();
+	// Open: full height, flush with the right edge, one rule facing the content.
+	const asideW = 300; // --aside-w
+	await expect.poll(() => col.evaluate((el) => Math.round(el.getBoundingClientRect().width))).toBe(asideW);
+	await expect(col).toHaveCSS("border-top-width", "0px");
+	await expect(col).toHaveCSS("border-right-width", "0px");
+	await expect(col).toHaveCSS("border-bottom-width", "0px");
+	await expect(col).toHaveCSS("border-left-width", "1px");
+	const box = await col.boundingBox();
 	expect(Math.round(box!.y)).toBe(0);
-	expect(Math.round(box!.height)).toBe(vp.height);
+	expect(Math.round(box!.height)).toBe(vp.height); // opening sideways: never taller
 	expect(Math.round(box!.x + box!.width)).toBe(vp.width);
 
-	// Flat: no rounded corners anywhere, and the only edge treatment is the one rule facing the content.
-	await expect(panel).toHaveCSS("border-top-left-radius", "0px");
-	await expect(panel).toHaveCSS("border-top-width", "0px");
-	await expect(panel).toHaveCSS("border-right-width", "0px");
-	await expect(panel).toHaveCSS("border-bottom-width", "0px");
-	await expect(panel).toHaveCSS("border-left-width", "1px");
-
-	// Settled, not in flight: both the pane width and the host's padding-right are transitioned, and a box
-	// measured mid-ease reports a number that is true of no state the app has ever been in (30.68px).
-	await expect(panel).toHaveCSS("width", "36px");
-	const closed = await panel.boundingBox();
-	const hostPad = await page.locator("app-main").evaluate((el) => getComputedStyle(el).paddingRight);
-	expect(hostPad).toBe("36px"); // the document steps aside by the rail's width
-
-	await panel.locator(".rail").click();
-	await expect(panel.locator(".body")).toBeVisible();
-	// The settled width, not a frame of the transition.
-	await expect(panel).toHaveCSS("width", "304px");
-	const open = await panel.boundingBox();
-	expect(Math.round(open!.height)).toBe(vp.height); // opening sideways: never taller
-	expect(Math.abs(open!.x - (vp.width - 304))).toBeLessThanOrEqual(1);
-	await expect(page.locator("app-main")).toHaveCSS("padding-right", "304px");
-
 	// The cards scroll inside the column rather than extending the page.
-	expect(await panel.locator(".body").evaluate((el) => el.scrollHeight >= el.clientHeight)).toBe(true);
+	expect(await paneBody(page).evaluate((el) => el.scrollHeight >= el.clientHeight)).toBe(true);
 
-	// And the history is a section of THIS pane, not of the progress screen. The chart's nodes are children of
-	// the host, distributed into .body by the slot, so the claim is checkable from the DOM tree: the section is
-	// under tt-insight-panel and there is none left in .stats.
-	expect(await page.locator("tt-insight-panel > .hist .chart").count()).toBe(1);
+	// And the history is a section of THIS panel: it sits directly in the aside column, and none of it is
+	// left inside the progress section.
+	expect(await page.locator(".insights > .hist .chart").count()).toBe(1);
 	await expect(page.locator(".stats .hist")).toHaveCount(0);
 });
 test("on a phone the pane is a side menu", async ({ page }) => {
@@ -388,44 +374,43 @@ test("on a phone the pane is a side menu", async ({ page }) => {
 	await seed(page, rows);
 	await page.reload();
 
-	const panel = page.locator("tt-insight-panel");
+	const col = page.locator("aside[aria-label='Insights']");
 	const vp = page.viewportSize()!;
 	// Closed and off-canvas: parked past the right edge, and out of the tab order, which visibility:hidden is
 	// what buys -- a translate alone would leave its buttons focusable.
-	await expect(panel).toHaveCSS("visibility", "hidden");
-	expect(Math.round((await panel.boundingBox())!.x)).toBeGreaterThanOrEqual(vp.width - 1);
+	await expect(col).toHaveCSS("visibility", "hidden");
+	expect(Math.round((await col.boundingBox())!.x)).toBeGreaterThanOrEqual(vp.width - 1);
 	// Nothing is reserved on a phone: the page keeps its full width and the drawer covers it.
-	await expect(page.locator("app-main")).toHaveCSS("padding-right", "0px");
+	await expect(page.locator(".page")).toHaveCSS("width", `${vp.width}px`);
 
-	// The rail is gone, so the header carries the only opener.
-	const openBtn = page.locator(".drawer-only");
+	// The header carries the only opener.
+	const openBtn = page.locator("tk-header .aside-toggle");
 	await expect(openBtn).toBeVisible();
 	await openBtn.click();
-	await expect(panel).toHaveCSS("visibility", "visible");
-	await expect(panel.locator(".body")).toBeVisible();
+	await expect(col).toHaveCSS("visibility", "visible");
+	await expect(paneBody(page)).toBeVisible();
 	// Wait for the slide to finish: transform animates over 0.25s, and a box measured mid-flight reports the
-	// pane still parked off-screen. (The width assertion caught this; the same trap cost a 58px reading once
-	// already on the desktop column.)
-	await expect(panel).toHaveCSS("transform", "none");
-	const box = await panel.boundingBox();
-	expect(box!.width).toBeGreaterThan(200); // min(85vw, 20rem), not a 36px rail
+	// drawer still parked off-screen.
+	await expect(col).toHaveCSS("transform", "none");
+	const box = await col.boundingBox();
+	expect(box!.width).toBeGreaterThan(200); // min(85vw, 360px)
 	expect(Math.round(box!.x + box!.width)).toBe(vp.width);
 
-	// The scrim dismisses it, which is the gesture a side menu is expected to answer.
-	await page.locator(".scrim").click({ position: { x: 20, y: 300 } });
-	await expect(panel).toHaveCSS("visibility", "hidden");
+	// The overlay dismisses it, which is the gesture a side menu is expected to answer.
+	await page.locator("tk-shell .overlay").click({ position: { x: 20, y: 300 } });
+	await expect(col).toHaveCSS("visibility", "hidden");
 
 	// And so does Escape, from either side.
 	await openBtn.click();
-	await expect(panel).toHaveCSS("visibility", "visible");
+	await expect(col).toHaveCSS("visibility", "visible");
 	await page.keyboard.press("Escape");
-	await expect(panel).toHaveCSS("visibility", "hidden");
+	await expect(col).toHaveCSS("visibility", "hidden");
 
-	// A menu does not remember being a menu open: the desktop column's folded-or-not choice is stored, but a
-	// reload must never drop an open drawer across the page and swallow the first tap. (This is the case the
-	// history section exposed -- the stored flag used to restore the drawer open here.)
+	// A menu does not remember being open: the desktop column's hidden-or-not choice is stored, but a
+	// reload must never drop an open drawer across the page and swallow the first tap.
 	await openBtn.click();
+	await expect(col).toHaveCSS("visibility", "visible");
 	await page.reload();
 	await page.locator("tt-practice .line").waitFor();
-	await expect(panel).toHaveCSS("visibility", "hidden");
+	await expect(col).toHaveCSS("visibility", "hidden");
 });

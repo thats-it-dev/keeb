@@ -7,30 +7,23 @@ export const appStyles = [
 	sharedStyles,
 	css`
 		main { display: grid; gap: 18px; padding: 18px; max-width: 62rem; margin: 0 auto; justify-items: center; }
-		/* The insight pane is a fixed full-height column, so the document has to step aside for it. Padding
-		* on the host keeps the centered main element centered in the space that is left, and it animates on
-		* the same curve as the pane, so opening it reads as a resize rather than a jump. */
-		:host { display: block; padding-right: 2.25rem; box-sizing: border-box; transition: padding-right 0.18s ease; }
-		:host([data-panel-open]) { padding-right: 19rem; }
-		.scrim { display: none; }
-		@media (max-width: 899px) {
-		/* A phone has no sideways room to reserve: the pane is a drawer over the content, and the page
-		* keeps its full width. The scrim is what dismisses it, same as kit's shell. */
-		:host, :host([data-panel-open]) { padding-right: 0; }
-		.scrim { display: block; position: fixed; inset: 0; background: var(--overlay); z-index: 25; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
-		:host([data-panel-open]) .scrim { opacity: 1; pointer-events: auto; }
-		}
-		.head { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; }
-		.head h1 { margin: 0; }
-		.head-actions { display: flex; align-items: center; gap: 6px; }
-		/* Two classes, not one: the .x rule below sets display:grid with the same specificity, and whichever
-		* rule comes last in the sheet wins. */
-		.x.drawer-only { display: none; }
-		/* And the override has to come AFTER the base rule: an @media block adds no specificity, so a media
-		* declaration written earlier in the sheet loses to the one below it at every width. */
-		@media (max-width: 899px) {
-		.x.drawer-only { display: grid; }
-		}
+		/* The kit shell owns the layout: its main column fills the window, this one element inside it scrolls,
+		* and tk-header sticks to its top. The insights live in the shell's aside panel, not in this file's layout. */
+		:host { display: block; height: 100%; }
+		.page { overflow-y: auto; height: 100%; }
+		/* The aside panel's own scroll column: the sections stacked into it, in reading order, each edged off
+		* the next. It belongs to the shell, which sizes and folds it. */
+		.insights { display: grid; align-content: start; height: 100%; overflow-y: auto; background: var(--bg); }
+		.insights > * { padding: 14px 12px; border-bottom: 1px solid var(--line); }
+		/* The insight cards sit flat in that column, unlike the .card tiles the history totals use. */
+		.insights > .card { display: block; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+		.insights > .card h3 { margin: 0 0 6px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+		.insights > .card .big { margin: 0; font-size: 1.4rem; font-weight: 700; }
+		.insights > .card .big .sub { display: block; font-size: 0.75rem; font-weight: 400; color: var(--text-muted); }
+		.insights > .card .say { margin: 6px 0 0; font-size: 0.85rem; line-height: 1.45; }
+		.insights > .card .row { display: flex; justify-content: space-between; gap: 10px; margin: 4px 0 0; font-size: 0.85rem; }
+		.insights > .card .row b { font-size: 0.85rem; }
+		.insights > .card .row span { color: var(--text-muted); text-align: right; }
 		.col { display: grid; gap: 14px; width: 100%; justify-items: center; }
 		/* The svg inside is width:100% of its host, and an inline host has no width of its own. */
 		tt-keyboard, tt-practice { display: block; width: 100%; }
@@ -85,13 +78,6 @@ export const appStyles = [
 		.chip { display: inline grid; place-items: center; min-width: 1.5rem; padding: 1px 5px; border: 1px solid var(--border-color); border-radius: calc(var(--radius) / 2); font-size: 0.75rem; opacity: 0.75; }
 		/* History: a line per day, broken at the days you skipped -- an unbroken slope through a rest day
 		* would claim a decline that never happened. */
-		/* The insight pane is an editor's sidebar, not a drawer: it is pinned to the height of the history
-		* section and scrolls its own cards, and it collapses sideways. Flex or grid cannot give a spanning
-		* item a height derived from its SIBLING -- the panel's own prose would grow the row instead -- so the
-		* pane is absolutely positioned and the text column reserves the width it needs. Both animate on the
-		* same transition, so the chart appears to stretch rather than jump. */
-		/* The history section is a plain stack: the insight pane belongs to the shell, not to this screen, so
-		* no room is reserved inside it. */
 		.hist { display: grid; gap: 10px; width: 100%; }
 		/* The section lives in a 19rem column, so the totals wrap tighter and carry less type than a
 		full-width screen would want. */

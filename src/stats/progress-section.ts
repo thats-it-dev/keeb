@@ -35,7 +35,7 @@ export function progressSection(o: Overview, goalMs: number) {
 			`
 		: html`<p class="empty">A key gets a bar once you have hit it correctly. Hit the highlighted letter to start.</p>`;
 	return html`
-		<section class="stats" slot="stats">
+		<section class="stats">
 			<h3>progress</h3>
 			${keys}
 		</section>

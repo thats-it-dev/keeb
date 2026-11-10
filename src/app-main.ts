@@ -7,10 +7,11 @@ import { cpmToWpm, targetTimeMs, wpmToCpm, type StatMap } from "./stats/stats.ts
 import { overview, type KeyInfo } from "./stats/overview.ts";
 import { historySection } from "./stats/history-section.ts";
 import { insightPanel, type PanelCard } from "./stats/panel.ts";
-import { paneSessions } from "./stats/demo.ts";
+import { isPreviewHost, paneSessions } from "./stats/demo.ts";
 import { resolve, keyLabel, type Resolved } from "./keyboard/resolve.ts";
 import type { Geometry, Keymap } from "./keyboard/types.ts";
-import { iconPanelRight, iconSettings } from "./ui/icons.ts";
+import { iconSettings } from "./ui/icons.ts";
+import { countItems, insightCards } from "./ui/insight-cards.ts";
 import { appStyles } from "./ui/app-styles.ts";
 import { settingsDialog, syncDialog } from "./ui/settings-dialog.ts";
 import { progressSection } from "./stats/progress-section.ts";
@@ -18,23 +19,20 @@ import { boardNotice, lastKey, readout } from "./ui/practice-line.ts";
 import { Account } from "./app/account.ts";
 import { importLayout, loadLayouts, removeBoard, removeMap, type LayoutChange } from "./app/boards.ts";
 import { rememberSelection, savedSelection } from "./app/selection.ts";
-import { demoFromUrl, panelStartsOpen, rememberDemoInUrl, rememberPanel } from "./app/pane-state.ts";
+import { demoFromUrl, rememberDemoInUrl } from "./app/pane-state.ts";
 import { SessionRecorder } from "./app/session.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, panelOpen: { type: Boolean, attribute: "data-panel-open", reflect: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
 	static styles = appStyles;
 
 	geometryId = savedSelection().g;
 	settingsOpen = false;
 	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
 	sessions: SessionRow[] = [];
-	// Which way the insight pane is folded. Read here and passed down, because the page has to reserve the
-	// same width the pane takes -- a child that kept this to itself would overlap the content.
-	panelOpen = panelStartsOpen();
 	// Fake history for previews, switched on by ?demo=1. Generated per render and never stored anywhere:
 	// a preview visit must not be able to write a made-up session into a real repo or a real device.
 	demo = demoFromUrl();
@@ -253,64 +251,65 @@ export class AppMain extends LitElement {
 	override render() {
 		const r = this.#resolved;
 		const geo = geometryById(this.geometryId);
+		const cards = this.#cards();
+		// The insights panel is the kit shell's aside: a docked column from 900px, a drawer below it. The shell
+		// owns the folding, the drawer, the Escape key and the remembered choice (store-key); it starts open
+		// only on a branch preview, where the history section carries the only demo-sessions prompt.
 		return html`
-			<main>
-				<div class="head">
-					<h1>${__APP_HEADING__}</h1>
-					<div class="head-actions">
-						<!-- On a phone the pane is off-canvas, so the rail that opens it on a desktop is gone. This is
-							the only way in, and it hides itself above the drawer breakpoint where the rail returns. -->
-						<button class="x drawer-only" aria-label="Insights" .ariaExpanded=${this.panelOpen ? "true" : "false"} @click=${() => this.#panel(!this.panelOpen)}>${iconPanelRight}</button>
-						<button class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
-					</div>
+			<tk-shell store-key=${`${__APP_NAME__}:panels`} aside-label="Insights" ?aside-hidden=${!isPreviewHost(location.hostname, __APP_NAME__)}>
+				<div class="page">
+					<tk-header aside-label="Insights" aside-badge=${String(countItems(cards))}>
+						<h1 slot="title">${__APP_HEADING__}</h1>
+						<button slot="actions" class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
+					</tk-header>
+					<main>
+						${settingsDialog({
+							geometries: allGeometries(),
+							keymaps: allKeymaps(),
+							geometryId: this.geometryId,
+							keymapId: this.keymapId,
+							goalWpm: cpmToWpm(this.targetCpm),
+							did: this.did,
+							handle: this.#account.handle,
+							syncNote: this.syncNote,
+							boards: this.boards,
+							maps: this.maps,
+							problems: this.importProblems,
+							onClose: (open) => (this.settingsOpen = open),
+							onClick: this.#onDialogClick,
+							onPick: (part, value) => this.#pick(part, value),
+							onGoal: (e) => this.#goal(e),
+							onUpload: (e) => void this.#upload(e),
+							onHandle: (v) => (this.#account.handle = v),
+							// Signing in, syncing and publishing are the account's business; see app/account.ts. Each leaves
+							// the note the learner reads on this.#account.note.
+							onSignIn: () => void this.#account.signIn(),
+							onSignOut: () => void this.#account.signOut(),
+							onSync: () => void this.#account.syncNow(),
+							onPublish: () => void this.#account.publish(geometryById(this.geometryId), r.keys.map((key) => ({ id: key.id, char: key.char }))),
+							onRemoveBoard: (id) => void this.#removeBoard(id),
+							onRemoveMap: (id) => void this.#removeMap(id),
+						})}
+						<div class="col">
+							${this.ready ? readout(cpmToWpm(this.nowCpm), this.#overview().avgWpm, cpmToWpm(this.targetCpm)) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
+							${this.ready
+								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
+								: nothing}
+							<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
+							<div class="row">
+								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
+								${lastKey(r, this.lastId)}
+							</div>
+							${boardNotice(geo)}
+						</div>
+					</main>
 				</div>
-				${settingsDialog({
-					geometries: allGeometries(),
-					keymaps: allKeymaps(),
-					geometryId: this.geometryId,
-					keymapId: this.keymapId,
-					goalWpm: cpmToWpm(this.targetCpm),
-					did: this.did,
-					handle: this.#account.handle,
-					syncNote: this.syncNote,
-					boards: this.boards,
-					maps: this.maps,
-					problems: this.importProblems,
-					onClose: (open) => (this.settingsOpen = open),
-					onClick: this.#onDialogClick,
-					onPick: (part, value) => this.#pick(part, value),
-					onGoal: (e) => this.#goal(e),
-					onUpload: (e) => void this.#upload(e),
-					onHandle: (v) => (this.#account.handle = v),
-					// Signing in, syncing and publishing are the account's business; see app/account.ts. Each leaves
-					// the note the learner reads on this.#account.note.
-					onSignIn: () => void this.#account.signIn(),
-					onSignOut: () => void this.#account.signOut(),
-					onSync: () => void this.#account.syncNow(),
-					onPublish: () => void this.#account.publish(geometryById(this.geometryId), r.keys.map((key) => ({ id: key.id, char: key.char }))),
-					onRemoveBoard: (id) => void this.#removeBoard(id),
-					onRemoveMap: (id) => void this.#removeMap(id),
-				})}
-				<div class="col">
-					${this.ready ? readout(cpmToWpm(this.nowCpm), this.#overview().avgWpm, cpmToWpm(this.targetCpm)) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
-					${this.ready
-						? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
-						: nothing}
-					<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
-					<div class="row">
-						<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
-						${lastKey(r, this.lastId)}
-					</div>
-					${boardNotice(geo)}
-				</div>
-			</main>
-			<!-- One pane for both layouts: a column on a desktop, a drawer under 900px. The scrim is inert on a
-				desktop and is what dismisses the drawer on a phone. -->
-			<div class="scrim" ?inert=${!this.panelOpen} @click=${() => this.#panel(false)}></div>
-			<tt-insight-panel .cards=${this.#cards()} .open=${this.panelOpen} @panel-toggle=${(e: Event) => this.#panel((e as CustomEvent<boolean>).detail)}>
-				${this.ready ? progressSection(this.#overview(), targetTimeMs(this.targetCpm)) : nothing}
-				${this.#history()}
-			</tt-insight-panel>
+				<section slot="aside" class="insights">
+					${this.ready ? progressSection(this.#overview(), targetTimeMs(this.targetCpm)) : nothing}
+					${this.#history()}
+					${insightCards(cards)}
+				</section>
+			</tk-shell>
 		`;
 	}
 
@@ -341,15 +340,11 @@ export class AppMain extends LitElement {
 		return insightPanel(paneSessions(this.demo, layoutKey(this.geometryId, this.keymapId), this.sessions), this.targetCpm);
 	}
 
-	#panel(on: boolean): void {
-		this.panelOpen = on;
-		rememberPanel(on);
-	}
-
-	// Escape dismisses the pane. On a phone that is the only way out besides the scrim and the header button,
-	// and it must not fire while the settings modal has the keyboard.
+	// Escape hides the docked column; the shell closes its own drawer on Escape, and the settings modal takes
+	// the key before it can reach either. Asking through the shell's event keeps the layout state in the kit.
 	#onEsc = (e: KeyboardEvent): void => {
-		if (e.key === "Escape" && !this.settingsOpen && this.panelOpen) this.#panel(false);
+		if (e.key !== "Escape" || this.settingsOpen) return;
+		(this.renderRoot.querySelector(".page") as HTMLElement | null)?.dispatchEvent(new CustomEvent("tk-hide-panel", { detail: { panel: "aside" }, bubbles: true, composed: true }));
 	};
 
 	#demo(on: boolean): void {
