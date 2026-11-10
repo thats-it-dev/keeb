@@ -1,0 +1,8 @@
+{
+	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"entry": ["src/kit-canary.ts", "src/tailnet-only.ts", "public/sw.js", "scripts/*.ts"],
+	"ignoreDependencies": ["lit"],
+	"ignoreBinaries": ["goat"],
+	"ignoreExportsUsedInFile": true,
+	"rules": { "types": "off" }
+}

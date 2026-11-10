@@ -15,15 +15,13 @@ export type Ladder = {
 // number of times each key appears in one lesson line, or the gate can never trip.
 const MIN_SAMPLES = 10;
 
-// Unlock strictly in teaching order: the next key opens when every key already unlocked is at the
-// goal speed. Before any practice this is the two index keys, so lesson one is f and j.
 // Unlock in teaching order: the next key opens when every unlocked key is at the goal speed.
 // The starting group is the whole home row, which is both how typing courses begin and the point
 // where real English words become possible (35+ of them from a s d f g h j k l ; alone).
 export function ladder(r: Resolved, stats: StatMap, targetCpm: number): Ladder {
 	const order = teachingOrder(r);
-	// Only letter keys gate an unlock. The space bar is a thumb key that appears in every line, and
-	// gating on it froze the ladder at the first two keys.
+	// Only letter keys gate an unlock: the space bar is a thumb key that appears in every line, so it proves
+	// nothing about the rest of the board.
 	const gate = order.filter((id) => /^[a-z]$/i.test(r.byId.get(id)?.char ?? ""));
 	const home = gate.filter((id) => roleById(r, id) === "home");
 	const granted = Math.max(0, home.length - 1); // the last index of the group handed out on day one
@@ -34,10 +32,6 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number): Ladder {
 	//  - the newest key, if you earned it (past the starting group) and have not typed it at speed yet.
 	//    Keys inside the starting group are exempt, because the home row spells 35 common words and none of
 	//    them use j or k: demanding reps on those two first would deadlock the ladder at nine.
-	//
-	// The bug this replaces: the loop consulted *practised* keys only, so a key with no samples blocked
-	// nothing — and a newly unlocked key has no samples by definition. The moment the home row reached the
-	// goal, the loop walked the rest of the alphabet and every letter unlocked together.
 	while (end + 1 < gate.length) {
 		const unlockedNow = gate.slice(0, end + 1);
 		// Nothing typed yet. The starting group is what a learner gets for free; it does not also entitle

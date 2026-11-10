@@ -17,10 +17,17 @@ Live: <https://keeb.thatsit.app> · Repo: <https://github.com/thats-it-dev/keeb>
 ```sh
 npm ci
 npm run dev        # no sign-in here: the OAuth server only accepts https redirects
-npm run typecheck && npm test && npm run e2e
+npm run verify
 ```
 
-`npm run e2e` builds and previews locally; `BASE_URL=https://… npm run e2e` tests a deployed site.
+Agents: read `AGENTS.md`.
+
+Scripts: `dev`, `build`, `preview`, `typecheck` (tsc), `test` (vitest, including the repo guardrails in
+`test/guardrails.test.ts`), `lint` (knip: unused files, exports and dependencies), `e2e` (Playwright on
+desktop and phone; builds and previews locally, or `BASE_URL=https://… npm run e2e` tests a deployed site),
+`e2e:one` (one spec, desktop only: `npm run e2e:one -- e2e/x.spec.ts`), `verify` (all of the above, before
+a commit), `icons`, `lexicons` and `lexicons:publish`, `kit-types` (fetches the kit's `.d.ts` into `.kit/`;
+runs automatically before dev, build and typecheck).
 
 Sign-in can only be exercised on a deploy whose origin is listed in `REDIRECT_URIS`
 (`src/atproto/auth.ts`) and in the hosted `public/.well-known/oauth-client/client-metadata.json`. Two

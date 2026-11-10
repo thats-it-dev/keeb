@@ -160,10 +160,13 @@ export function mergeAll(a: StatMap, b: StatMap): StatMap {
 	return out;
 }
 
-// Slowest first, ties broken by error rate: this is the order the lesson generator drills.
-export function ranked(stats: StatMap, targetCpm: number): string[] {
-	return Object.keys(stats).sort((x, y) => {
-		const d = confidence(stats[x], targetCpm) - confidence(stats[y], targetCpm);
-		return d !== 0 ? d : errorRate(stats[y]) - errorRate(stats[x]);
-	});
+// Summing per-key samples gives the session totals without double-counting a repeated key.
+export function totals(stats: StatMap): { chars: number; errors: number } {
+	let chars = 0;
+	let errors = 0;
+	for (const s of Object.values(stats)) {
+		chars += s.samples;
+		errors += s.errors;
+	}
+	return { chars, errors };
 }

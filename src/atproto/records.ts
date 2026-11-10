@@ -241,8 +241,8 @@ export function fromSessionRecord(rec: Record<string, unknown> | undefined, rkey
 		// `ms` is the field name on the wire and means the session's wall-clock span. Renamed on the way in
 		// because every other ms in this app is a per-key timing, and a collision there is how charts lie.
 		ms: n(rec.ms),
-		// This field used to be dropped on read, which threw away every per-key history the app had ever
-		// recorded and left three integers to draw charts from.
+		// The per-key history every chart is drawn from. Without it a session is three integers, and the
+		// history screen has nothing to break down.
 		stats: Array.isArray(rec.stats) ? statsFrom(rec.stats as KeyStat[]) : {},
 	};
 }

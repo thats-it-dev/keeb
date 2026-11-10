@@ -66,10 +66,6 @@ export class TtPractice extends LitElement {
 		return !!this.engine && this.cursor >= [...this.engine.text].length;
 	}
 
-	// The session and average figures used to be getters here. The metrics row computes them from the
-	// parent's own stats now, because it has to render correctly before this element exists — and leaving
-	// a second copy of that arithmetic here would mean two numbers that can disagree.
-
 	override render() {
 		const text = this.engine?.text ?? "";
 		return html`
