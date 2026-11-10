@@ -7,11 +7,16 @@ import type { Resolved } from "../keyboard/resolve.ts";
  * last keystroke was. They read from state the page already keeps, so they are right on the first paint
  * after a reload, before a single key is pressed.
  */
-export function readout(nowWpm: number, avgWpm: number, goalWpm: number) {
+/** What the row above the practice line says. The focus cell only appears when the lesson has a letter to
+ *  fix, so a learner who is simply getting faster is not shown an empty promise. */
+export type Readout = { nowWpm: number; avgWpm: number; goalWpm: number; focusLabel: string };
+
+export function readout(o: Readout) {
 	const cell = (label: string, value: string) => html`<div class="metric"><span class="label">${label}</span><b>${value}</b></div>`;
 	return html`
 		<div class="read">
-			${cell("now", `${nowWpm} wpm`)} ${cell("avg", `${avgWpm} wpm`)} ${cell("goal", `${goalWpm} wpm`)}
+			${cell("now", `${o.nowWpm} wpm`)} ${cell("avg", `${o.avgWpm} wpm`)} ${cell("goal", `${o.goalWpm} wpm`)}
+			${o.focusLabel ? cell("focus", o.focusLabel) : nothing}
 		</div>
 	`;
 }

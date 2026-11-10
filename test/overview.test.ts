@@ -35,7 +35,7 @@ describe("barWidth", () => {
 
 describe("overview", () => {
 	it("puts the slowest practised key first", () => {
-		const o = overview({ a: at(180), s: at(420) }, goalCpm, ROW, ["a", "s"]);
+		const o = overview({ a: at(180), s: at(420) }, goalCpm, ROW, { unlocked: ["a", "s"] });
 		expect(o.slowest[0]?.id).toBe("s");
 		expect(o.keys[0]?.id).toBe("s");
 	});
@@ -43,7 +43,7 @@ describe("overview", () => {
 	it("does not treat a never-practised key as infinitely slow", () => {
 		// This is the bug the whole file exists to prevent: an untried key has ttMs16 0, so timeToTypeMs
 		// returns 0, and 0 ms per key reads as instant. Sorting by ms alone would rank it best.
-		const o = overview({ a: at(300) }, goalCpm, ROW, ["a", "s", "d"]);
+		const o = overview({ a: at(300) }, goalCpm, ROW, { unlocked: ["a", "s", "d"] });
 		expect(o.keys.at(-1)?.samples).toBe(0);
 		expect(o.keys.filter((r) => r.samples > 0).length).toBe(1);
 		expect(o.avgMs).toBe(300); // a mean over `a` only, not over nine keys
@@ -52,41 +52,43 @@ describe("overview", () => {
 	});
 
 	it("separates keys the ladder opened from keys actually used", () => {
-		const o = overview({ a: at(200) }, goalCpm, ROW, ["a", "s", "d"]);
+		const o = overview({ a: at(200) }, goalCpm, ROW, { unlocked: ["a", "s", "d"] });
 		expect(o.untried.map((r) => r.id)).toEqual(["s", "d"]);
 		expect(o.unlocked).toBe(3);
 		expect(o.covered).toBe(1);
 	});
 
-	it("marks the next key the ladder will open", () => {
-		const o = overview({ a: at(200), s: at(200) }, goalCpm, ROW, ["a", "s"]);
+	it("marks the key the curriculum says comes next", () => {
+		const o = overview({ a: at(200), s: at(200) }, goalCpm, ROW, { unlocked: ["a", "s"], next: "d" });
 		expect(o.keys.find((r) => r.next)?.id).toBe("d");
+		// Nothing named, nothing highlighted: a fully unlocked board has no next.
+		expect(overview({ a: at(200) }, goalCpm, ROW, { unlocked: ["a"] }).keys.some((r) => r.next)).toBe(false);
 	});
 
 	it("uses the same confidence the ladder gates on, uncapped", () => {
 		// Capping at 1 would look nicer in a bar chart and disagree with what unlocks, so the number is
 		// left raw and the view clips it instead.
-		const fast = overview({ a: at(50) }, goalCpm, ROW, ["a"]);
+		const fast = overview({ a: at(50) }, goalCpm, ROW, { unlocked: ["a"] });
 		expect(fast.keys[0]?.conf).toBeGreaterThan(1);
-		expect(overview({ a: at(250) }, goalCpm, ROW, ["a"]).keys[0]?.conf).toBe(1);
+		expect(overview({ a: at(250) }, goalCpm, ROW, { unlocked: ["a"] }).keys[0]?.conf).toBe(1);
 	});
 
 	it("reports a ready percentage over practised keys only", () => {
-		const o = overview({ a: at(200), s: at(400), d: at(120) }, goalCpm, ROW, ["a", "s", "d", "f"]);
+		const o = overview({ a: at(200), s: at(400), d: at(120) }, goalCpm, ROW, { unlocked: ["a", "s", "d", "f"] });
 		expect(o.readyPct).toBe(67); // two of three faster than the 250ms goal; f has no data to judge
 	});
 
 	it("weights the hand balance by samples, not by keys", () => {
 		// Ten left-hand keys with one sample each must not outweigh one right-hand key struck a lot.
 		const keys = [key("a", "left"), key("b", "left"), key("c", "right")];
-		const o = overview({ a: at(200, 1), b: at(200, 1), c: at(200, 8) }, goalCpm, keys, ["a", "b", "c"]);
+		const o = overview({ a: at(200, 1), b: at(200, 1), c: at(200, 8) }, goalCpm, keys, { unlocked: ["a", "b", "c"] });
 		expect(o.leftSamples).toBe(2);
 		expect(o.rightSamples).toBe(8);
 		expect(o.handBalance).toBe(20);
 	});
 
 	it("says 50/50 when there is nothing to balance", () => {
-		const o = overview({}, goalCpm, ROW, ROW.map((k) => k.id));
+		const o = overview({}, goalCpm, ROW, { unlocked: ROW.map((k) => k.id) });
 		expect(o.handBalance).toBe(50);
 		expect(o.avgWpm).toBe(0);
 		expect(o.errPct).toBe(0);
@@ -94,7 +96,7 @@ describe("overview", () => {
 	});
 
 	it("counts error rate from samples, and only where there are samples", () => {
-		const o = overview({ a: at(200, 20, 5), s: emptyStat() }, goalCpm, ROW, ["a", "s"]);
+		const o = overview({ a: at(200, 20, 5), s: emptyStat() }, goalCpm, ROW, { unlocked: ["a", "s"] });
 		expect(o.keys.find((r) => r.id === "a")?.err).toBe(0.25);
 		expect(o.keys.find((r) => r.id === "s")?.err).toBe(0);
 	});
@@ -102,28 +104,30 @@ describe("overview", () => {
 	it("shows a key from another layout without breaking the totals", () => {
 		// After a board switch the record can still hold ids this layout never had (progress pulled from
 		// another layout). They are not in `keys`, so they must not steal a row or skew the mean.
-		const o = overview({ a: at(200), zzz: at(900) }, goalCpm, ROW, ["a"]);
+		const o = overview({ a: at(200), zzz: at(900) }, goalCpm, ROW, { unlocked: ["a"] });
 		expect(o.keys.map((r) => r.id)).not.toContain("zzz");
 		expect(o.avgMs).toBe(200);
 	});
 
 	it("keeps the goal at zero from dividing anything", () => {
-		const o = overview({ a: at(200) }, 0, ROW, ["a"]);
+		const o = overview({ a: at(200) }, 0, ROW, { unlocked: ["a"] });
 		expect(o.keys[0]?.conf).toBe(0);
 		expect(o.readyPct).toBe(0);
 	});
 
-	it("marks the next LETTER as next, not the next row of the board", () => {
-		// The ladder only gates on letter keys, so pointing the highlight at "9" would flag a key the
-		// lesson will never drill.
+	it("marks the key the lesson is built around", () => {
+		// The ring on the board, the cell in the readout and this row all read the same field.
 		const keys = [key("1", "left"), key("9", "right"), key("a", "left"), key("q", "left")];
-		const o = overview({ a: at(200) }, goalCpm, keys, ["a"]);
-		expect(o.keys.find((r) => r.next)?.id).toBe("q");
+		const o = overview({ a: at(200) }, goalCpm, keys, { unlocked: ["a"], focus: "q" });
+		expect(o.keys.find((r) => r.focus)?.id).toBe("q");
+		expect(o.focusLabel).toBe("Q"); // the label, not the id — the readout shows what the keycap says
+		expect(o.focusId).toBe("q");
+		expect(overview({ a: at(200) }, goalCpm, keys, { unlocked: ["a"] }).focusLabel).toBe("");
 	});
 
 	it("splits keys into measured, unlocked-and-untried, and still locked", () => {
 		const keys = [key("a", "left"), key("s", "left"), key("q", "left"), key("1", "right")];
-		const o = overview({ a: at(200) }, goalCpm, keys, ["a", "s"]);
+		const o = overview({ a: at(200) }, goalCpm, keys, { unlocked: ["a", "s"] });
 		expect(o.measured.map((r) => r.id)).toEqual(["a"]);
 		expect(o.untried.map((r) => r.id)).toEqual(["s"]);
 		expect(o.waiting.map((r) => r.id).sort()).toEqual(["1", "q", "s"]);

@@ -4,6 +4,11 @@
 export type KeyStat = {
 	// Exponentially weighted mean time to type this key, in ms x 16 (fixed point keeps the math integral).
 	ttMs16: number;
+	// The fastest that mean has ever run, in the same units. Monotone: a bad week cannot take it away. This is
+	// what the curriculum unlocks on, so a key you once typed at goal speed does not have to be re-earned.
+	// Optional: it is derived from history rather than a new fact to keep, and progress written before it
+	// existed still says everything worth saying about the key.
+	bestMs16?: number;
 	samples: number;
 	errors: number;
 };
@@ -28,6 +33,14 @@ export function emptyStat(): KeyStat {
 	return { ttMs16: 0, samples: 0, errors: 0 };
 }
 
+/**
+ * The best a key has run at, in ms x 16. Progress written before `bestMs16` existed has no record of its
+ * own past, so its current mean is the honest answer: it is the only measurement there is.
+ */
+export function bestMs(stat: KeyStat): number {
+	return stat.bestMs16 && stat.bestMs16 > 0 ? stat.bestMs16 : stat.ttMs16;
+}
+
 export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
 	// 0 ms is not a speed, it is the absence of one: the first keystroke of a run has no earlier stroke to
 	// measure against, and so does two strokes inside the same millisecond. Folding that into the mean as a
@@ -39,15 +52,24 @@ export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
 	// Past four times the current mean a stroke is not a slow keystroke, it is a pause, and it is filed as
 	// the slowest keystroke this key has evidence for.
 	const observed = Math.min(Math.round(elapsedMs) * 16, hasTiming(stat) ? stat.ttMs16 * OUTLIER_TIMES : COLD_MAX_MS * 16);
+	const ttMs16 = hasTiming(stat) ? stat.ttMs16 + Math.round(((observed - stat.ttMs16) * ALPHA16) / 16) : observed;
 	// One sixteenth of the way toward it, not all the way: this is the running average every screen reads,
 	// and `keyDelta` in insights.ts undoes exactly this step to recover one session from two snapshots.
 	// Applying ALPHA16 as a plain multiplier rather than a weight in 16ths made the "average" the last
 	// keystroke, which is how a key typed two hundred times could print 12 wpm off one stray pause.
 	return {
-		ttMs16: hasTiming(stat) ? stat.ttMs16 + Math.round(((observed - stat.ttMs16) * ALPHA16) / 16) : observed,
+		ttMs16,
+		bestMs16: minTiming(bestMs(stat), ttMs16),
 		samples: stat.samples + 1,
 		errors: stat.errors,
 	};
+}
+
+/** The faster of two means, where 0 means "no measurement" rather than "instantly". */
+function minTiming(a: number, b: number): number {
+	if (a <= 0) return Math.max(0, b);
+	if (b <= 0) return a;
+	return Math.min(a, b);
 }
 
 /** True when at least one keystroke of this key was actually timed. `samples` alone is not enough: a key can
@@ -63,6 +85,12 @@ export function observeError(stat: KeyStat, elapsedMs: number): KeyStat {
 export function timeToTypeMs(stat: KeyStat): number {
 	// 0 means "unknown", not "instant" -- which is what the callers below assume.
 	return hasTiming(stat) ? Math.round(stat.ttMs16 / 16) : 0;
+}
+
+/** The fastest mean this key has ever held, in ms. */
+export function bestTimeMs(stat: KeyStat): number {
+	const best = bestMs(stat);
+	return best > 0 ? Math.round(best / 16) : 0;
 }
 
 export function errorRate(stat: KeyStat): number {
@@ -103,6 +131,15 @@ export function confidence(stat: KeyStat, targetCpm: number): number {
 	return goal / tt;
 }
 
+/** The same, measured against the best speed this key has ever held. A letter unlocks on this, not on how
+ *  the key is going today: a tired evening should not take back a letter you earned. */
+export function bestConfidence(stat: KeyStat, targetCpm: number): number {
+	const tt = bestTimeMs(stat);
+	const goal = targetTimeMs(targetCpm);
+	if (tt === 0 || goal === 0) return 0;
+	return goal / tt;
+}
+
 // Two devices accumulate independently; summing the parts merges without a coordinator.
 export function merge(a: KeyStat, b: KeyStat): KeyStat {
 	if (a.samples === 0) return { ...b };
@@ -116,6 +153,9 @@ export function merge(a: KeyStat, b: KeyStat): KeyStat {
 	const n = ta + tb;
 	return {
 		ttMs16: n === 0 ? 0 : Math.round((a.ttMs16 * ta + b.ttMs16 * tb) / n),
+		// A `min` is the one merge that cannot double anything: it is idempotent, commutative and associative,
+		// so a device that folds the same record in twice keeps the best it already knew.
+		bestMs16: minTiming(bestMs(a), bestMs(b)),
 		samples: a.samples + b.samples,
 		errors: a.errors + b.errors,
 	};
@@ -140,7 +180,8 @@ export function keyGrowth(from: KeyStat | undefined, to: KeyStat): KeyStat | und
 	if (!from) return to.samples > 0 ? { ...to } : undefined;
 	const added = to.samples - from.samples;
 	if (added <= 0) return undefined; // the same record, or one that came back smaller: nothing to learn here
-	return { ttMs16: Math.max(0, to.ttMs16), samples: added, errors: Math.max(0, to.errors - from.errors) };
+	// `bestMs16` is the record's current claim, not a difference: it only ever gets faster.
+	return { ttMs16: Math.max(0, to.ttMs16), bestMs16: bestMs(to), samples: added, errors: Math.max(0, to.errors - from.errors) };
 }
 
 // The map-level form of `keyGrowth`: what a whole progress record has learned since it was last accounted

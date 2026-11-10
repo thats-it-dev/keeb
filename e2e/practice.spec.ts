@@ -1,7 +1,10 @@
-// M2: the practice loop. Real words from the first line, the next key highlighted on the board,
-// and the key set growing as the slow keys speed up.
+// M2-M5: the practice loop. Six letters of the language from the first line, the focused key ringed on the
+// board, and the key set growing as the slow keys speed up.
 import type { Page } from "@playwright/test";
 import { loadConfig } from "../vite/config.ts";
+import { WORDS } from "../src/lesson/corpus.ts";
+import { isCleanWord } from "../src/lesson/clean.ts";
+import { speakable } from "../src/lesson/phonotactics.ts";
 import { expect, test } from "./csp.ts";
 import { keyName, openPane, paneBody } from "./keys.ts";
 
@@ -62,13 +65,16 @@ const storedKeys = (page: Page) =>
 			}),
 	);
 
-test("the first line is already real words", async ({ page }) => {
+test("the first line is words the six letters can make", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
 	const text = (await line(page).getAttribute("data-text")) ?? "";
 	const words = text.split(" ");
 	expect(words.length).toBeGreaterThan(6);
 	expect(words.filter((w) => w.length > 2).length).toBeGreaterThan(3);
+	// The default source is the letter model, not the dictionary. With six letters the corpus can spell
+	// about four words, so a line of nothing but real words here would be the same four over and over.
+	expect(words.some((w) => !WORDS.includes(w))).toBe(true);
 });
 
 test("the lesson is text, not a field you type into", async ({ page }) => {
@@ -388,4 +394,141 @@ test("the unlocked set grows as the keys speed up", async ({ page }) => {
 	}
 	const now = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { ladder: { unlocked: string[] } } }).engine.ladder.unlocked.length);
 	expect(now).toBeGreaterThan(start);
+});
+
+// ---------------------------------------------------------------------------
+// The keybr-shaped curriculum: six letters, one focus, and unlocks that read the best a key has ever done.
+
+/** The ladder as the running page sees it: which letters are in play, and which one the line is about. */
+const curriculum = (page: Page) =>
+	page.evaluate(() => {
+		const pr = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as {
+			engine: { ladder: { unlocked: string[]; focus?: string; next?: string } };
+			resolved: { byId: Map<string, { char: string }> };
+		};
+		const char = (id: string) => pr.resolved.byId.get(id)?.char ?? "?";
+		return { unlocked: pr.engine.ladder.unlocked.map(char), focus: pr.engine.ladder.focus === undefined ? null : char(pr.engine.ladder.focus), next: pr.engine.ladder.next === undefined ? null : char(pr.engine.ladder.next) };
+	});
+
+/** Put the store on a point of the ladder, so a test does not have to type its way there at 200 wpm. */
+const seedSpeed = (page: Page, msById: Record<string, number>) =>
+	page.evaluate(
+		(entries) =>
+			new Promise<void>((res, rej) => {
+				const open = indexedDB.open("keeb");
+				open.onsuccess = () => {
+					const value = Object.fromEntries(
+						Object.entries(entries).map(([id, ms]) => [id, { ttMs16: Math.round((ms as number) * 16), bestMs16: Math.round((ms as number) * 16), samples: 120, errors: 0 }]),
+					);
+					const tx = open.result.transaction("stats", "readwrite");
+					tx.objectStore("stats").put({ layout: "go60+qwerty", value });
+					tx.oncomplete = () => {
+						open.result.close();
+						res();
+					};
+					tx.onerror = () => rej(tx.error);
+				};
+				open.onerror = () => rej(open.error);
+			}),
+		msById,
+	);
+
+/** The teaching order as the running page derived it, so a test can say "the first fifteen letters". */
+const ladderOrder = (page: Page) =>
+	page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { ladder: { order: string[] } } }).engine.ladder.order);
+
+/** Tick a settings checkbox by its label, and wait for the page to act on it. */
+const setToggle = async (page: Page, label: string, on: boolean) => {
+	await page.getByRole("button", { name: "Settings" }).click();
+	const box = page.locator("dialog").getByLabel(label, { exact: false });
+	if ((await box.isChecked()) !== on) await box.click();
+	await page.locator("dialog [aria-label='Close settings']").click();
+};
+
+test("the first line is built from six letters, and every word carries one of them", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const { unlocked, focus } = await curriculum(page);
+	expect(unlocked.length).toBe(6);
+	const words = ((await line(page).getAttribute("data-text")) ?? "").split(" ");
+	for (const w of words) for (const ch of w) expect(unlocked, `${ch} in ${w}`).toContain(ch);
+	// The focus is not a caption on the lesson; it is inside every word of it.
+	expect(focus).toBeTruthy();
+	expect(words.every((w) => w.includes(focus as string))).toBe(true);
+});
+
+test("a line further up the ladder carries the focused letter and reads as English", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	// Sixteen letters, the newest one untouched: the point where the line used to come apart, because the
+	// letters that had never been typed were patched in by replacing the words that did carry the focus.
+	const order = await ladderOrder(page);
+	const msById: Record<string, number> = {};
+	for (const id of order.slice(0, 15)) msById[id] = 200;
+	await seedSpeed(page, msById);
+	await page.reload();
+	await ready(page);
+	const { unlocked, focus } = await curriculum(page);
+	expect(unlocked.length).toBe(16);
+	expect(focus).toBeTruthy();
+	const words = ((await line(page).getAttribute("data-text")) ?? "").split(" ");
+	expect(words.length).toBeGreaterThan(5);
+	for (const w of words) {
+		expect(w, `no ${focus} in ${w}`).toContain(focus as string);
+		expect(speakable(w) && isCleanWord(w), w).toBe(true);
+	}
+});
+
+test("the key the lesson is built around is ringed on the board and named on screen", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const { focus } = await curriculum(page);
+	const id = await idFor(page, focus as string);
+	// A shape, not a colour: the board already spends fill on "you just hit this" and red on "you missed".
+	await expect(page.locator(`tt-keyboard g[data-id=\"${id}\"] rect.ring`)).toHaveCount(1);
+	await expect(page.locator("tt-keyboard g rect.ring")).toHaveCount(1);
+	await expect(page.locator(".read .metric", { hasText: "focus" })).toContainText(focus as string, { ignoreCase: true });
+});
+
+test("the focus moves to the letter that has never been typed", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	const before = await curriculum(page);
+	// Reach the goal on every letter in play, at a pace the EWMA will believe.
+	for (let i = 0; i < 400; i += 1) {
+		const ch = await wanted(page); // a round trip, which is the pacing this test needs
+		if (ch === "") break;
+		await tap(page, ch);
+	}
+	const after = await curriculum(page);
+	expect(after.unlocked.length).toBeGreaterThanOrEqual(before.unlocked.length);
+	if (after.unlocked.length > before.unlocked.length) {
+		// The newest letter is the weakest thing on the board, so the ring belongs on it.
+		expect(after.focus).toBe(after.unlocked[after.unlocked.length - 1]);
+	}
+});
+
+test("real words are a setting, and it survives a reload", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	await setToggle(page, "use real words", true);
+	const words = ((await line(page).getAttribute("data-text")) ?? "").split(" ");
+	// The pool of real words spelled with the first six letters is thin, so the line is allowed to top
+	// itself up from the model -- but the corpus has to be doing most of the work.
+	expect(words.filter((w) => WORDS.includes(w)).length).toBeGreaterThanOrEqual(words.length / 2);
+	await page.reload();
+	await ready(page);
+	await page.getByRole("button", { name: "Settings" }).click();
+	await expect(page.locator("dialog").getByLabel("use real words", { exact: false })).toBeChecked();
+});
+
+test("keyboard order starts on the home row instead of the language's six", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	await setToggle(page, "teach in keyboard order", true);
+	const { unlocked } = await curriculum(page);
+	expect(unlocked.length).toBe(6);
+	// QWERTY home row, both hands: a s d f g ; h j k l. Six of these, and nothing from the top row.
+	const home = new Set("asdfghjkl;".split(""));
+	expect(unlocked.every((ch) => home.has(ch))).toBe(true);
 });

@@ -54,7 +54,9 @@ export class SessionRecorder {
 		this.#saved = now;
 		await saveStats(key, stats);
 		// The layout ids are stored with the numbers so a reload finds the same board without asking anyone.
-		await saveSettings(key, { ...settings, geometry: g, keymap: k, targetCpm, unlocked: engine.ladder.unlocked });
+		// Not the unlocked letters: those are a verdict the ladder re-derives from `stats` on every line, and a
+		// stored copy of it would be a second answer to the same question.
+		await saveSettings(key, { ...settings, geometry: g, keymap: k, targetCpm });
 	}
 
 	/** Close the session: the characters since it opened become one row on the repo, if there is an account. */

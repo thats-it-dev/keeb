@@ -13,10 +13,10 @@ export function progressSection(o: Overview, goalMs: number) {
 	// "waiting" is every key with no samples, unlocked or not; the locked ones are the rest.
 	const stillLocked = o.waiting.filter((k) => !o.untried.some((u) => u.id === k.id));
 	const row = (k: Overview["keys"][number]) => html`
-		<div class="krow ${k.next ? "next" : ""}">
+		<div class="krow ${k.next ? "next" : ""} ${k.focus ? "focused" : ""}">
 			<span class="cap">${k.label}</span>
 			<span class="track"><span class="kbar ${k.conf < 1 ? "bad" : ""}" style="width:${barWidth(k.ms, goalMs)}%"></span><span class="mark" style="left:${GOAL_AT}%"></span></span>
-			<span class="num">${k.wpm} wpm · ${k.ms}ms${k.errors ? ` · ${k.errors} miss` : ""}</span>
+			<span class="num">${k.wpm} wpm · ${k.ms}ms${k.errors ? ` · ${k.errors} miss` : ""}${k.focus ? " · in every word" : ""}</span>
 		</div>
 	`;
 	// History is its own section, outside the keys branch. It comes from synced sessions, and a browser
@@ -28,7 +28,9 @@ export function progressSection(o: Overview, goalMs: number) {
 					${card("average", `${o.avgWpm} wpm`)} ${card("at goal", `${o.readyPct}%`)} ${card("errors", `${o.errPct}%`)} ${card("keys", `${o.covered}/${o.total}`)}
 					${card("hands", `${o.handBalance}/${100 - o.handBalance}`)}
 				</div>
-				<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. The lesson weights those keys already.` : ""}</p>
+				${o.focusLabel
+					? html`<p class="empty" data-focus=${o.focusLabel}>Every word on screen uses <b>${o.focusLabel}</b> — it is the letter of yours that has never held the goal speed.</p>`
+					: html`<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. Nothing there is below goal, so the next letter is unlocked.` : ""}</p>`}
 				<div class="rows">${o.measured.map(row)}</div>
 				${o.untried.length ? html`<p class="empty">Unlocked but never practised ${chips(o.untried)}</p>` : nothing}
 				${stillLocked.length ? html`<p class="empty">Still locked ${chips(stillLocked)}</p>` : nothing}

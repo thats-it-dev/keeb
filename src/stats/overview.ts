@@ -2,7 +2,7 @@
 // samples that exist for it. A key never struck has no speed, which is not the same as a speed of zero,
 // and counting it as one is how a stats screen starts lying.
 
-import { emptyStat, errorRate, timeToTypeMs, type StatMap } from "./stats.ts";
+import { emptyStat, errorRate, bestTimeMs, timeToTypeMs, type StatMap } from "./stats.ts";
 import { CHARS_PER_WORD } from "./stats.ts";
 
 export type KeyRow = {
@@ -20,6 +20,10 @@ export type KeyRow = {
 	conf: number;
 	/** This key is the next one the ladder will open. */
 	next: boolean;
+	/** This key is the one the current lesson is built around. */
+	focus: boolean;
+	/** The best this key has ever run at, in ms — what the curriculum unlocks on. 0 with no measurement. */
+	bestMs: number;
 };
 
 /**
@@ -50,6 +54,10 @@ export type Overview = {
 	errPct: number;
 	/** Share of timed keys at or above goal. */
 	readyPct: number;
+	/** The letter every word in the current line contains, or "" when the lesson has nothing to fix. */
+	focusLabel: string;
+	/** The same key by id, for the board that has to ring it. "" when there is no focus. */
+	focusId: string;
 	/** 0-100 of the samples that fell on the left hand; 50 when there is no data to balance. */
 	handBalance: number;
 	leftSamples: number;
@@ -68,6 +76,10 @@ export type Overview = {
 
 export type KeyInfo = { id: string; label: string; hand: "left" | "right" | "none" };
 
+/** What the curriculum says about this layout right now. The screen reads the same `Ladder` the lesson
+ *  engine builds its lines from, so "at goal" here and "unlocks next" there cannot mean different things. */
+export type Curriculum = { unlocked: string[]; next?: string; focus?: string };
+
 /**
  * `keys` comes from the resolved layout, not from the stats record: listing only keys that have samples
  * would hide the ones you have not tried, and those are the ones the screen exists to show.
@@ -77,12 +89,9 @@ export type KeyInfo = { id: string; label: string; hand: "left" | "right" | "non
  * against 40 old samples per key moves the total by a couple. Strokes live in the session records, and a
  * lifetime total needs an aggregate we do not store yet. So the screen says "keys covered".
  */
-export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], unlocked: string[]): Overview {
+export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], curriculum: Curriculum): Overview {
 	const goalMs = targetCpm <= 0 ? 0 : Math.round(60000 / targetCpm);
-	// The next key is the first LETTER the ladder has not opened: only letter keys gate an unlock (see
-	// ladder.ts), so pointing at "9" would highlight a key the lesson will never drill.
-	const letter = (k: KeyInfo) => /^[a-z]$/i.test(k.label);
-	const nextId = unlocked.length < keys.length ? keys.find((k) => letter(k) && !unlocked.includes(k.id))?.id : undefined;
+	const { unlocked, next: nextId, focus: focusId } = curriculum;
 
 	const rows: KeyRow[] = keys.map((k) => {
 		const s = stats[k.id] ?? emptyStat();
@@ -96,7 +105,9 @@ export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], unl
 			errors: s.errors,
 			err: s.samples > 0 ? errorRate(s) : 0,
 			conf: goalMs > 0 && ms > 0 ? goalMs / ms : 0,
+			bestMs: bestTimeMs(s),
 			next: k.id === nextId,
+			focus: k.id === focusId,
 		};
 	});
 
@@ -129,6 +140,8 @@ export function overview(stats: StatMap, targetCpm: number, keys: KeyInfo[], unl
 		avgWpm: practised.length ? wpm(Math.round(sumMs / practised.length)) : 0,
 		covered: practised.length,
 		errPct: sampleSum ? Math.round((errSum / sampleSum) * 1000) / 10 : 0,
+		focusLabel: focusId === undefined ? "" : keys.find((k) => k.id === focusId)?.label ?? "",
+		focusId: focusId ?? "",
 		readyPct: practised.length ? Math.round((practised.filter((r) => r.conf >= 1).length / practised.length) * 100) : 0,
 		handBalance: sampleSum ? Math.round((leftSamples / sampleSum) * 100) : 50,
 		leftSamples,
