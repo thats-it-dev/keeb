@@ -7,6 +7,8 @@ import { resolve } from "../src/keyboard/resolve.ts";
 import { lesson, type LessonInput } from "../src/lesson/generator.ts";
 import { isCleanWord } from "../src/lesson/clean.ts";
 import { WORDS } from "../src/lesson/corpus.ts";
+import { ladder, teachingOrder } from "../src/lesson/ladder.ts";
+import { speakable } from "../src/lesson/phonotactics.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
 const TARGET = 200;
@@ -41,10 +43,9 @@ describe("generated words (the default)", () => {
 
 	it("makes words that could be English without claiming to be", () => {
 		const words = lesson(input({})).text.split(" ");
-		// Two letters the same twice in a row, or three consonants in a row, is what makes a pseudo-word
-		// unreadable. Both are banned in model.ts and this is where that shows.
-		expect(words.filter((w) => /(.)\1/.test(w))).toEqual([]);
-		expect(words.filter((w) => /[^aeiou]{3}/.test(w))).toEqual([]);
+		// Pronounceable is the claim, not English: the consonant runs and the doubled letters are the
+		// corpus's own, so a word reads out loud even when no dictionary has it.
+		for (const w of words) expect(speakable(w) && isCleanWord(w), w).toBe(true);
 		expect(words.every((w) => /^[a-z]+$/.test(w))).toBe(true);
 	});
 
@@ -85,6 +86,89 @@ describe("real words", () => {
 	it("never shows a word the corpus would have dropped", () => {
 		const words = lesson(input({ realWords: true, letters: "easrtniouldch".split(""), focus: "h" })).text.split(" ");
 		for (const w of words) expect(isCleanWord(w), w).toBe(true);
+	});
+});
+
+/**
+ * The curriculum at a point on the ladder: a learner who has run the first `n` - 1 letters of the teaching
+ * order to goal speed and has just been handed the nth. That is the state which decides what a line may
+ * contain, and it is what the rules have to hold at, not only at the start.
+ */
+function stage(n: number, keyboardOrder = false) {
+	const order = teachingOrder(r, keyboardOrder);
+	const stats = practised(200, order.slice(0, n - 1));
+	const l = ladder(r, stats, TARGET, { keyboardOrder });
+	return {
+		letters: l.unlocked.map((id) => r.byId.get(id)!.char.toLowerCase()),
+		focus: l.focus === undefined ? undefined : r.byId.get(l.focus)!.char.toLowerCase(),
+		stats,
+	};
+}
+
+function lineAt(n: number, seed: number, over: Partial<LessonInput> & { keyboardOrder?: boolean } = {}): string {
+	const s = stage(n, over.keyboardOrder ?? false);
+	return lesson(input({ letters: s.letters, focus: s.focus, stats: s.stats, seed, ...over })).text;
+}
+
+const STAGES = [6, 14, 20, 26];
+
+describe("every stage of the ladder", () => {
+	it("hands out exactly the letters a stage is meant to have", () => {
+		for (const n of STAGES) {
+			expect(stage(n).letters.length, `${n} letters`).toBe(n);
+			expect(stage(n).focus, `${n} letters has a focus`).toBeTruthy();
+		}
+	});
+
+	it.each(STAGES)("puts the focused letter in every word at %i letters", (n) => {
+		const focus = stage(n).focus!;
+		for (let seed = 1; seed <= 12; seed += 1) {
+			const words = lineAt(n, seed).split(" ");
+			expect(words.length, "a line is a line").toBeGreaterThan(5);
+			const missing = words.filter((w) => !w.includes(focus));
+			expect(missing, `${n} letters, line ${seed}: no ${focus} in ${missing.join(", ")}`).toEqual([]);
+		}
+	});
+
+	it.each(STAGES)("says nothing the learner has not unlocked at %i letters", (n) => {
+		const { letters } = stage(n);
+		for (let seed = 1; seed <= 12; seed += 1) {
+			for (const ch of new Set(chars(lineAt(n, seed)))) expect(letters, ch).toContain(ch);
+		}
+	});
+
+	it.each(STAGES)("keeps every word pronounceable at %i letters", (n) => {
+		for (let seed = 1; seed <= 12; seed += 1) {
+			const bad = lineAt(n, seed).split(" ").filter((w) => !speakable(w) || !isCleanWord(w));
+			expect(bad, `line ${seed}: ${bad.join(", ")}`).toEqual([]);
+		}
+	});
+
+	it.each(STAGES)("asks for every unlocked letter within a few lines at %i letters", (n) => {
+		const { letters } = stage(n);
+		const seen = new Set<string>();
+		for (let seed = 1; seed <= 10; seed += 1) for (const ch of chars(lineAt(n, seed))) seen.add(ch);
+		const never = letters.filter((ch) => !seen.has(ch));
+		expect(never, "unasked-for letters after 10 lines").toEqual([]);
+	});
+
+	it.each(STAGES)("holds the same rules in keyboard order at %i letters", (n) => {
+		const { focus } = stage(n, true);
+		for (let seed = 1; seed <= 6; seed += 1) {
+			for (const w of lineAt(n, seed, { keyboardOrder: true }).split(" ")) {
+				expect(w, `no ${focus}`).toContain(focus!);
+				expect(speakable(w) && isCleanWord(w), w).toBe(true);
+			}
+		}
+	});
+
+	it.each(STAGES)("keeps the focused letter in real words too at %i letters", (n) => {
+		const { focus } = stage(n);
+		for (let seed = 1; seed <= 6; seed += 1) {
+			const words = lineAt(n, seed, { realWords: true }).split(" ");
+			expect(words.length).toBeGreaterThan(5);
+			for (const w of words) expect(w, `no ${focus}`).toContain(focus!);
+		}
 	});
 });
 

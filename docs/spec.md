@@ -152,7 +152,21 @@ which is why keybr's default text is generated rather than selected.
 
 keeb adaptation: our table is trained at **order 3** (last 2 symbols predict next) because our corpus is
 4 000 words, not 10 000 with counts, and at order 4 most contexts would be empty. Missing contexts back
-off to the 1-symbol context, then to the letter frequencies. Same generator loop.
+off to the 1-symbol context, then to the letter frequencies — and so does a context that offers nothing but
+locked letters, which is the same dead end from the learner's side. Same generator loop.
+
+Two things keybr gets from a 10 000-word dictionary with counts, we add explicitly (`phonotactics.ts`):
+
+- **A prefix list, weighted by rank.** A generated word starts from the opening of a real corpus word
+  (length 1..3, every letter unlocked, the focused letter inside it), so its first two or three letters are
+  ones English actually opens a word with. Where a required letter lands inside the word is the model's
+  business: dropping it into a slot picked at random is what produced `zdial` and `hcone`.
+- **A phonotactic gate.** The corpus's own consonant runs — onsets, codas, and the prefixes of onsets, so a
+  half-built cluster is not cut off — decide what the chain may add next and what it may stop at. A medial
+  run may split into one syllable closing and the next opening (`-mp` + `-pr-`, as in `impress`). A doubled
+  letter is legal exactly when the corpus doubles it: `ll`, `ee`, `tt` yes, `ii`, `uu`, `ww` no. Refusing
+  every double was a rule the language does not have, and it pushed the model towards shapes nobody can
+  read out loud.
 
 ## 7. Real words as a setting
 
@@ -247,8 +261,11 @@ put a second, storable answer next to the one `ladder()` derives from stats that
    the order; it is `undefined` only when every included letter has been at goal.
 6. Every word in a generated line contains the focused letter and uses only unlocked letters.
 7. Every unlocked letter appears in the line within a bounded number of runs, so no unlocked letter can
-   sit unfocused and unpractised forever.
-8. Generated words are pronounceable: every one contains a vowel, and none is in the blocked list.
+   sit unfocused and unpractised forever. A line forces at most three of them, and it forces the focused
+   letter into each of those words too.
+8. Generated words are pronounceable: every one contains a vowel, opens and closes its syllables with
+   clusters the corpus itself uses, doubles a letter only where the corpus doubles it, and is not in the
+   blocked list.
 9. With `realWords` on, words come from the corpus; when fewer than 15 fit the unlocked letters, generated
    words top the list up instead of the screen going blank.
 10. The corpus contains no profanity, no contraction fragment, no interjection and no proper name, and the

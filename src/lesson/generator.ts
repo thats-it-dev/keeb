@@ -5,7 +5,6 @@
 // (`rain`, `near`, `saner` — that is roughly the shelf) and a lesson that repeats four words teaches
 // boredom, not typing. `realWords` switches to the corpus and lets the model fill the gaps.
 
-import { isCleanWord } from "./clean.ts";
 import { WORDS } from "./corpus.ts";
 import { model, word, type Rng } from "./model.ts";
 import type { StatMap } from "../stats/stats.ts";
@@ -47,31 +46,40 @@ const MIN_CANDIDATES = 15;
 const FREQ_DECAY = 0.012;
 /** How many words to sketch before keeping the one that drills the most. */
 const DRAFTS = 4;
+/** How many letters the line forces in beyond the focus. The rest wait their turn on a later line. */
+const FORCED_PER_LINE = 3;
+/** How many times to redraw a word that repeats the one before it. Repetition is what makes a generated
+ *  lesson feel broken, and a rare focus letter on a full board is exactly where it shows. */
+const REPEATS = 3;
 
 export function lesson(input: LessonInput): Lesson {
 	const { letters, focus, stats, targetCpm, ids } = input;
 	const words = input.words ?? WORDS_PER_LINE;
 	const allowed = new Set([...letters, " "]); // the space separates words, so it is always on the menu
 	const rng = makeRng(input.seed);
-	const out: string[] = [];
-
+	const need = focus === undefined ? [] : [focus];
 	const real = input.realWords ? realCandidates(letters, focus) : [];
+	const nextWord = () =>
+		real.length >= MIN_CANDIDATES || (real.length > 0 && rng() < 0.8) ? realPick(real, stats, targetCpm, ids, rng) : modelWord(allowed, need, stats, targetCpm, ids, rng);
+	const line: string[] = [];
+
 	for (let i = 0; i < words; i += 1) {
-		if (real.length >= MIN_CANDIDATES || (real.length > 0 && rng() < 0.8)) {
-			out.push(realPick(real, stats, targetCpm, ids, rng));
-			continue;
-		}
-		out.push(modelWord(allowed, focus, stats, targetCpm, ids, rng));
+		let w = nextWord();
+		for (let retry = 0; retry < REPEATS && w === line[i - 1] && w !== ""; retry += 1) w = nextWord();
+		line.push(w);
 	}
 
-	// An unlocked letter that never appears is a letter the learner is never asked to type, and a letter
-	// never asked to type never gets faster — which would also hold the next one locked forever.
-	const missing = letters.filter((ch) => !out.some((w) => w.includes(ch)));
-	for (let i = 0; i < missing.length && i < words; i += 1) {
-		out[i % out.length] = modelWord(allowed, missing[i], stats, targetCpm, ids, rng);
+	// An unlocked letter that never appears is a letter nobody is asked to type, one nobody types never gets
+	// faster, and one that never gets faster holds the next letter locked. One line cannot carry every rare
+	// letter as well as the focus, so it carries FORCED_PER_LINE of them and the rest take their turn on a
+	// later line: the starting position moves with the seed, so the wait is bounded by how many are waiting.
+	const gaps = letters.filter((ch) => !line.some((w) => w.includes(ch)));
+	const first = gaps.length === 0 ? 0 : input.seed % gaps.length;
+	for (let i = 0; i < Math.min(FORCED_PER_LINE, gaps.length, line.length); i += 1) {
+		line[i] = modelWord(allowed, [...need, gaps[(first + i) % gaps.length]!], stats, targetCpm, ids, rng);
 	}
 
-	return { letters: [...allowed], text: out.join(" "), focus };
+	return { letters: [...allowed], text: line.filter((w) => w !== "").join(" ") || need[0] || "", focus };
 }
 
 /** The corpus, narrowed to what this learner can type and, when there is a focus, to what drills it. */
@@ -99,21 +107,24 @@ function realPick(pool: { word: string; rank: number }[], stats: LessonInput["st
 	return pool[pool.length - 1].word;
 }
 
-/** Draft a few words from the model and keep the one that leans hardest on the keys that need work. */
-function modelWord(allowed: Set<string>, focus: string | undefined, stats: LessonInput["stats"], targetCpm: number, ids: CharIds, rng: Rng): string {
-	let best = "";
-	let bestScore = -1;
+/** Draft a few words and keep the one that drills the most, never at the cost of the letters it must carry. */
+function modelWord(allowed: Set<string>, need: string[], stats: LessonInput["stats"], targetCpm: number, ids: CharIds, rng: Rng): string {
+	const drafts: string[] = [];
 	for (let draft = 0; draft < DRAFTS; draft += 1) {
-		const w = word(model(), allowed, focus, rng);
+		const w = word(model(), allowed, need, rng);
 		if (w === "") continue;
-		const score = weakness(w, stats, targetCpm, ids);
-		if (score > bestScore) {
-			best = w;
-			bestScore = score;
-		}
-		if (bestScore >= 0 && focus === undefined && isCleanWord(best)) break; // a word that needs no drilling is fine
+		drafts.push(w);
+		if (need.length > 0 && coverage(w, need) === need.length) break; // it carries everything asked of it
 	}
-	return best;
+	// Letters first, practice second: a word that carries the required letters beats one that merely sits
+	// on a slow key.
+	drafts.sort((a, b) => coverage(b, need) - coverage(a, need) || weakness(b, stats, targetCpm, ids) - weakness(a, stats, targetCpm, ids));
+	return drafts[0] ?? "";
+}
+
+/** How many of the letters this line is required to teach are inside this word. */
+function coverage(w: string, need: string[]): number {
+	return need.filter((ch) => w.includes(ch)).length;
 }
 
 /** How much this word is needed: frequent words matter, and words on a slow or flaky key matter more. */

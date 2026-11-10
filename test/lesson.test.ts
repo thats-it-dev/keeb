@@ -6,6 +6,9 @@ import { keymapById } from "../src/data/keymaps.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { press, start, type Course, type Engine } from "../src/lesson/engine.ts";
 import { WORDS } from "../src/lesson/corpus.ts";
+import { isCleanWord } from "../src/lesson/clean.ts";
+import { teachingOrder } from "../src/lesson/ladder.ts";
+import { speakable } from "../src/lesson/phonotactics.ts";
 import { emptyStat, timeToTypeMs, type StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
@@ -102,6 +105,26 @@ describe("lesson engine", () => {
 		const focus = e.ladder.focus === undefined ? undefined : r.byId.get(e.ladder.focus)?.char.toLowerCase();
 		expect(focus).toBeTruthy();
 		for (const w of e.text.split(" ")) expect(w, `word ${w} lacks focus ${focus}`).toContain(focus!);
+	});
+
+	it("carries the focused letter through every line as the ladder grows", () => {
+		// The bug this pins: a line that patched an unexercised letter in replaced whole words with words
+		// built around that letter alone, so past a dozen letters half of them stopped carrying the focus.
+		// Only typing catches it, because the curriculum moves as the keys get faster.
+		const stats: StatMap = {};
+		for (const id of teachingOrder(r, false).slice(0, 13)) stats[id] = { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 0 };
+		let e = start(course, stats);
+		let now = 1000;
+		for (let line = 0; line < 10; line += 1) {
+			const focus = e.ladder.focus === undefined ? undefined : r.byId.get(e.ladder.focus)?.char.toLowerCase();
+			const words = e.text.split(" ");
+			expect(words.length, `line ${line} is a line`).toBeGreaterThan(5);
+			for (const w of words) {
+				if (focus !== undefined) expect(w, `line ${line}: no ${focus} in ${w}`).toContain(focus);
+				expect(speakable(w) && isCleanWord(w), `line ${line}: ${w}`).toBe(true);
+			}
+			({ engine: e, now } = typeRun(e, now));
+		}
 	});
 
 	it("keeps the corpus broad enough for every letter", () => {

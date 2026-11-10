@@ -4,7 +4,8 @@
 import { describe, expect, it } from "vitest";
 import { BLOCKED, droppedGerund, FILLER, FRAGMENTS, isCleanWord, SHORT_WORDS, BLOCKED_ROOTS } from "../src/lesson/clean.ts";
 import { WORDS } from "../src/lesson/corpus.ts";
-import { frequencyOrder, model, readable, word } from "../src/lesson/model.ts";
+import { frequencyOrder, model, word } from "../src/lesson/model.ts";
+import { speakable } from "../src/lesson/phonotactics.ts";
 
 const ALL = new Set(WORDS);
 const letters = (s: string) => new Set([...s]);
@@ -81,14 +82,14 @@ describe("the word model", () => {
 		// The reason rejection lives in the generator: a model trained on clean data still spells dirty words
 		// by accident, because it stores letter patterns and not intentions.
 		const allowed = letters("easrtniouldchg");
-		const made = Array.from({ length: 2000 }, () => word(m, allowed, undefined, Math.random));
+		const made = Array.from({ length: 2000 }, () => word(m, allowed, [], Math.random));
 		const dirty = made.filter((w) => !isCleanWord(w));
 		expect(dirty, [...new Set(dirty)].slice(0, 10).join(", ")).toEqual([]);
 	});
 
 	it("uses only the letters it was given", () => {
 		const allowed = letters("easrtn");
-		for (const w of Array.from({ length: 400 }, () => word(m, allowed, "r", Math.random))) {
+		for (const w of Array.from({ length: 400 }, () => word(m, allowed, ["r"], Math.random))) {
 			for (const ch of w) expect([...allowed], ch).toContain(ch);
 		}
 	});
@@ -96,27 +97,33 @@ describe("the word model", () => {
 	it("puts the focus in the word", () => {
 		const allowed = letters("easrtniold");
 		for (const focus of ["e", "a", "s", "r", "t", "n", "i", "o", "l", "d"]) {
-			const w = word(m, allowed, focus, middle);
+			const w = word(m, allowed, [focus], middle);
 			expect(w, focus).toContain(focus);
 		}
 	});
 
 	it("makes something a hand can read", () => {
-		// No doubled letters, no three consonants: what "pronounceable" means here, and the reason the
-		// output is not a scamble of the allowed set.
-		expect(readable("rate")).toBe(true);
-		expect(readable("raate")).toBe(false);
-		expect(readable("strn")).toBe(false);
-		const allowed = letters("easrtniouldch");
-		for (const w of Array.from({ length: 500 }, () => word(m, allowed, "c", Math.random))) {
-			expect(/(.)\1/.test(w), w).toBe(false);
-			expect(/[^aeiou]{3}/.test(w), w).toBe(false);
+		// A word starts from the opening of a real word and grows only where an English word could still grow,
+		// which is what keeps the output pronounceable gibberish rather than a scamble of the allowed set.
+		for (const set of ["easrtn", "easrtniouldch", "easrtnioldchgumpybwfkvxjqz"]) {
+			const allowed = letters(set);
+			const made = Array.from({ length: 300 }, () => word(m, allowed, [], Math.random));
+			const unreadable = made.filter((w) => w.length > 1 && !speakable(w));
+			expect(unreadable, [...new Set(unreadable)].slice(0, 10).join(", ")).toEqual([]);
 		}
+	});
+
+	it("doubles a letter where English doubles it", () => {
+		// `ll`, `tt`, `ee` are English's own, and `ii`, `uu`, `ww` are not: refusing every double pushed the
+		// model into shapes no one would read, so the rule has to be the language's and not a regex's.
+		const allowed = letters("easrtniouldchn");
+		const made = new Set(Array.from({ length: 400 }, () => word(m, allowed, [], Math.random)));
+		expect([...made].some((w) => /(.)\1/.test(w)), [...made].slice(0, 20).join(", ")).toBe(true);
 	});
 
 	it("is not a fixed list", () => {
 		const allowed = letters("easrtniouldchg");
-		const made = new Set(Array.from({ length: 300 }, () => word(m, allowed, "g", Math.random)));
+		const made = new Set(Array.from({ length: 300 }, () => word(m, allowed, ["g"], Math.random)));
 		// Six letters of real English is a shelf of about four words, which is the whole reason the default
 		// source is the model. Ten times that, from the same ten letters, is the floor for "not a list".
 		expect(made.size).toBeGreaterThan(40);

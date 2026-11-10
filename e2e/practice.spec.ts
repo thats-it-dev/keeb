@@ -3,6 +3,8 @@
 import type { Page } from "@playwright/test";
 import { loadConfig } from "../vite/config.ts";
 import { WORDS } from "../src/lesson/corpus.ts";
+import { isCleanWord } from "../src/lesson/clean.ts";
+import { speakable } from "../src/lesson/phonotactics.ts";
 import { expect, test } from "./csp.ts";
 import { keyName, openPane, paneBody } from "./keys.ts";
 
@@ -408,6 +410,33 @@ const curriculum = (page: Page) =>
 		return { unlocked: pr.engine.ladder.unlocked.map(char), focus: pr.engine.ladder.focus === undefined ? null : char(pr.engine.ladder.focus), next: pr.engine.ladder.next === undefined ? null : char(pr.engine.ladder.next) };
 	});
 
+/** Put the store on a point of the ladder, so a test does not have to type its way there at 200 wpm. */
+const seedSpeed = (page: Page, msById: Record<string, number>) =>
+	page.evaluate(
+		(entries) =>
+			new Promise<void>((res, rej) => {
+				const open = indexedDB.open("keeb");
+				open.onsuccess = () => {
+					const value = Object.fromEntries(
+						Object.entries(entries).map(([id, ms]) => [id, { ttMs16: Math.round((ms as number) * 16), bestMs16: Math.round((ms as number) * 16), samples: 120, errors: 0 }]),
+					);
+					const tx = open.result.transaction("stats", "readwrite");
+					tx.objectStore("stats").put({ layout: "go60+qwerty", value });
+					tx.oncomplete = () => {
+						open.result.close();
+						res();
+					};
+					tx.onerror = () => rej(tx.error);
+				};
+				open.onerror = () => rej(open.error);
+			}),
+		msById,
+	);
+
+/** The teaching order as the running page derived it, so a test can say "the first fifteen letters". */
+const ladderOrder = (page: Page) =>
+	page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { ladder: { order: string[] } } }).engine.ladder.order);
+
 /** Tick a settings checkbox by its label, and wait for the page to act on it. */
 const setToggle = async (page: Page, label: string, on: boolean) => {
 	await page.getByRole("button", { name: "Settings" }).click();
@@ -426,6 +455,28 @@ test("the first line is built from six letters, and every word carries one of th
 	// The focus is not a caption on the lesson; it is inside every word of it.
 	expect(focus).toBeTruthy();
 	expect(words.every((w) => w.includes(focus as string))).toBe(true);
+});
+
+test("a line further up the ladder carries the focused letter and reads as English", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	// Sixteen letters, the newest one untouched: the point where the line used to come apart, because the
+	// letters that had never been typed were patched in by replacing the words that did carry the focus.
+	const order = await ladderOrder(page);
+	const msById: Record<string, number> = {};
+	for (const id of order.slice(0, 15)) msById[id] = 200;
+	await seedSpeed(page, msById);
+	await page.reload();
+	await ready(page);
+	const { unlocked, focus } = await curriculum(page);
+	expect(unlocked.length).toBe(16);
+	expect(focus).toBeTruthy();
+	const words = ((await line(page).getAttribute("data-text")) ?? "").split(" ");
+	expect(words.length).toBeGreaterThan(5);
+	for (const w of words) {
+		expect(w, `no ${focus} in ${w}`).toContain(focus as string);
+		expect(speakable(w) && isCleanWord(w), w).toBe(true);
+	}
 });
 
 test("the key the lesson is built around is ringed on the board and named on screen", async ({ page }) => {
