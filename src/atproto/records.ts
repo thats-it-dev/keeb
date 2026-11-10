@@ -5,7 +5,7 @@
 // all the decisions live here.
 import { TID } from "@atproto/common-web";
 import { LAYOUT, PROGRESS, SETTINGS, SESSION } from "./lexicons.ts";
-import { mergeAll, type KeyStat, type StatMap } from "../stats/stats.ts";
+import { mergeAll, progressGrowth, type KeyStat, type StatMap } from "../stats/stats.ts";
 import { ROW_ROLE_VALUES, type Geometry, type Key, type Keymap, type RowRole } from "../keyboard/types.ts";
 import { rolesForRows } from "../layout/parse.ts";
 import type { Settings } from "../data/store.ts";
@@ -252,6 +252,22 @@ export function fromSessionRecord(rec: Record<string, unknown> | undefined, rkey
  * own count, which is why two devices can drift apart for a week and still merge without a conflict.
  */
 export const mergeProgress = (local: StatMap, remote: StatMap): StatMap => mergeAll(local, remote);
+
+/**
+ * What a progress record has learned since the last time this device accounted for it. `seen` is the
+ * content of that same record on the previous sync, or nothing the first time. The math lives in
+ * `progressGrowth` in stats.ts, beside the merge it inverts.
+ *
+ * This exists because a PROGRESS record is a shared accumulator: the numbers this browser pushed are
+ * sitting in it, and pulling the record back and folding it in with `mergeProgress` added our own strokes
+ * to our own strokes. Every sync doubled the sample and error counts.
+ */
+export { progressGrowth } from "../stats/stats.ts";
+
+/** Fold a record's growth into local progress. `seen` empty means this device has never accounted for the
+ *  record, which is the same thing as it being somebody else's new evidence. */
+export const foldProgress = (local: StatMap, seen: StatMap | undefined, remote: StatMap | undefined): StatMap =>
+	remote ? mergeAll(local, progressGrowth(seen ?? {}, remote)) : { ...local };
 
 /**
  * The rkeys to delete so no layout keeps more than `cap` sessions: the oldest per layout, decided by the

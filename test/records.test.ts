@@ -5,7 +5,7 @@ import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { LAYOUT, PROGRESS, SETTINGS, SESSION, defs, layout, progress, session, settings } from "../src/atproto/lexicons.ts";
-import { boardFromLayout, charMap, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, layoutFromRecord, layoutRecord, mergeProgress, newKey, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
+import { boardFromLayout, charMap, foldProgress, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, layoutFromRecord, layoutRecord, mergeProgress, newKey, progressGrowth, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
@@ -78,6 +78,42 @@ describe("records", () => {
 		expect(m.b).toEqual(stat(1600, 4));
 		// 4400/16 = 275ms: the slow device's 30 samples dominate, which is the point of weighting.
 		expect(Math.round(m.a!.ttMs16 / 16)).toBe(275);
+	});
+
+	it("finds nothing new in a record it has already folded in", () => {
+		// The bug this pins: sync pushes this browser's numbers into a PROGRESS record, and the next pull
+		// hands that same record back as if it were somebody else's evidence. Folding it in with mergeAll
+		// added our own samples to our own samples, so every sync doubled the strokes and the typos.
+		const mine = { a: stat(3200, 10, 2) };
+		expect(progressGrowth(mine, mine)).toEqual({});
+		expect(foldProgress(mine, mine, mine)).toEqual(mine);
+	});
+
+	it("folds in only the strokes the record gained since it was last seen", () => {
+		// 200ms across the 10 samples accounted for, 250ms across 20: the 10 new strokes averaged 300ms, and
+		// that is the only evidence a second sync is allowed to add.
+		const seen = { a: stat(3200, 10, 2) };
+		const remote = { a: stat(4000, 20, 3) };
+		expect(progressGrowth(seen, remote)).toEqual({ a: stat(4800, 10, 1) });
+		// Folded into a local copy of the record, the growth lands it where the repo says it is: no doubling,
+		// and the mean ends up identical rather than weighted toward whatever this device did first.
+		const merged = foldProgress({ a: stat(3200, 10, 2) }, seen, remote);
+		expect(merged.a!.samples).toBe(20);
+		expect(merged.a!.errors).toBe(3);
+		expect(merged.a!.ttMs16).toBe(4000);
+	});
+
+	it("takes a key the record has never shown before whole", () => {
+		const growth = progressGrowth({ a: stat(3200, 10) }, { a: stat(3200, 10), q: stat(800, 3, 1) });
+		expect(growth).toEqual({ q: stat(800, 3, 1) });
+	});
+
+	it("adds nothing for a record that came back smaller than the one already folded", () => {
+		// A wipe on another device can leave a record holding fewer samples than the one already inside our
+		// numbers. Subtracting would go negative, and "this record taught us nothing new" is the honest
+		// reading of it — better than an invented mean or a negative count.
+		expect(progressGrowth({ a: stat(3200, 40) }, { a: stat(2400, 12) })).toEqual({});
+		expect(foldProgress({ a: stat(3200, 40) }, { a: stat(3200, 40) }, { a: stat(2400, 12) })).toEqual({ a: stat(3200, 40) });
 	});
 
 	it("orders stats by key id so the same progress always looks the same", () => {

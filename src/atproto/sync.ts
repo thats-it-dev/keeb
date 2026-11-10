@@ -17,10 +17,17 @@ export type SyncState = {
 	layoutRkeys: Record<string, string>;
 	/** Sessions written locally but not yet accepted by a PDS. */
 	outbox: { layout: string; chars: number; errors: number; ms: number; stats: StatMap }[];
+	/**
+	 * The stat map this device has already accounted for in each layout's progress record. It is what makes a
+	 * pull idempotent: the record is a shared accumulator that contains our own pushed numbers, so without
+	 * remembering what has already been folded in, every sync adds our own strokes to our own strokes.
+	 * Optional on the type because a browser that synced before this field existed has nothing in its row.
+	 */
+	progressSeen?: Record<string, StatMap>;
 	lastPull: number;
 };
 
-export const emptyState = (): SyncState => ({ progressRkeys: {}, layoutRkeys: {}, outbox: [], lastPull: 0 });
+export const emptyState = (): SyncState => ({ progressRkeys: {}, layoutRkeys: {}, outbox: [], progressSeen: {}, lastPull: 0 });
 
 export type SyncStore = { load(): Promise<SyncState>; save(s: SyncState): Promise<void> };
 
@@ -167,6 +174,12 @@ export class Sync {
 				const rkey = state.progressRkeys[item.layout] ?? newKey();
 				await put(this.s, PROGRESS, rkey, progressRecord(item.layout, item.stats, nowMs));
 				state.progressRkeys[item.layout] = rkey;
+				// The record now holds exactly these numbers, and they are already in this device's stats. Saying
+				// so here is what stops the next pull from mistaking our own push for somebody else's evidence.
+				// The reader that folds a pull into its numbers writes the same field in the same transaction it
+				// saves them in (`applyRemoteProgress` in data/store.ts), so a fold cannot be applied twice by a
+				// reload landing in the middle of one.
+				state.progressSeen = { ...state.progressSeen, [item.layout]: item.stats };
 				sent.push(item);
 			}
 		} catch (err) {

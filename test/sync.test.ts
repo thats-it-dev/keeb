@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { LAYOUT, PROGRESS, SESSION, SETTINGS } from "../src/atproto/lexicons.ts";
 import { Sync, emptyState, type SyncState, type SyncStore } from "../src/atproto/sync.ts";
-import { newKey } from "../src/atproto/records.ts";
+import { foldProgress, newKey } from "../src/atproto/records.ts";
 import type { Session } from "../src/atproto/auth.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
@@ -55,6 +55,27 @@ function fake(rows: Record<string, { uri: string; value: Record<string, unknown>
 
 function jsonResponse(status: number, json: unknown): Response {
 	return { ok: status < 400, status, json: async () => json } as Response;
+}
+
+/**
+ * Replay this test's writes into its listings.
+ *
+ * A real repo answers a pull with whatever a push put there; this fake used to keep the two apart, which is
+ * why no test could describe a round trip — and a round trip is exactly where progress started doubling.
+ */
+function commit(rows: Record<string, { uri: string; value: Record<string, unknown> }[]>, calls: Call[]) {
+	for (const c of calls) {
+		if (c.path !== "com.atproto.repo.putRecord") continue;
+		const col = String(c.body?.collection);
+		const uri = `at://${DID}/${col}/${String(c.body?.rkey)}`;
+		const list = rows[col] ?? [];
+		rows[col] = list;
+		const value = c.body?.record as Record<string, unknown>;
+		const at = list.findIndex((x) => x.uri === uri);
+		if (at >= 0) list[at] = { uri, value };
+		else list.push({ uri, value });
+	}
+	calls.length = 0;
 }
 
 const memStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncState } => {
@@ -190,6 +211,56 @@ describe("sync", () => {
 		// Six existing plus the new one is seven for that layout, cap 5: the two oldest go.
 		expect(deleted.sort()).toEqual([tids[0], tids[1]].sort());
 		expect(deleted).not.toContain("zzzz0000000");
+	});
+
+	it("does not count the progress it pushed itself as new evidence", async () => {
+		// The bug: pushSession writes this browser's whole stat map into the layout's PROGRESS record, and the
+		// next pull hands that same map back as if it came from somewhere else. Folding it in added our own
+		// ten strokes to our own ten strokes, and every sync after that doubled the count again.
+		const rows = { [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [], [LAYOUT]: [] };
+		const { session, calls } = fake(rows);
+		const store = memStore();
+		const sync = new Sync(session, store);
+		const L = "go60+qwerty";
+		let local: StatMap = { a: { ttMs16: 3200, samples: 10, errors: 2 } }; // ten strokes at 200ms, two typos
+		await sync.pushSession(L, { chars: 10, errors: 2, ms: 3_000, stats: local }, Date.now());
+		commit(rows, calls);
+		for (let round = 0; round < 3; round += 1) {
+			const { progress } = await sync.pull();
+			const merged = foldProgress(local, store.state.progressSeen?.[L], progress[L]);
+			// What the app's store write does, in the same transaction as the stats it saves.
+			await store.save({ ...store.state, progressSeen: { ...store.state.progressSeen, [L]: progress[L]! } });
+			expect(merged.a!.samples).toBe(10);
+			local = merged;
+		}
+		expect(local.a).toEqual({ ttMs16: 3200, samples: 10, errors: 2 });
+	});
+
+	it("counts what another device added since the last sync, once", async () => {
+		const now = Math.round(Date.now() / 1000);
+		const rec = (samples: number, ttMs16: number, errors: number) => ({
+			uri: `at://${DID}/${PROGRESS}/2222other`,
+			value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16, samples, errors }], updatedAt: now },
+		});
+		const rows = { [SESSION]: [], [PROGRESS]: [rec(10, 4000, 1)], [SETTINGS]: [], [LAYOUT]: [] };
+		const { session } = fake(rows);
+		const store = memStore();
+		const sync = new Sync(session, store);
+		let local: StatMap = { a: { ttMs16: 1600, samples: 10, errors: 0 } }; // this device: 10 strokes at 100ms
+		const round = async () => {
+			const { progress } = await sync.pull();
+			const remote = progress["go60+qwerty"]!;
+			local = foldProgress(local, store.state.progressSeen?.["go60+qwerty"], remote);
+			await store.save({ ...store.state, progressSeen: { ...store.state.progressSeen, "go60+qwerty": remote } });
+		};
+		await round();
+		expect(local.a).toEqual({ ttMs16: 2800, samples: 20, errors: 1 }); // 100ms and 250ms, evenly weighted
+		rows[PROGRESS] = [rec(30, 3840, 3)]; // the other device practises: 20 more strokes
+		await round();
+		await round(); // and says nothing the second time
+		expect(local.a!.samples).toBe(40); // 10 here + 10 + 20 there, not 70
+		expect(local.a!.errors).toBe(3);
+		expect(Math.round(local.a!.ttMs16 / 16)).toBe(205);
 	});
 
 	it("says which record it could not read rather than inventing one", async () => {

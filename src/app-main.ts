@@ -2,10 +2,10 @@ import { LitElement, html, svg, css, nothing } from "https://kit.thatsit.app/lit
 import { sharedStyles } from "https://kit.thatsit.app/kit.js";
 import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeometry } from "./data/geometries.ts";
 import { KEYMAPS, allKeymaps, forgetKeymap, keymapById, registerKeymap } from "./data/keymaps.ts";
-import { deleteBoard, deleteMap, layoutKey, loadBoards, loadHistory, loadMaps, loadSettings, loadStats, loadSyncState, saveBoard, saveHistory, saveMap, saveSettings, saveStats, saveSyncState, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { applyRemoteProgress, deleteBoard, deleteMap, layoutKey, loadBoards, loadHistory, loadMaps, loadSettings, loadStats, loadSyncState, saveBoard, saveHistory, saveMap, saveSettings, saveStats, saveSyncState, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { auth } from "./atproto/auth.ts";
 import { Sync, type SharedLayoutRow, type SyncState } from "./atproto/sync.ts";
-import { boardFromLayout, layoutRecord, mergeProgress, SHARED_PREFIX, type SessionRow } from "./atproto/records.ts";
+import { boardFromLayout, layoutRecord, SHARED_PREFIX, type SessionRow } from "./atproto/records.ts";
 import { cpmToWpm, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { barWidth, GOAL_AT, overview, type KeyInfo } from "./stats/overview.ts";
 import { history as buildHistory, series, type Point } from "./stats/history.ts";
@@ -495,11 +495,16 @@ export class AppMain extends LitElement {
 			this.sessions = sessions;
 			const remote = progress[key];
 			if (remote) {
-				const merged = mergeProgress(this.stats, remote);
-				await saveStats(key, merged);
-				this.stats = merged;
-				// The engine holds its own copy; rebuilding the lesson is what makes the merged speed count.
-				void this.#load({ g: this.geometryId, k: this.keymapId });
+				// Only what the record has learned since the last fold counts. It carries this browser's own
+				// pushed numbers, so folding it in whole added our strokes to our strokes — once per sync. The
+				// memory of what was already folded lives in the sync row, which store.ts reads and writes in the
+				// same transaction as the stats.
+				const before = JSON.stringify(this.stats);
+				this.stats = await applyRemoteProgress(key, remote);
+				if (JSON.stringify(this.stats) !== before) {
+					// The engine holds its own copy; rebuilding the lesson is what makes the merged speed count.
+					void this.#load({ g: this.geometryId, k: this.keymapId });
+				}
 			}
 			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
 		// over on a quiet page: at boot, or when they press Sync.
