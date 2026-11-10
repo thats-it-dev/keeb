@@ -90,17 +90,18 @@ describe("records", () => {
 	});
 
 	it("folds in only the strokes the record gained since it was last seen", () => {
-		// 200ms across the 10 samples accounted for, 250ms across 20: the 10 new strokes averaged 300ms, and
-		// that is the only evidence a second sync is allowed to add.
+		// 10 samples accounted for at 200 ms, 20 now at 250 ms. The count of new strokes is arithmetic; their
+		// mean is not recoverable from two EWMA snapshots, so the fold takes the record's current mean and
+		// weights it by the ten strokes that are actually new.
 		const seen = { a: stat(3200, 10, 2) };
 		const remote = { a: stat(4000, 20, 3) };
-		expect(progressGrowth(seen, remote)).toEqual({ a: stat(4800, 10, 1) });
-		// Folded into a local copy of the record, the growth lands it where the repo says it is: no doubling,
-		// and the mean ends up identical rather than weighted toward whatever this device did first.
+		expect(progressGrowth(seen, remote)).toEqual({ a: stat(4000, 10, 1) });
+		// Folded into a local copy of the record, the counts land where the repo says they are and the mean
+		// lands between the two devices rather than on an invented number.
 		const merged = foldProgress({ a: stat(3200, 10, 2) }, seen, remote);
 		expect(merged.a!.samples).toBe(20);
 		expect(merged.a!.errors).toBe(3);
-		expect(merged.a!.ttMs16).toBe(4000);
+		expect(Math.round(merged.a!.ttMs16 / 16)).toBe(225); // 200ms here, 250ms there, evenly weighted
 	});
 
 	it("takes a key the record has never shown before whole", () => {

@@ -1,7 +1,7 @@
 // The per-key mean is the number every other screen reads: the keycap, the goal bar, the ladder, the
 // headline wpm. These are the tests for what goes INTO it.
 import { describe, expect, it } from "vitest";
-import { emptyStat, hasTiming, observe, observeError, timeToTypeMs, type KeyStat } from "../src/stats/stats.ts";
+import { emptyStat, hasTiming, merge, observe, observeError, progressGrowth, timeToTypeMs, type KeyStat } from "../src/stats/stats.ts";
 
 const stroke = (ms: number) => Math.round(ms) * 16;
 
@@ -71,5 +71,42 @@ describe("the per-key average", () => {
 		const s = observe(observe(emptyStat(), 100), 0);
 		expect(s.samples).toBe(2);
 		expect(s.ttMs16).toBe(stroke(100));
+	});
+});
+
+// What a second device's progress record can honestly say between two of its snapshots. The count is
+// arithmetic; the mean is not, because this is an exponentially weighted mean and the old strokes have
+// already been decayed out of it.
+describe("growth between two snapshots of one record", () => {
+	it("says a device that got faster is faster", () => {
+		// Subtracting mean x samples here produced a NEGATIVE total — the record's mean had fallen faster than
+		// the sample count rose — and the clamp turned that into "no timing in this delta". The strokes were
+		// counted and their speed taught nothing: the fold left the other device at 400 ms.
+		const established = typeAt(100, 100);
+		const improved = typeAt(40, 10, established);
+		const growth = progressGrowth({ a: established }, { a: improved }).a!;
+		expect(hasTiming(growth)).toBe(true);
+		const merged = merge(typeAt(400, 10), growth);
+		expect(timeToTypeMs(merged)).toBeLessThan(400); // it learned the key got faster
+		expect(timeToTypeMs(merged)).toBeGreaterThan(40); // without leaping to the fastest stroke either
+	});
+
+	it("says a device that got slower is slower, without exaggerating it", () => {
+		// The same subtraction in the other direction: four strokes at 400 ms on a key with a long history
+		// came out as 1875 ms, and that number then weighted the merged average of a whole board.
+		const established = typeAt(100, 100);
+		const slowed = typeAt(400, 4, established);
+		const merged = merge(typeAt(400, 10), progressGrowth({ a: established }, { a: slowed }).a!);
+		expect(timeToTypeMs(merged)).toBeGreaterThan(100);
+		expect(timeToTypeMs(merged)).toBeLessThanOrEqual(400); // 400 ms is the slowest thing anyone typed
+	});
+
+	it("counts the strokes that arrived, and only those", () => {
+		const established = typeAt(100, 30);
+		const later = typeAt(100, 12, established);
+		const growth = progressGrowth({ a: established }, { a: later }).a!;
+		expect(growth.samples).toBe(12);
+		expect(merge(established, growth).samples).toBe(42);
+		expect(progressGrowth({ a: established }, { a: established })).toEqual({});
 	});
 });

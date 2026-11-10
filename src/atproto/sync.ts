@@ -172,14 +172,18 @@ export class Sync {
 			for (const item of queue) {
 				await put(this.s, SESSION, newKey(), sessionRecord(item.layout, item));
 				const rkey = state.progressRkeys[item.layout] ?? newKey();
-				await put(this.s, PROGRESS, rkey, progressRecord(item.layout, item.stats, nowMs));
+				const rec = progressRecord(item.layout, item.stats, nowMs);
+				await put(this.s, PROGRESS, rkey, rec);
 				state.progressRkeys[item.layout] = rkey;
 				// The record now holds exactly these numbers, and they are already in this device's stats. Saying
-				// so here is what stops the next pull from mistaking our own push for somebody else's evidence.
+				// so here is what stops the next pull from mistaking our own push for somebody else's evidence —
+				// and what stops a fold from being skipped because the local map moved on afterwards: this stores
+				// the bytes that went out, re-read the way a pull would read them, not a live reference to the
+				// caller's own object.
 				// The reader that folds a pull into its numbers writes the same field in the same transaction it
 				// saves them in (`applyRemoteProgress` in data/store.ts), so a fold cannot be applied twice by a
 				// reload landing in the middle of one.
-				state.progressSeen = { ...state.progressSeen, [item.layout]: item.stats };
+				state.progressSeen = { ...state.progressSeen, [item.layout]: fromProgressRecord(rec)?.stats ?? {} };
 				sent.push(item);
 			}
 		} catch (err) {

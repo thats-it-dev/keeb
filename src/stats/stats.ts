@@ -121,16 +121,26 @@ export function merge(a: KeyStat, b: KeyStat): KeyStat {
 	};
 }
 
-// What one snapshot of a key has learned since another snapshot of it, in the same sum-space `merge`
-// uses: mean x samples is the time accounted for, so the difference of two snapshots is the mean of the
-// strokes that arrived between them. Nothing comes back for a key that has not grown, and nothing at all
-// for a record nobody has added to -- which is the case that used to double every count on every sync.
+// What a key has learned between two snapshots of the same record: the strokes that arrived in between,
+// at the speed the record now says it is running.
+//
+// The count is exact. The mean is not recoverable, and must not be invented. `mean x samples` looks like a
+// total you could subtract, but this is an EWMA: the old observations have already been decayed out of the
+// mean, so the product is not the time they took. Differencing two snapshots therefore reads a speed
+// change as a different speed — measured, against a device that struck this key 100 times and then added
+// ten strokes at 40 ms: `0 ms` (the product shrank, so the clamp said "no timing here") when the other
+// device got faster, and `1875 ms` when it got slower instead of the 400 ms it actually typed. Both are
+// off the board in opposite directions, and either one drags the merged average with it.
+//
+// So the fold takes the only claim a record can honestly make — "this many strokes are new, and this key
+// currently runs at this speed" — and lets `merge` weight it by the new strokes. The bias is the record's
+// own memory of the older strokes, about sixteen of them, and it shrinks in exactly the case where it
+// would matter: a device that has added a lot of strokes has a mean made of them.
 export function keyGrowth(from: KeyStat | undefined, to: KeyStat): KeyStat | undefined {
 	if (!from) return to.samples > 0 ? { ...to } : undefined;
 	const added = to.samples - from.samples;
 	if (added <= 0) return undefined; // the same record, or one that came back smaller: nothing to learn here
-	const total = to.ttMs16 * to.samples - from.ttMs16 * from.samples;
-	return { ttMs16: total > 0 ? Math.round(total / added) : 0, samples: added, errors: Math.max(0, to.errors - from.errors) };
+	return { ttMs16: Math.max(0, to.ttMs16), samples: added, errors: Math.max(0, to.errors - from.errors) };
 }
 
 // The map-level form of `keyGrowth`: what a whole progress record has learned since it was last accounted
