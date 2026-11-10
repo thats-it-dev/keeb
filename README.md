@@ -257,6 +257,11 @@ which board it belongs to — and the files above already describe the board.
   form is in `keyGrowth`: the new **count** is arithmetic, the new **mean** is not recoverable, so the fold
   takes the record's current mean and lets `merge` weight it by the strokes that are actually new. The bias
   is the record's own memory — about sixteen strokes — and it shrinks precisely when it would matter most.
+- **Two practice-time numbers exist, on purpose, and they never merge.** The session record carries the
+  wall-clock span of the session (the history chart's speed maths needs that), and the local `daily` tally
+  carries keystroke time — gaps between keys, capped at 10 s — which is what the daily goal bar counts,
+  because it must read correctly on a device that has never synced. The goal itself is a
+  `keeb:dailyGoalMin` localStorage slot, deliberately not in `settings` and not on the wire. `docs/spec.md` §13.
 - Counts already doubled by older builds stay doubled; the mean recovers on its own because it is
   sample-weighted, and the sample count only decides how stiff it is.
 

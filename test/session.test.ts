@@ -1,7 +1,7 @@
 // Who gets charged when a practice session closes, how often, and how much. The tally arithmetic is
 // tested in daily.test.ts; this file tests the recorder half of spec §13: the charge is the keystroke
 // gaps — capped at the pause line — never the idle span from the first key to the closing silence.
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionRecorder, type RecorderHost } from "../src/app/session.ts";
 import { DEFAULT_SETTINGS } from "../src/data/store.ts";
 import type { StatMap } from "../src/stats/stats.ts";
@@ -43,6 +43,8 @@ function recorder(opts: { connected?: boolean } = {}) {
 }
 
 describe("SessionRecorder day charges", () => {
+	afterEach(() => vi.restoreAllMocks());
+
 	it("charges the gaps between keys, not the silence after the last one", async () => {
 		// Two keystrokes three seconds apart, then five minutes of reading the screen until end().
 		// The record keeps the whole span; the day is charged the 3 s plus only the capped part of
@@ -53,7 +55,6 @@ describe("SessionRecorder day charges", () => {
 		await r.rec.end();
 		expect(r.charges).toEqual([3 * SEC + 10 * SEC]);
 		expect(r.delivered).toEqual([{ chars: 2, ms: 300 * SEC }]); // the repo row still spans the session
-		vi.restoreAllMocks();
 	});
 
 	it("caps a long mid-session pause at the same line as the trailing one", async () => {
@@ -62,7 +63,6 @@ describe("SessionRecorder day charges", () => {
 		r.typed(2); // the second key lands 30 s after the first: 10 s of it is practice, 20 s of it is a hunt
 		await r.rec.end();
 		expect(r.charges).toEqual([10 * SEC + 1 * SEC]);
-		vi.restoreAllMocks();
 	});
 
 	it("freezes at the cap once typing stops", () => {
@@ -72,7 +72,29 @@ describe("SessionRecorder day charges", () => {
 		const r = recorder();
 		r.typed(2);
 		expect(r.rec.elapsed()).toBe(2 * SEC + 10 * SEC);
-		vi.restoreAllMocks();
+	});
+
+	it("is zero with no open session, before and after one", async () => {
+		// The #startedAt guard in elapsed() is what stops the bar sitting on a phantom trailing gap
+		// from a session that closed a minute ago.
+		const r = recorder();
+		expect(r.rec.elapsed()).toBe(0);
+		clock([T0, T0 + SEC]);
+		r.typed(2);
+		await r.rec.end();
+		expect(r.rec.elapsed()).toBe(0);
+	});
+
+	it("charges each of two sessions its own gaps, never the first one's again", async () => {
+		// The reset lives in both begin() and end() on purpose; drop either and session two carries
+		// session one's minutes on top. This is the test that notices.
+		clock([T0, T0 + 2 * SEC, T0 + 3 * SEC, T0 + 4 * SEC, T0 + 9 * SEC, T0 + 14 * SEC]);
+		const r = recorder();
+		r.typed(2); // keys at +0 and +2 s, end at +3 s: 3 s of practice
+		await r.rec.end();
+		r.typed(2); // fresh span: keys 5 s apart, end 5 s later — 5 + 5
+		await r.rec.end();
+		expect(r.charges).toEqual([3 * SEC, 10 * SEC]);
 	});
 
 	it("charges once and never twice", async () => {
@@ -82,7 +104,6 @@ describe("SessionRecorder day charges", () => {
 		await r.rec.end();
 		await r.rec.end(); // the idle timer and a pagehide can both fire for one session
 		expect(r.charges.length).toBe(1);
-		vi.restoreAllMocks();
 	});
 
 	it("charges on a device that delivers nothing", async () => {
@@ -92,7 +113,6 @@ describe("SessionRecorder day charges", () => {
 		await r.rec.end();
 		expect(r.charges).toEqual([5 * SEC]);
 		expect(r.delivered.length).toBe(0);
-		vi.restoreAllMocks();
 	});
 
 	it("nothing charged when no stroke landed since the session opened", async () => {
@@ -102,6 +122,5 @@ describe("SessionRecorder day charges", () => {
 		await r.rec.end();
 		expect(r.charges.length).toBe(0);
 		expect(r.delivered.length).toBe(0);
-		vi.restoreAllMocks();
 	});
 });

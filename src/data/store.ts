@@ -1,5 +1,5 @@
 import { mergeAll, progressGrowth, type StatMap } from "../stats/stats.ts";
-import type { DailyRow } from "../stats/daily.ts";
+import { foldDaily, type DailyRow } from "../stats/daily.ts";
 import { emptyState as emptySyncState, type SyncState } from "../atproto/sync.ts";
 import type { SessionRow } from "../atproto/records.ts";
 import type { Geometry, Keymap } from "../keyboard/types.ts";
@@ -232,19 +232,27 @@ export async function loadDaily(): Promise<DailyRow[]> {
 }
 
 /**
- * Persist the whole tally. The fold and the 7-day prune happen in the caller's copy (app/daily.ts),
- * so what lands here is exactly what the screen shows — a write that races a torn-down tab can lose
- * the session, but can never double-count one.
+ * Charge `ms` to today's row and return the rows the screen should now read. The read, the fold and
+ * the write happen in one transaction, like `applyRemoteProgress`: a second tab that charged its own
+ * session concurrently is then either already in the read or lands in its own transaction, never
+ * overwritten by this one's wholesale clear. Awaiting a promise between the two would let the
+ * transaction commit out from under the fold, which is how a charge gets lost.
  */
-export async function saveDaily(rows: DailyRow[]): Promise<void> {
-	const db = await open();
-	await new Promise<void>((res, rej) => {
-		const tx = db.transaction(DAILY, "readwrite");
-		const store = tx.objectStore(DAILY);
-		store.clear();
-		for (const r of rows) store.put(r);
-		tx.oncomplete = () => res();
-		tx.onerror = () => rej(tx.error);
+export function chargeDaily(nowMs: number, ms: number): Promise<DailyRow[]> {
+	return open().then((db) => {
+		return new Promise<DailyRow[]>((res, rej) => {
+			const tx = db.transaction(DAILY, "readwrite");
+			const req = tx.objectStore(DAILY).getAll();
+			req.onsuccess = () => {
+				const rows = foldDaily(((req.result as DailyRow[]) ?? []).filter((x) => x && typeof x.day === "string"), nowMs, ms);
+				const store = tx.objectStore(DAILY);
+				store.clear();
+				for (const r of rows) store.put(r);
+				tx.oncomplete = () => res(rows);
+			};
+			req.onerror = () => rej(req.error);
+			tx.onerror = () => rej(tx.error);
+		});
 	});
 }
 

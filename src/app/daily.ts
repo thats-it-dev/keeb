@@ -1,4 +1,4 @@
-import { saveDaily, loadDaily } from "../data/store.ts";
+import { chargeDaily, loadDaily } from "../data/store.ts";
 import { foldDaily, type DailyRow } from "../stats/daily.ts";
 
 // The goal in minutes, per browser — the same kind of slot the layout selection lives in. It is not
@@ -24,12 +24,19 @@ export class DailyTally {
 			.catch(() => undefined);
 	}
 
-	/** Charge one finished session: fold first, so the screen is right even when the tab dies before
-	 *  the write lands, then persist exactly what the page is showing. */
+	/** Charge one finished session: fold into the memory copy first so the screen is right even when the
+	 *  tab dies before the write lands, then adopt what the one-transaction store fold says — that one
+	 *  is the truth across tabs. */
 	record(ms: number): void {
-		this.rows = foldDaily(this.rows, Date.now(), ms);
+		const now = Date.now();
+		this.rows = foldDaily(this.rows, now, ms);
 		this.repaint();
-		void saveDaily(this.rows).catch(() => undefined);
+		void chargeDaily(now, ms)
+			.then((rows) => {
+				this.rows = rows;
+				this.repaint();
+			})
+			.catch(() => undefined);
 	}
 }
 

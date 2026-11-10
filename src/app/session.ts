@@ -51,7 +51,7 @@ export class SessionRecorder {
 	begin(): void {
 		const t = Date.now();
 		if (this.#startedAt) {
-			this.#typingMs += Math.min(t - this.#lastKeyAt, GAP_CAP_MS);
+			this.#typingMs += Math.min(Math.max(0, t - this.#lastKeyAt), GAP_CAP_MS);
 			this.#lastKeyAt = t;
 			return;
 		}
