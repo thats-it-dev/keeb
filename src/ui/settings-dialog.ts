@@ -10,6 +10,10 @@ export type SettingsProps = {
 	keymapId: string;
 	/** The goal as the learner types it, in words per minute; storage keeps characters. */
 	goalWpm: number;
+	/** Teach in keyboard order rather than by how often the language uses each letter. */
+	keyboardOrder: boolean;
+	/** Take words from the corpus instead of inventing them from the letter model. */
+	realWords: boolean;
 	did: string;
 	handle: string;
 	syncNote: string;
@@ -20,6 +24,8 @@ export type SettingsProps = {
 	onClick: (e: MouseEvent) => void;
 	onPick: (part: "g" | "k", value: string) => void;
 	onGoal: (e: Event) => void;
+	/** A curriculum switch: which letters come next, and where the words come from. */
+	onCurriculum: (part: "keyboardOrder" | "realWords", on: boolean) => void;
 	onUpload: (e: Event) => void;
 	onHandle: (value: string) => void;
 	onSignIn: () => void;
@@ -53,6 +59,10 @@ export function settingsDialog(p: SettingsProps) {
 						${p.keymaps.map((k) => html`<option value=${k.id} ?selected=${k.id === p.keymapId}>${k.name}</option>`)}
 					</select></label>
 				<label><span class="label">goal wpm</span><input type="number" min="15" max="120" step="5" .value=${String(p.goalWpm)} @change=${p.onGoal} /></label>
+				<!-- The curriculum switches, in words a learner has. Both change what the next line contains,
+				     so neither belongs in a place you discover by accident. -->
+				<label class="full"><input type="checkbox" .checked=${p.keyboardOrder} @change=${(e: Event) => p.onCurriculum("keyboardOrder", (e.target as HTMLInputElement).checked)} /> <span class="label">teach in keyboard order</span></label>
+				<label class="full"><input type="checkbox" .checked=${p.realWords} @change=${(e: Event) => p.onCurriculum("realWords", (e.target as HTMLInputElement).checked)} /> <span class="label">use real words</span></label>
 				<label><span class="label">layout file</span><input type="file" accept=".json,application/json" @change=${p.onUpload} /></label>
 				<div class="full sync">
 					${p.did

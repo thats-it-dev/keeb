@@ -91,19 +91,19 @@ const memStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncS
 	};
 };
 
-const stats = (id: string, ttMs16: number, samples: number): StatMap => ({ [id]: { ttMs16, samples, errors: 0 } });
+const stats = (id: string, ttMs16: number, samples: number): StatMap => ({ [id]: { ttMs16, bestMs16: ttMs16, samples, errors: 0 } });
 
 describe("sync", () => {
 	it("pulls progress and settings from the repo", async () => {
 		const now = Math.round(Date.now() / 1000);
 		const { session } = fake({
-			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/2222abc`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16: 3200, samples: 10, errors: 1 }], updatedAt: now } }],
-			[SETTINGS]: [{ uri: `at://${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, unlocked: ["a"], updatedAt: now } }],
+			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/2222abc`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 }], updatedAt: now } }],
+			[SETTINGS]: [{ uri: `at://${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, keyboardOrder: true, realWords: false, updatedAt: now } }],
 		});
 		const store = memStore();
 		const res = await new Sync(session, store).pull();
-		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 3200, samples: 10, errors: 1 } });
-		expect(res.settings).toEqual({ geometry: "corne", keymap: "workman", targetCpm: 240, unlocked: ["a"] });
+		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 } });
+		expect(res.settings).toEqual({ geometry: "corne", keymap: "workman", targetCpm: 240, keyboardOrder: true, realWords: false });
 		// The rkey is remembered, so the next push updates that record instead of starting a second one.
 		expect(store.state.progressRkeys["go60+qwerty"]).toBe("2222abc");
 	});
@@ -147,7 +147,7 @@ describe("sync", () => {
 			[SESSION]: [],
 		});
 		const res = await new Sync(session, memStore()).pull();
-		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 2000, samples: 7, errors: 0 } });
+		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 2000, bestMs16: 2000, samples: 7, errors: 0 } });
 	});
 
 	it("writes a session and its progress with validate:false, the only way a hosted PDS accepts these", async () => {
@@ -254,7 +254,7 @@ describe("sync", () => {
 			await store.save({ ...store.state, progressSeen: { ...store.state.progressSeen, "go60+qwerty": remote } });
 		};
 		await round();
-		expect(local.a).toEqual({ ttMs16: 2800, samples: 20, errors: 1 }); // 100ms and 250ms, evenly weighted
+		expect(local.a).toEqual({ ttMs16: 2800, bestMs16: 1600, samples: 20, errors: 1 }); // 100ms and 250ms, evenly weighted
 		rows[PROGRESS] = [rec(30, 3840, 3)]; // the other device practises: 20 more strokes
 		await round();
 		await round(); // and says nothing the second time

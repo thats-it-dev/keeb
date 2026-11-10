@@ -69,14 +69,23 @@ floating point type, so the numbers that work in the browser are already the num
    mean moves 1/16 of the way toward each timed stroke, and a stroke more than four times the current mean
    counts as that multiple — a keystroke interval is evidence about typing, the gap after you went to make
    tea is evidence about the kettle.
-2. `confidence = goal time-per-key / your time-per-key`. 1.0 means you hit the goal on that key.
-3. The starting group is the whole home row, which is where real English words become possible.
-4. The next key unlocks when every key you have practised is at the goal speed, **and** — past the starting
-   group — the newest key you were given has been typed at speed. That second half is what keeps letters
-   arriving one at a time. Keys inside the starting group that no home-row word contains (`j`, `k`) do not
-   block, or the ladder deadlocks at nine.
-5. Word weight is `frequency × (1 + weakness)`, so weak keys come back without an obvious loop.
-6. Progress is written to IndexedDB on every keystroke, keyed `geometry+keymap`. Offline is the
+2. `confidence = goal time-per-key / your time-per-key`. 1.0 means you hit the goal on that key. Each key
+   also keeps `bestMs16`, the fastest that mean has ever run. The curriculum reads the best; every screen
+   reads the current one.
+3. A new learner starts on the six letters the corpus uses most (`e a s r t n`), not on a home row. Six
+   letters are the fewest that can spell something; the row they live on is the keymap's business, not the
+   lesson's. `keyboardOrder` in Settings ranks by row cost instead — home row, then upper, then the rest,
+   most frequent letter first inside a row.
+4. The next letter arrives when every letter already in play has been at goal speed **at some point** —
+   best confidence, not this week's. A letter that has just been handed out has never been good enough, so
+   exactly one letter joins per round. See `src/lesson/ladder.ts`.
+5. The lesson is built around `focus`: the included letter with the lowest best confidence. It is ringed on
+   the board, named in the readout, marked in the progress list, and present in every word of the line.
+6. Words come from a letter n-gram model trained on the corpus, because six letters of real English is a
+   shelf of about four words and repeating them is not practice. `realWords` in Settings switches the source
+   to the corpus and lets the model top up a thin pool. Both sources run the same rejection list.
+7. Word weight is `frequency × (1 + weakness)`, so weak keys come back without an obvious loop.
+8. Progress is written to IndexedDB on every keystroke, keyed `geometry+keymap`. Offline is the
    default; sync is an add-on.
 
 ## Progress
@@ -91,6 +100,7 @@ floating point type, so the numbers that work in the browser are already the num
 | M5 publish the lexicons, DNS authority, stats screen | shipped on `main` |
 | M5.1 practice history — read the session records back and chart them | in review |
 | M6 shareable layouts — publish a `layout` record, browse and load one | in review |
+| keybr-style guided lesson — six letters, one focus, generated words, unlock on best | in review (see `docs/spec.md`) |
 
 ## Data model
 
@@ -133,11 +143,18 @@ Publishing is worth doing for the record, but it does not move validation to the
 | --- | --- | --- |
 | `app.thatsit.typing.defs` | — | shared objects: `#keyGeometry`, `#charMap`, `#keyStats` |
 | `app.thatsit.typing.layout` | `tid` | a shareable layout: geometry + character map |
-| `app.thatsit.typing.settings` | `literal:self` | active layout, target speed |
-| `app.thatsit.typing.progress` | `tid` per layout | per-key samples; additive, so two devices merge by summing |
+| `app.thatsit.typing.settings` | `literal:self` | active layout, target speed, and the two curriculum switches |
+| `app.thatsit.typing.progress` | `tid` per layout | per-key samples and each key's fastest mean; additive, so two devices merge by summing |
 | `app.thatsit.typing.session` | `tid` | one practice session, oldest pruned past ~50 |
 
 No keystroke ever becomes a record. Records are per-session aggregates.
+
+Three fields are new in this round and all three are **optional**, which is what lets an old device keep
+writing while a new one reads: `#keyStats.#row.bestMs16`, and `keyboardOrder` / `realWords` on `settings`.
+A record that predates them is not migrated — `bestMs` falls back to the key's current mean, the honest
+claim a record with no memory of its own past can make. Adding the fields to the published schemas needs
+`npm run lexicons:publish` with `--update`; until that is done, nothing breaks, because the PDS is not the
+thing validating these writes.
 
 ## Signing in and sync (M4)
 
@@ -217,6 +234,15 @@ which board it belongs to — and the files above already describe the board.
 
 ## Notes for whoever picks this up
 
+- **Do not store which letters are unlocked.** It is a verdict, and `ladder()` recomputes it from the stats
+   on every line. A stored copy is a second answer to the same question, and the two disagree the first time
+   a device syncs numbers the other has not seen. That field used to exist on `settings`; it is gone.
+- `bestMs16` merges with `min`, never `max` and never a difference. `min` is the one combine that is
+   idempotent, commutative and associative, so folding your own progress record back in cannot invent a
+   faster key — and it means a key you once typed at goal speed stays taught through the week you did not.
+- The n-gram model needs the rejection list *at generation time*, not only in the training data. A model
+   trained on clean words will still produce `fuck`-shaped strings, because it stores letter patterns and
+   not intentions. `isCleanWord` is called by both `scripts/make-corpus.ts` and `src/lesson/model.ts`.
 - A `progress` record is a **shared accumulator**, not a device's own diary: `flush()` writes this
   browser's whole merged map into it, so the next pull hands our own numbers back. Folding that in as if it
   were somebody else's evidence added our strokes to our strokes, and every sync doubled the sample and

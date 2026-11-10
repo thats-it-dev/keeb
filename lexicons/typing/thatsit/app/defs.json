@@ -145,6 +145,9 @@
 				"ttMs16": {
 					"type": "integer"
 				},
+				"bestMs16": {
+					"type": "integer"
+				},
 				"samples": {
 					"type": "integer"
 				},

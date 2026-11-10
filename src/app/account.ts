@@ -10,11 +10,13 @@ import type { StatMap } from "../stats/stats.ts";
 
 /** The page as the account layer sees it: read what is on screen, write back what the repo said. */
 export type AccountHost = {
-	read(): { geometryId: string; keymapId: string; targetCpm: number; stats: StatMap; sessions: SessionRow[]; layouts: Layouts };
+	read(): { geometryId: string; keymapId: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean; stats: StatMap; sessions: SessionRow[]; layouts: Layouts };
 	writeStats(stats: StatMap): void;
 	writeSessions(sessions: SessionRow[]): void;
 	writeLayouts(layouts: Layouts): void;
 	writeGoal(targetCpm: number): void;
+	/** The curriculum switches, adopted from a settings record. */
+	writeCurriculum(curriculum: { keyboardOrder?: boolean; realWords?: boolean }): void;
 	/** Re-read the current layout from storage; the engine holds its own copy of the stats. */
 	reload(): void;
 	/** Change the selection through the page, so the open session closes on the old layout first. */
@@ -113,13 +115,14 @@ export class Account {
 			}
 			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
 			// over on a quiet page: at boot, or when they press Sync.
-			if (adapt && (settings.geometry || settings.keymap || settings.targetCpm)) {
+			if (adapt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) {
 				const now = h.read();
 				// An id this browser cannot resolve is skipped, not adopted: the account may name a board whose
 				// file never arrived, and selecting it would render a page with no keys on it.
 				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : now.geometryId;
 				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : now.keymapId;
 				if (settings.targetCpm) h.writeGoal(settings.targetCpm);
+				h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
 				if (g !== now.geometryId || k !== now.keymapId) h.select(g, k);
 				else h.reload();
 			}
@@ -131,7 +134,7 @@ export class Account {
 		}
 		const after = h.read();
 		try {
-			await sync.pushSettings({ geometry: after.geometryId, keymap: after.keymapId, targetCpm: after.targetCpm, unlocked: [] }, Date.now());
+			await sync.pushSettings({ geometry: after.geometryId, keymap: after.keymapId, targetCpm: after.targetCpm, keyboardOrder: after.keyboardOrder, realWords: after.realWords }, Date.now());
 		} catch (err) {
 			notes.push(`settings not sent: ${(err as Error).message}`);
 		}

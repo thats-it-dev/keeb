@@ -1,9 +1,10 @@
 import { LitElement, html, nothing } from "https://kit.thatsit.app/lit.js";
 import { allGeometries, geometryById } from "./data/geometries.ts";
 import { allKeymaps, keymapById } from "./data/keymaps.ts";
-import { layoutKey, loadHistory, loadSettings, loadStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { layoutKey, loadHistory, loadSettings, loadStats, saveSettings, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { type SessionRow } from "./atproto/records.ts";
 import { cpmToWpm, targetTimeMs, wpmToCpm, type StatMap } from "./stats/stats.ts";
+import { ladder } from "./lesson/ladder.ts";
 import { overview, type KeyInfo } from "./stats/overview.ts";
 import { historySection } from "./stats/history-section.ts";
 import { insightPanel, type PanelCard } from "./stats/panel.ts";
@@ -26,7 +27,7 @@ import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true } };
 	static styles = appStyles;
 
 	geometryId = savedSelection().g;
@@ -37,6 +38,10 @@ export class AppMain extends LitElement {
 	// a preview visit must not be able to write a made-up session into a real repo or a real device.
 	demo = demoFromUrl();
 	keymapId = savedSelection().k;
+	// Which letters the lesson hands out, and where it gets its words from. Both live in the stored
+	// settings; these are the reactive copies the page renders from.
+	keyboardOrder = false;
+	realWords = false;
 	// Layout files the learner imported, straight out of IndexedDB.
 	boards: Geometry[] = [];
 	maps: Keymap[] = [];
@@ -46,7 +51,7 @@ export class AppMain extends LitElement {
 	did = "";
 	syncNote = "";
 	#account: Account = new Account({
-		read: () => ({ geometryId: this.geometryId, keymapId: this.keymapId, targetCpm: this.targetCpm, stats: this.stats, sessions: this.sessions, layouts: { boards: this.boards, maps: this.maps } }),
+		read: () => ({ geometryId: this.geometryId, keymapId: this.keymapId, targetCpm: this.targetCpm, keyboardOrder: this.keyboardOrder, realWords: this.realWords, stats: this.stats, sessions: this.sessions, layouts: { boards: this.boards, maps: this.maps } }),
 		writeStats: (stats) => (this.stats = stats),
 		writeSessions: (sessions) => (this.sessions = sessions),
 		writeLayouts: ({ boards, maps }) => {
@@ -54,6 +59,11 @@ export class AppMain extends LitElement {
 			this.maps = maps;
 		},
 		writeGoal: (targetCpm) => (this.targetCpm = targetCpm),
+		writeCurriculum: (curriculum) => {
+			this.settings = { ...this.settings, ...curriculum };
+			this.keyboardOrder = curriculum.keyboardOrder ?? this.keyboardOrder;
+			this.realWords = curriculum.realWords ?? this.realWords;
+		},
 		reload: () => void this.#load({ g: this.geometryId, k: this.keymapId }),
 		pick: (geometryId, keymapId) => {
 			this.#pick("g", geometryId);
@@ -147,6 +157,8 @@ export class AppMain extends LitElement {
 		const [stored, settings] = await Promise.all([loadStats(key), loadSettings(key)]);
 		if (this.#pending !== token) return; // a newer selection won the race
 		this.settings = { ...DEFAULT_SETTINGS, ...settings, geometry: sel.g, keymap: sel.k };
+		this.keyboardOrder = this.settings.keyboardOrder;
+		this.realWords = this.settings.realWords;
 		rememberSelection(sel);
 		this.#session.seed(stored);
 		this.stats = stored;
@@ -211,6 +223,15 @@ export class AppMain extends LitElement {
 		if (Number.isFinite(v) && v >= 15 && v <= 120) this.targetCpm = wpmToCpm(v);
 	}
 
+	// The two curriculum switches. They are stored with the goal, and they change which letters are in play,
+	// so the practice pane restarts its line on them.
+	#curriculum(part: "keyboardOrder" | "realWords", on: boolean): void {
+		this.settings = { ...this.settings, [part]: on };
+		if (part === "keyboardOrder") this.keyboardOrder = on;
+		else this.realWords = on;
+		void saveSettings(layoutKey(this.geometryId, this.keymapId), this.settings);
+	}
+
 	// The file picker: what a layout file means is app/boards.ts's business, and this only says which list
 	// on screen the result belongs to.
 	async #upload(e: Event): Promise<void> {
@@ -252,6 +273,10 @@ export class AppMain extends LitElement {
 		const r = this.#resolved;
 		const geo = geometryById(this.geometryId);
 		const cards = this.#cards();
+		// Once per render: the readout, the progress rows and the ring on the board all have to agree about
+		// which letter the lesson is built around, and three calls to #overview() would be three chances to
+		// disagree about the stats it reads.
+		const o = this.ready ? this.#overview() : undefined;
 		// The insights panel is the kit shell's aside: a docked column from 900px, a drawer below it. The shell
 		// owns the folding, the drawer, the Escape key and the remembered choice (store-key); it starts open
 		// only on a branch preview, where the history section carries the only demo-sessions prompt.
@@ -269,6 +294,8 @@ export class AppMain extends LitElement {
 							geometryId: this.geometryId,
 							keymapId: this.keymapId,
 							goalWpm: cpmToWpm(this.targetCpm),
+							keyboardOrder: this.keyboardOrder,
+							realWords: this.realWords,
 							did: this.did,
 							handle: this.#account.handle,
 							syncNote: this.syncNote,
@@ -279,6 +306,7 @@ export class AppMain extends LitElement {
 							onClick: this.#onDialogClick,
 							onPick: (part, value) => this.#pick(part, value),
 							onGoal: (e) => this.#goal(e),
+							onCurriculum: (part, on) => this.#curriculum(part, on),
 							onUpload: (e) => void this.#upload(e),
 							onHandle: (v) => (this.#account.handle = v),
 							// Signing in, syncing and publishing are the account's business; see app/account.ts. Each leaves
@@ -291,11 +319,11 @@ export class AppMain extends LitElement {
 							onRemoveMap: (id) => void this.#removeMap(id),
 						})}
 						<div class="col">
-							${this.ready ? readout(cpmToWpm(this.nowCpm), this.#overview().avgWpm, cpmToWpm(this.targetCpm)) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
+							${o ? readout({ nowWpm: cpmToWpm(this.nowCpm), avgWpm: o.avgWpm, goalWpm: cpmToWpm(this.targetCpm), focusLabel: o.focusLabel }) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
 							${this.ready
-								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
+								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords}></tt-practice>`
 								: nothing}
-							<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
+							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""}></tt-keyboard>
 							<div class="row">
 								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 								${lastKey(r, this.lastId)}
@@ -305,7 +333,7 @@ export class AppMain extends LitElement {
 					</main>
 				</div>
 				<section slot="aside" class="insights">
-					${this.ready ? progressSection(this.#overview(), targetTimeMs(this.targetCpm)) : nothing}
+					${o ? progressSection(o, targetTimeMs(this.targetCpm)) : nothing}
 					${this.#history()}
 					${insightCards(cards)}
 				</section>
@@ -313,13 +341,13 @@ export class AppMain extends LitElement {
 		`;
 	}
 
-	// The screen reads from the same derived numbers as the ladder, so "at goal" here and "unlocks next"
-	// in the engine cannot mean different things.
+	// The screen reads from the same derived numbers as the ladder, so "at goal" here and "unlocks next" in
+	// the engine cannot mean different things. One call per render; the model behind it is memoised.
 	#overview() {
 		const r = this.#resolved;
 		const keys: KeyInfo[] = r.keys.map((k) => ({ id: k.id, label: keyLabel(k), hand: k.hand === "l" ? "left" : "right" }));
-		const unlocked = this.settings.unlocked?.length ? this.settings.unlocked : keys.map((k) => k.id).slice(0, 9);
-		return overview(this.stats, this.targetCpm, keys, unlocked);
+		const l = ladder(r, this.stats, this.targetCpm, { keyboardOrder: this.keyboardOrder });
+		return overview(this.stats, this.targetCpm, keys, { unlocked: l.unlocked, next: l.next, focus: l.focus });
 	}
 
 	#history() {

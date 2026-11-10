@@ -5,7 +5,7 @@
 // all the decisions live here.
 import { TID } from "@atproto/common-web";
 import { LAYOUT, PROGRESS, SETTINGS, SESSION } from "./lexicons.ts";
-import { mergeAll, progressGrowth, type KeyStat, type StatMap } from "../stats/stats.ts";
+import { bestMs, mergeAll, progressGrowth, type KeyStat, type StatMap } from "../stats/stats.ts";
 import { ROW_ROLE_VALUES, type Geometry, type Key, type Keymap, type RowRole } from "../keyboard/types.ts";
 import { rolesForRows } from "../layout/parse.ts";
 import type { Settings } from "../data/store.ts";
@@ -129,19 +129,23 @@ export function layoutFromRecord(rec: Record<string, unknown> | undefined): Shar
 export const keyStats = (stats: StatMap) =>
 	Object.entries(stats)
 		.sort((a, b) => (a[0] < b[0] ? -1 : 1))
-		.map(([id, s]) => ({ keyId: str(id), ttMs16: n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) }));
+		.map(([id, s]) => ({ keyId: str(id), ttMs16: n(s.ttMs16), bestMs16: n(bestMs(s)), samples: n(s.samples), errors: n(s.errors) }));
 
-export function statsFrom(list: ({ ttMs16: number; samples: number; errors: number } & WireKeyId)[]): StatMap {
+export function statsFrom(list: ({ ttMs16: number; bestMs16?: number; samples: number; errors: number } & WireKeyId)[]): StatMap {
 	const out: StatMap = {};
 	for (const s of list ?? []) {
 		const id = wireKeyId(s ?? { ttMs16: 0, samples: 0, errors: 0 });
 		if (!id) continue;
-		out[id] = { ttMs16: n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) };
+		// A record from before `bestMs16` carries no `bestMs16` at all, so the mean it does carry is the best it
+		// can honestly claim. Where both are present the best wins, and `min` normalises a record whose mean
+		// somehow reads faster than the fastest mean it claims to have held.
+		const claim = n(s.bestMs16);
+		out[id] = { ttMs16: n(s.ttMs16), bestMs16: claim > 0 ? Math.min(claim, n(s.ttMs16)) : n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) };
 	}
 	return out;
 }
 
-export type SettingsRecord = { $type: string; geometry: string; keymap: string; targetCpm: number; updatedAt: number; unlocked: string[] };
+export type SettingsRecord = { $type: string; geometry: string; keymap: string; targetCpm: number; updatedAt: number; keyboardOrder: boolean; realWords: boolean };
 
 export function settingsRecord(s: Settings, nowMs: number): SettingsRecord {
 	return {
@@ -150,7 +154,8 @@ export function settingsRecord(s: Settings, nowMs: number): SettingsRecord {
 		keymap: str(s.keymap),
 		targetCpm: n(s.targetCpm),
 		updatedAt: clockSeconds(nowMs),
-		unlocked: (s.unlocked ?? []).map((id) => str(id)),
+		keyboardOrder: s.keyboardOrder === true,
+		realWords: s.realWords === true,
 	};
 }
 
@@ -161,7 +166,8 @@ export function fromSettingsRecord(rec: Record<string, unknown> | undefined): Pa
 	if (typeof rec.geometry === "string") out.geometry = rec.geometry;
 	if (typeof rec.keymap === "string") out.keymap = rec.keymap;
 	if (typeof rec.targetCpm === "number") out.targetCpm = n(rec.targetCpm);
-	if (Array.isArray(rec.unlocked)) out.unlocked = rec.unlocked.filter((x): x is string => typeof x === "string");
+	if (typeof rec.keyboardOrder === "boolean") out.keyboardOrder = rec.keyboardOrder;
+	if (typeof rec.realWords === "boolean") out.realWords = rec.realWords;
 	return out;
 }
 

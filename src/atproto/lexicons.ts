@@ -46,11 +46,13 @@ const char = {
 };
 
 // The fixed-point form of KeyStat. Weighting the mean by `samples` is what lets two devices merge
-// without a coordinator, so all three fields travel together.
+// without a coordinator, so all three fields travel together. `bestMs16` is the exception: it is a `min`,
+// not a sum, and it is optional because every record written before it existed has no memory of its own
+// past — `statsFrom` falls back to the current mean there.
 const keyStat = {
 	type: "object",
 	required: ["keyId", "ttMs16", "samples", "errors"],
-	properties: { keyId: string, ttMs16: integer, samples: integer, errors: integer },
+	properties: { keyId: string, ttMs16: integer, bestMs16: integer, samples: integer, errors: integer },
 };
 
 export const defs = {

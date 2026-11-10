@@ -31,15 +31,23 @@ describe("lexicons", () => {
 	});
 
 	it("accept the settings record the app writes", () => {
-		const rec = settingsRecord({ geometry: "go60", keymap: "colemak_dh", targetCpm: 200, unlocked: ["a", "s"] }, Date.now());
+		const rec = settingsRecord({ geometry: "go60", keymap: "colemak_dh", targetCpm: 200, keyboardOrder: true, realWords: false }, Date.now());
 		expect(check(rec as unknown as Record<string, unknown>)).toEqual([]);
+		// Which letters are open is a verdict about this learner's numbers, not a preference, so it is not
+		// something a record is allowed to carry.
+		expect(rec).not.toHaveProperty("unlocked");
 	});
 
 	it("accept a progress record and read it back unchanged", () => {
-		const stats = { a: { ttMs16: 3200, samples: 10, errors: 1 }, f: { ttMs16: 900, samples: 3, errors: 0 } };
+		const stats = { a: { ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 }, f: { ttMs16: 900, bestMs16: 600, samples: 3, errors: 0 } };
 		const rec = progressRecord("go60+qwerty", stats, Date.now());
 		expect(check(rec as unknown as Record<string, unknown>)).toEqual([]);
 		expect(statsFrom(rec.stats)).toEqual(stats);
+		// `bestMs16` is optional on the wire, so a record from a device that predates it still validates, and
+		// reads back claiming the only figure it has: its own mean.
+		const legacy = { a: { ttMs16: 3200, samples: 10, errors: 1 } };
+		expect(check(progressRecord("go60+qwerty", legacy, Date.now()) as unknown as Record<string, unknown>)).toEqual([]);
+		expect(statsFrom([{ keyId: "a", ttMs16: 3200, samples: 10, errors: 1 } as never])).toEqual({ a: { ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 } });
 	});
 
 	it("accept a session record", () => {

@@ -1,7 +1,7 @@
 // The per-key mean is the number every other screen reads: the keycap, the goal bar, the ladder, the
 // headline wpm. These are the tests for what goes INTO it.
 import { describe, expect, it } from "vitest";
-import { emptyStat, hasTiming, merge, observe, observeError, progressGrowth, timeToTypeMs, type KeyStat } from "../src/stats/stats.ts";
+import { bestTimeMs, emptyStat, hasTiming, merge, observe, observeError, progressGrowth, timeToTypeMs, type KeyStat } from "../src/stats/stats.ts";
 
 const stroke = (ms: number) => Math.round(ms) * 16;
 
@@ -46,7 +46,18 @@ describe("the per-key average", () => {
 		// No prior mean means nothing to weight against. This is what the run-boundary test in
 		// lesson.test.ts reads back, and what the session-diffing in insights.ts inverts.
 		expect(observe(emptyStat(), 200).ttMs16).toBe(stroke(200));
-		expect(observeError(emptyStat(), 200)).toEqual({ ttMs16: stroke(200), samples: 1, errors: 1 });
+		expect(observeError(emptyStat(), 200)).toEqual({ ttMs16: stroke(200), bestMs16: stroke(200), samples: 1, errors: 1 });
+	});
+
+	it("keeps the fastest mean, not the latest one", () => {
+		// What the curriculum unlocks on. A key that touched goal speed and then spent an hour hunting and
+		// pecking must still read as taught, or the ladder hands the letter out again.
+		let s = observe(emptyStat(), 200);
+		s = observe(s, 4_000); // the outlier ceiling files this as the slowest keystroke the key has evidence for
+		expect(timeToTypeMs(s)).toBeGreaterThan(200); // the running mean did go slow
+		expect(bestTimeMs(s)).toBe(200); // and the curriculum still reads the fastest it ever ran
+		// And the claim only ever gets faster: a slow streak cannot lower it.
+		expect(bestTimeMs(observe(s, 4_000))).toBe(200);
 	});
 
 	it("caps a cold key's seed so a first pause cannot stick for a hundred strokes", () => {

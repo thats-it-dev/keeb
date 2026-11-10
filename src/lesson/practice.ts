@@ -6,7 +6,7 @@ import type { Resolved } from "../keyboard/resolve.ts";
 // The typing pane. It owns the lesson engine and reports every keystroke back up, so the keyboard
 // view can highlight the key and the store can persist it.
 export class TtPractice extends LitElement {
-	static properties = { resolved: { type: Object }, targetCpm: { type: Number }, stats: { type: Object }, cursor: { state: true } };
+	static properties = { resolved: { type: Object }, targetCpm: { type: Number }, stats: { type: Object }, keyboardOrder: { type: Boolean }, realWords: { type: Boolean }, cursor: { state: true } };
 	static styles = css`
 		/* keybr-style line: plain text, no box, no caret. Colour carries what is typed, wrong, next. */
 		.line { font-size: 1.5rem; line-height: 2.4; margin: 0; overflow-wrap: break-word; text-align: center; }
@@ -24,6 +24,9 @@ export class TtPractice extends LitElement {
 	resolved?: Resolved;
 	targetCpm = 200;
 	stats: StatMap = {};
+	// The two curriculum switches. They change which letters are in play, so a change restarts the line.
+	keyboardOrder = false;
+	realWords = false;
 	engine?: ReturnType<typeof start>;
 	// Where the learner is in the line, exposed as a reactive property so tests and callers can read it.
 	cursor = 0;
@@ -32,16 +35,28 @@ export class TtPractice extends LitElement {
 	instantCpm = 0;
 
 	updated(changed: Map<string, unknown>) {
-		if (!this.engine && this.resolved) this.begin();
-		else if (changed.has("resolved") && this.resolved) this.begin();
+		const restart = changed.has("resolved") || changed.has("keyboardOrder") || changed.has("realWords");
+		if (!this.engine || (restart && this.resolved)) this.begin();
 	}
 
 	begin(): void {
 		if (!this.resolved) return;
-		this.engine = start(this.resolved, this.stats, this.targetCpm);
+		this.engine = start(this.#course, this.stats);
 		this.cursor = 0;
 		this.wrong = new Set();
 		this.requestUpdate();
+	}
+
+	// The engine and the screens above it read the curriculum through this one object, so a line can never
+	// be built by rules the display is showing something else.
+	get #course() {
+		return { resolved: this.resolved!, targetCpm: this.targetCpm, keyboardOrder: this.keyboardOrder, realWords: this.realWords };
+	}
+
+	/** The key this line is built around, for the board and the readout. Not `focus`: HTMLElement already
+	 *  owns that name for moving the DOM focus. */
+	get focusId(): string | undefined {
+		return this.engine?.ladder.focus;
 	}
 
 	// Returns the key id to highlight, so the parent can drive the keyboard view from one event.
@@ -50,7 +65,7 @@ export class TtPractice extends LitElement {
 		const before = this.cursor;
 		// Compare against the line that was on screen: after press() this.engine.text is the *next* run.
 		const expected = [...this.engine.text][before] ?? "";
-		const res = press(this.engine, this.resolved, typed, now, this.targetCpm);
+		const res = press(this.#course, this.engine, typed, now);
 		this.engine = res.engine;
 		if (res.elapsedMs > 0) this.instantCpm = cpmFrom(res.elapsedMs);
 		// Marks belong to a line. When a run ends the line is replaced, so its colours go with it;

@@ -20,11 +20,13 @@ export type Settings = {
 	keymap: string;
 	// Target speed in characters per minute.
 	targetCpm: number;
-	// Key ids the learner has unlocked, in teaching order.
-	unlocked: string[];
+	// Hand the letters out in keyboard order (cheapest row first) instead of language-frequency order.
+	keyboardOrder: boolean;
+	// Practise words from the corpus instead of words the letter model invents.
+	realWords: boolean;
 };
 
-export const DEFAULT_SETTINGS: Settings = { geometry: "go60", keymap: "qwerty", targetCpm: 200, unlocked: [] };
+export const DEFAULT_SETTINGS: Settings = { geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false };
 
 let dbp: Promise<IDBDatabase> | undefined;
 

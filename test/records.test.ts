@@ -10,7 +10,10 @@ import type { StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
 
-const stat = (ttMs16: number, samples: number, errors = 0) => ({ ttMs16, samples, errors });
+// A record's own shape: `bestMs16` is the field the curriculum reads, and a writer always sends it, so every
+// expectation built from here carries it. What it carries is the mean, which is what a key with no memory of
+// ever having been faster honestly claims.
+const stat = (ttMs16: number, samples: number, errors = 0) => ({ ttMs16, bestMs16: ttMs16, samples, errors });
 
 describe("records", () => {
 	it("stores only integers, even when the source is fractional", () => {
@@ -21,7 +24,7 @@ describe("records", () => {
 			expect(Number.isInteger(k.w)).toBe(true);
 		}
 		// A NaN from a divide-by-zero somewhere upstream must not become null on the wire.
-		expect(keyStats({ q: stat(NaN, undefined as unknown as number) })).toEqual([{ keyId: "q", ttMs16: 0, samples: 0, errors: 0 }]);
+		expect(keyStats({ q: stat(NaN, undefined as unknown as number) })).toEqual([{ keyId: "q", ttMs16: 0, bestMs16: 0, samples: 0, errors: 0 }]);
 	});
 
 	it("keeps a geometry round-tripping, which is the part that broke in M1", () => {
@@ -56,7 +59,7 @@ describe("records", () => {
 	});
 
 	it("writes settings under the self key and reads back what it wrote", () => {
-		const s = { geometry: "corne", keymap: "workman", targetCpm: 240, unlocked: ["a", "s", "d"] };
+		const s = { geometry: "corne", keymap: "workman", targetCpm: 240, keyboardOrder: true, realWords: false };
 		const rec = settingsRecord(s, 1_700_000_000_500);
 		expect(rec.$type).toBe(SETTINGS);
 		expect(rec.updatedAt).toBe(1_700_000_001);
@@ -74,7 +77,7 @@ describe("records", () => {
 		const local: StatMap = { a: stat(3200, 10, 1) }; // 200ms per key
 		const remote: StatMap = { a: stat(4800, 30, 2), b: stat(1600, 4) };
 		const m = mergeProgress(local, remote);
-		expect(m.a).toEqual({ ttMs16: 4400, samples: 40, errors: 3 });
+		expect(m.a).toEqual({ ttMs16: 4400, bestMs16: 3200, samples: 40, errors: 3 });
 		expect(m.b).toEqual(stat(1600, 4));
 		// 4400/16 = 275ms: the slow device's 30 samples dominate, which is the point of weighting.
 		expect(Math.round(m.a!.ttMs16 / 16)).toBe(275);
@@ -193,9 +196,9 @@ describe("session rows", () => {
 		// This field used to be dropped on read. Everything in stats/insights.ts -- per-key trends, hesitation,
 		// goal crossings -- is built from it, and the app looks identical without it except that four cards
 		// quietly fall back to "not enough data". A round trip through the writer is the assertion that holds.
-		const written = sessionRecord("go60+qwerty", { chars: 40, errors: 2, ms: 30_000, stats: { a: { ttMs16: 2400, samples: 12, errors: 2 } } });
+		const written = sessionRecord("go60+qwerty", { chars: 40, errors: 2, ms: 30_000, stats: { a: { ttMs16: 2400, bestMs16: 2400, samples: 12, errors: 2 } } });
 		const row = fromSessionRecord(written as unknown as Record<string, unknown>, newKey());
-		expect(row?.stats).toEqual({ a: { ttMs16: 2400, samples: 12, errors: 2 } });
+		expect(row?.stats).toEqual({ a: { ttMs16: 2400, bestMs16: 2400, samples: 12, errors: 2 } });
 	});
 
 	it("reads an older record that carries no stats as an empty snapshot, not a crash", () => {
