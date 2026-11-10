@@ -1,23 +1,25 @@
 import { LitElement, html, nothing } from "https://kit.thatsit.app/lit.js";
 import { allGeometries, geometryById } from "./data/geometries.ts";
 import { allKeymaps, keymapById } from "./data/keymaps.ts";
-import { layoutKey, loadHistory, loadSettings, loadStats, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { layoutKey, loadHistory, loadSettings, loadStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
 import { type SessionRow } from "./atproto/records.ts";
-import { cpmToWpm, targetTimeMs, totals, wpmToCpm, type StatMap } from "./stats/stats.ts";
+import { cpmToWpm, targetTimeMs, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { overview, type KeyInfo } from "./stats/overview.ts";
 import { historySection } from "./stats/history-section.ts";
-import { demoSessions, isPreviewHost } from "./stats/demo.ts";
 import { insightPanel, type PanelCard } from "./stats/panel.ts";
-import { PANEL_OPEN_KEY } from "./stats/panel-element.ts";
+import { paneSessions } from "./stats/demo.ts";
 import { resolve, keyLabel, type Resolved } from "./keyboard/resolve.ts";
-import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
+import type { Geometry, Keymap } from "./keyboard/types.ts";
 import { iconPanelRight, iconSettings } from "./ui/icons.ts";
 import { appStyles } from "./ui/app-styles.ts";
-import { settingsDialog } from "./ui/settings-dialog.ts";
+import { settingsDialog, syncDialog } from "./ui/settings-dialog.ts";
 import { progressSection } from "./stats/progress-section.ts";
+import { boardNotice, lastKey, readout } from "./ui/practice-line.ts";
 import { Account } from "./app/account.ts";
 import { importLayout, loadLayouts, removeBoard, removeMap, type LayoutChange } from "./app/boards.ts";
 import { rememberSelection, savedSelection } from "./app/selection.ts";
+import { demoFromUrl, panelStartsOpen, rememberDemoInUrl, rememberPanel } from "./app/pane-state.ts";
+import { SessionRecorder } from "./app/session.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
@@ -30,18 +32,12 @@ export class AppMain extends LitElement {
 	settingsOpen = false;
 	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
 	sessions: SessionRow[] = [];
-	// Which way the insight pane is folded. Read here and passed down, because the page has to reserve the same
-	// width the pane takes -- a child that kept this to itself would overlap the content.
-	// Three rules, in order of who wins:
-	//   - on a phone the pane is an off-canvas MENU, and a menu that redeploys itself over the page on every
-	//     load is a bug users would report. The stored choice is ignored there; it always starts closed.
-	//   - a branch preview defaults to OPEN, because the history section lives in the pane and on a preview that
-	//     section carries the only "show demo sessions" prompt: a folded pane would leave a reviewer at a blank rail.
-	//   - anywhere else, whatever the person last chose is what they get.
-	panelOpen = matchMedia("(min-width: 900px)").matches && (localStorage.getItem(PANEL_OPEN_KEY) === null ? isPreviewHost(location.hostname, __APP_NAME__) : localStorage.getItem(PANEL_OPEN_KEY) === "1");
+	// Which way the insight pane is folded. Read here and passed down, because the page has to reserve the
+	// same width the pane takes -- a child that kept this to itself would overlap the content.
+	panelOpen = panelStartsOpen();
 	// Fake history for previews, switched on by ?demo=1. Generated per render and never stored anywhere:
 	// a preview visit must not be able to write a made-up session into a real repo or a real device.
-	demo = new URLSearchParams(location.search).has("demo");
+	demo = demoFromUrl();
 	keymapId = savedSelection().k;
 	// Layout files the learner imported, straight out of IndexedDB.
 	boards: Geometry[] = [];
@@ -51,7 +47,7 @@ export class AppMain extends LitElement {
 	// truth; these two fields are the render-visible copy it pushes through invalidate().
 	did = "";
 	syncNote = "";
-	#account = new Account({
+	#account: Account = new Account({
 		read: () => ({ geometryId: this.geometryId, keymapId: this.keymapId, targetCpm: this.targetCpm, stats: this.stats, sessions: this.sessions, layouts: { boards: this.boards, maps: this.maps } }),
 		writeStats: (stats) => (this.stats = stats),
 		writeSessions: (sessions) => (this.sessions = sessions),
@@ -69,17 +65,21 @@ export class AppMain extends LitElement {
 			this.geometryId = geometryId;
 			this.keymapId = keymapId;
 		},
-		endSession: () => this.#endSession(),
+		endSession: (): Promise<void> => this.#session.end(),
 		invalidate: () => {
 			this.did = this.#account.did;
 			this.syncNote = this.#account.note;
 			this.requestUpdate();
 		},
 	});
-	// What the counters read when the current session started, so a session record holds a delta.
-	#baseline = { chars: 0, errors: 0 };
-	#startedAt = 0;
-	#idleTimer: number | undefined;
+	// The practice session: what the counters read when it started, and the silence that closes it.
+	#session: SessionRecorder = new SessionRecorder({
+		read: () => ({ key: layoutKey(this.geometryId, this.keymapId), geometryId: this.geometryId, keymapId: this.keymapId, stats: this.stats, settings: this.settings, targetCpm: this.targetCpm }),
+		writeStats: (stats) => (this.stats = stats),
+		note: (line) => (this.syncNote = line),
+		connected: (): boolean => this.#account.connected,
+		deliver: (session): Promise<{ sent?: number; error?: string }> => this.#account.pushSession(session),
+	});
 	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
 	ready = false;
 	lastId = "";
@@ -110,7 +110,7 @@ export class AppMain extends LitElement {
 			if (!moved) void this.#load(sel);
 			void this.#account.boot();
 			// Closing the tab ends a practice session; the browser gets one last look at it.
-			window.addEventListener("pagehide", () => void this.#endSession());
+			window.addEventListener("pagehide", () => void this.#session.end());
 		});
 		// Kept out of the call above on purpose. The lesson cannot start until that one resolves, and cached
 		// sessions are an add-on: a history store that rejects or stalls must never be why nobody can type.
@@ -142,10 +142,7 @@ export class AppMain extends LitElement {
 
 	// showModal() and close() are imperative, so the reactive flag drives them once per update.
 	#syncDialog(): void {
-		const dlg = this.renderRoot.querySelector("dialog") as HTMLDialogElement | null;
-		if (!dlg || dlg.open === this.settingsOpen) return;
-		if (this.settingsOpen) dlg.showModal();
-		else dlg.close();
+		syncDialog(this.renderRoot, this.settingsOpen);
 	}
 
 	async #load(sel: { g: string; k: string }): Promise<void> {
@@ -158,9 +155,9 @@ export class AppMain extends LitElement {
 		if (this.#pending !== token) return; // a newer selection won the race
 		this.settings = { ...DEFAULT_SETTINGS, ...settings, geometry: sel.g, keymap: sel.k };
 		rememberSelection(sel);
+		this.#session.seed(stored);
 		this.stats = stored;
 		this.targetCpm = this.settings.targetCpm;
-		this.#saved = JSON.stringify(stored);
 		// The switch is safe because ready was false for the whole await, which unmounts <tt-practice>:
 		// #type cannot run, so no keystroke can write another layout's stats under this key. The next render
 		// hands the child the new .resolved, and practice.ts restarts its engine from scratch on that.
@@ -194,70 +191,22 @@ export class AppMain extends LitElement {
 	async #type(ch: string): Promise<void> {
 		const p = this.#practice;
 		if (!p) return;
-		if (!this.#startedAt) this.#startSession();
-		this.#armIdle();
+		this.#session.begin();
+		this.#session.arm();
 		this.lastId = p.key(ch, performance.now()) ?? "";
 		this.nowCpm = p.instantCpm;
 		// Read the engine AFTER the keystroke. p.key() replaces it with a new object; holding the reference
 		// from before the call would persist the stats as they stood one key ago — and on the very first
 		// keystroke that is undefined, so nothing is saved at all.
-		if (p.engine) await this.#flushStats(p.engine);
+		if (p.engine) await this.#session.stroke(p.engine);
 	}
-
-	// A session is the span between two silences, which is what the record is named for: it ends when the
-	// learner walks away, and what they left behind becomes one row on their repo.
-	#startSession(): void {
-		this.#startedAt = Date.now();
-		this.#baseline = totals(this.stats);
-	}
-
-	#armIdle(): void {
-		if (this.#idleTimer !== undefined) window.clearTimeout(this.#idleTimer);
-		this.#idleTimer = window.setTimeout(() => void this.#endSession(), 120_000);
-	}
-
-	async #endSession(): Promise<void> {
-		if (!this.#startedAt) return;
-		if (this.#idleTimer !== undefined) window.clearTimeout(this.#idleTimer);
-		this.#idleTimer = undefined;
-		const now = totals(this.stats);
-		const chars = now.chars - this.#baseline.chars;
-		const errors = now.errors - this.#baseline.errors;
-		const ms = Date.now() - this.#startedAt;
-		this.#startedAt = 0;
-		if (chars <= 0 || !this.#account.connected) return; // offline-first: the practice data is already in IndexedDB
-		const res = await this.#account.pushSession({ chars, errors, ms, stats: this.stats });
-		this.syncNote = res.error ?? (res.sent ? `synced ${chars} characters` : "");
-	}
-
-	async #flush(p: TtPractice): Promise<void> {
-		if (p.engine) await this.#flushStats(p.engine);
-	}
-
-	async #flushStats(engine: NonNullable<TtPractice["engine"]>): Promise<void> {
-		// Captured once, at the top. The writes below are awaited, and a board switch can land between them:
-		// reading this.geometryId again would describe the row as the NEW layout while storing it under the
-		// OLD layout's key, and a reader that keys off the fields instead of the row id would disagree with
-		// one that keys off the id. One snapshot, and both agree.
-		const { geometryId: g, keymapId: k } = this;
-		const key = layoutKey(g, k);
-		this.stats = { ...engine.stats };
-		const previous = this.#saved;
-		const now = JSON.stringify(engine.stats);
-		if (previous === now) return; // nothing moved: wrong key, or the line is already finished
-		this.#saved = now;
-		await saveStats(key, this.stats);
-		await saveSettings(key, { ...this.settings, geometry: g, keymap: k, targetCpm: this.targetCpm, unlocked: engine.ladder.unlocked });
-	}
-
-	#saved = "";
 
 	#pick(part: "g" | "k", value: string): void {
 		// Close the session while the old layout is still selected. #load replaces this.stats with the new
 		// layout's map, and #endSession computes a delta against the baseline it took from the OLD one — that
 		// difference is usually negative, and a negative delta is discarded, so switching mid-session would
 		// silently lose the characters you had just typed.
-		if (part === "g" ? value !== this.geometryId : value !== this.keymapId) void this.#endSession();
+		if (part === "g" ? value !== this.geometryId : value !== this.keymapId) void this.#session.end();
 		if (part === "g") this.geometryId = value;
 		else this.keymapId = value;
 	}
@@ -321,7 +270,7 @@ export class AppMain extends LitElement {
 	#next(): void {
 		const p = this.#practice;
 		if (!p) return;
-		void this.#flush(p);
+		if (p.engine) void this.#session.stroke(p.engine);
 		p.begin();
 	}
 
@@ -365,16 +314,16 @@ export class AppMain extends LitElement {
 					onRemoveMap: (id) => void this.#removeMap(id),
 				})}
 				<div class="col">
-					${this.ready ? this.#readout() : html`<div class="read"><span class="label">loading your progress…</span></div>`}
+					${this.ready ? readout(cpmToWpm(this.nowCpm), this.#overview().avgWpm, cpmToWpm(this.targetCpm)) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
 					${this.ready
 						? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm}></tt-practice>`
 						: nothing}
 					<tt-keyboard .resolved=${r} .active=${this.lastId}></tt-keyboard>
 					<div class="row">
 						<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
-						${this.#status(r)}
+						${lastKey(r, this.lastId)}
 					</div>
-					${this.#notice(geo)}
+					${boardNotice(geo)}
 				</div>
 			</main>
 			<!-- One pane for both layouts: a column on a desktop, a drawer under 900px. The scrim is inert on a
@@ -387,27 +336,10 @@ export class AppMain extends LitElement {
 		`;
 	}
 
-	// Numbers above the line, where the eyes already are. All four come from state the parent already
-	// keeps, so they are right on the first paint after a reload, before a single key is pressed.
-	#readout() {
-		const cell = (label: string, value: string) => html`<div class="metric"><span class="label">${label}</span><b>${value}</b></div>`;
-		const o = this.#overview();
-		return html`
-			<div class="read">
-				${cell("now", `${cpmToWpm(this.nowCpm)} wpm`)}
-				${cell("avg", `${o.avgWpm} wpm`)}
-				${cell("goal", `${cpmToWpm(this.targetCpm)} wpm`)}
-			</div>
-		`;
-	}
-
 	// The screen reads from the same derived numbers as the ladder, so "at goal" here and "unlocks next"
 	// in the engine cannot mean different things.
 	#overview() {
 		const r = this.#resolved;
-		// A space has to be spelled out: it is the most-struck key on the board and an invisible row label
-		// reads as a bug in the screen rather than as the space bar. Keys with no character at all (an
-		// unmapped pinky column) fall back to their id, which is at least something to point at.
 		const keys: KeyInfo[] = r.keys.map((k) => ({ id: k.id, label: keyLabel(k), hand: k.hand === "l" ? "left" : "right" }));
 		const unlocked = this.settings.unlocked?.length ? this.settings.unlocked : keys.map((k) => k.id).slice(0, 9);
 		return overview(this.stats, this.targetCpm, keys, unlocked);
@@ -430,18 +362,15 @@ export class AppMain extends LitElement {
 	}
 
 
-	// The pane is a child of the shell, not of the history screen, so it can be the full height of the window.
-	// That means the insight cards are assembled here rather than inside the section they sit under, and the two
-	// must select the same rows the chart is drawing -- demo or real, this layout only.
+	// The cards live with the pane, not with the section they describe, so both have to pick the same rows the
+	// chart draws -- demo or real, this layout only.
 	#cards(): PanelCard[] {
-		const key = layoutKey(this.geometryId, this.keymapId);
-		const source = this.demo ? demoSessions(key) : this.sessions;
-		return insightPanel(source.filter((s) => s.layout === key), this.targetCpm);
+		return insightPanel(paneSessions(this.demo, layoutKey(this.geometryId, this.keymapId), this.sessions), this.targetCpm);
 	}
 
 	#panel(on: boolean): void {
 		this.panelOpen = on;
-		localStorage.setItem(PANEL_OPEN_KEY, on ? "1" : "0");
+		rememberPanel(on);
 	}
 
 	// Escape dismisses the pane. On a phone that is the only way out besides the scrim and the header button,
@@ -450,36 +379,14 @@ export class AppMain extends LitElement {
 		if (e.key === "Escape" && !this.settingsOpen && this.panelOpen) this.#panel(false);
 	};
 
-	// Turning demo data on also puts it in the URL, so a preview link that shows a chart still shows one
-	// after a reload or when forwarded onward. Turning it off removes the parameter and the rows with it:
-	// nothing is left in storage, because nothing was ever written there.
 	#demo(on: boolean): void {
 		this.demo = on;
-		// Query built through URLSearchParams, which cannot throw, rather than parsing location.href: the
-		// page could be served from a path with characters a URL constructor would reject, and a settings
-		// toggle must never be the thing that raises.
-		const q = new URLSearchParams(location.search);
-		if (on) q.set("demo", "");
-		else q.delete("demo");
-		const s = q.toString();
-		history.replaceState(null, "", location.pathname + (s ? `?${s}` : "") + location.hash);
+		rememberDemoInUrl(on);
 	}
 
 	// Clicks on the ::backdrop land on the dialog element itself, not on its children.
 	#onDialogClick = (e: MouseEvent): void => {
 		if (e.target === this.renderRoot.querySelector("dialog")) this.settingsOpen = false;
 	};
-
-	// Imported boards are the user's own data, so they get a different note than our reconstructions.
-	#notice(geo: Geometry) {
-		if (geo.id.startsWith("import:")) return html`<p class="warn row">Positions came from ${geo.source}. Compare the drawing with your board before trusting it.</p>`;
-		return geo.verified ? nothing : html`<p class="warn row">Positions for ${geo.name} are our reconstruction, not the vendor's file.</p>`;
-	}
-
-	#status(r: Resolved) {
-		const key = r.byId.get(this.lastId);
-		if (!key) return html`<span class="label">keys</span> ${r.keys.length} mapped`;
-		return html`<span class="label">last</span> <span class="hit">${key.char}</span> · ${key.id} · ${FINGER_NAME[key.finger]}`;
-	}
 }
 customElements.define("app-main", AppMain);

@@ -4,7 +4,7 @@ import { area, line } from "d3-shape";
 import { max } from "d3-array";
 import { cpmToWpm } from "./stats.ts";
 import { history as buildHistory, series, type Point } from "./history.ts";
-import { demoSessions, isPreviewHost } from "./demo.ts";
+import { isPreviewHost, paneSessions } from "./demo.ts";
 import { card } from "../ui/card.ts";
 import type { SessionRow } from "../atproto/records.ts";
 
@@ -40,10 +40,9 @@ export type HistoryProps = {
  * meaningful.
  */
 export function historySection(p: HistoryProps) {
-	// The demo flag replaces the source rather than overlaying it: two half-truths merged into one curve
-	// would be the least legible chart this app could draw.
-	const source = p.demo ? demoSessions(p.key) : p.sessions;
-	const mine = source.filter((s) => s.layout === p.key);
+	const mine = paneSessions(p.demo, p.key, p.sessions);
+	// Only the real history can hold another board; the invented rows are all for the layout on screen.
+	const others = p.demo ? 0 : p.sessions.length - mine.length;
 	if (!mine.length) {
 		// A preview deploy is the same artifact as production, so the hostname is the only way to know this
 		// is a branch preview -- and on one, an empty chart tells a reviewer nothing. The data stays opt-in:
@@ -139,7 +138,7 @@ export function historySection(p: HistoryProps) {
 				<span class="key clock"></span>what the clock said
 			</p>
 			<p class="empty">
-				${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${source.length > mine.length ? `, plus ${source.length - mine.length} session(s) on other boards` : ""}. The repo
+				${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${others > 0 ? `, plus ${others} session(s) on other boards` : ""}. The repo
 				keeps the newest 50 sessions per layout, so these totals are that window rather than your whole life
 				${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
 			</p>

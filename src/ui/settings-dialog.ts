@@ -76,3 +76,11 @@ export function settingsDialog(p: SettingsProps) {
 		</dialog>
 	`;
 }
+
+// showModal() and close() are imperative, so the reactive flag on the page drives them once per update.
+export function syncDialog(root: DocumentFragment | HTMLElement, open: boolean): void {
+	const dlg = root.querySelector("dialog") as HTMLDialogElement | null;
+	if (!dlg || dlg.open === open) return;
+	if (open) dlg.showModal();
+	else dlg.close();
+}

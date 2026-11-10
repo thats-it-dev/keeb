@@ -113,3 +113,12 @@ export function isPreviewHost(host: string, app: string): boolean {
 	const branch = host.slice(0, host.length - suffix.length);
 	return branch.length > 0 && !branch.includes(".") && !branch.includes("@");
 }
+
+/**
+ * The sessions the insight pane draws: the account's, or invented ones on a preview. The demo flag replaces
+ * the source rather than overlaying it — two half-truths merged into one curve would be the least legible
+ * chart this app could draw — and the rows are for the layout on screen, never for another board.
+ */
+export function paneSessions(demo: boolean, layout: string, sessions: SessionRow[]): SessionRow[] {
+	return (demo ? demoSessions(layout) : sessions).filter((s) => s.layout === layout);
+}
