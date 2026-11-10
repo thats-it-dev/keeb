@@ -172,12 +172,12 @@ test("the progress bars are a pane section, not a screen to navigate to", async 
 test("the progress screen names every key it measured", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
+	// No sleep between keys, and none needed: press() is a full round trip to the browser, so the intervals
+	// it produces are already unequal in the way a hand's are. tap() resolves after the keydown handler has
+	// run, so the next wanted() reads the cursor the stroke moved.
 	for (let i = 0; i < 40; i += 1) {
 		const ch = await wanted(page);
 		if (ch === "") break;
-		// A held key is one intention, not twenty, so the loop pauses now and then to make the timings
-		// unequal in the way a hand does.
-		if (i % 5 === 4) await page.waitForTimeout(60);
 		await tap(page, ch);
 	}
 	await openPane(page);
@@ -299,7 +299,7 @@ test("a held key counts once, not once per auto-repeat", async ({ page }) => {
 	await page.evaluate((c) => {
 		for (let i = 0; i < 8; i += 1) window.dispatchEvent(new KeyboardEvent("keydown", { key: c, repeat: i > 0, bubbles: true }));
 	}, ch ?? "a");
-	await page.waitForTimeout(120);
+	await expect.poll(() => cursorOf(page), { timeout: 5000 }).toBe(before + 1);
 	expect(await cursorOf(page)).toBe(before + 1);
 	// Repeats used to charge an error to the target key, which paints the letter the learner has NOT
 	// typed yet red -- the thing that reads as "the line is ahead of me".
@@ -351,13 +351,9 @@ test("a single keystroke is enough to persist", async ({ page }) => {
 	await ready(page);
 	// The line exists a moment before the engine has placed a run in it, and wanted() answers "" for that
 	// gap -- which silently skipped the keystroke and made this flake under load.
-	let ch = await wanted(page);
-	for (let i = 0; i < 50 && ch === ""; i += 1) {
-		await page.waitForTimeout(20);
-		ch = await wanted(page);
-	}
-	expect(ch).not.toBe("");
-	await tap(page, ch);
+	await expect.poll(() => wanted(page), { timeout: 5000 }).not.toBe("");
+	const ch = await wanted(page);
+	expect(ch).not.toBe("");	await tap(page, ch);
 	await expect.poll(() => storedKeys(page), { timeout: 5000 }).toBe(1);
 	await page.reload();
 	await ready(page);
