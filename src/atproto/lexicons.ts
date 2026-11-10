@@ -105,7 +105,10 @@ export const settings = {
 					// Seconds since the epoch as an integer; the lexicon has no datetime requirement here
 					// because a device that has never seen a network still has to be able to write it.
 					updatedAt: integer,
-					unlocked: { type: "array", items: { type: "string", maxGraphemes: 20 }, maxLength: 200 },
+					// The two curriculum switches. They are preferences, so they travel; which letters are open is
+					// a verdict about the learner's numbers, so it is derived from the stats on every line instead.
+					keyboardOrder: { type: "boolean" },
+					realWords: { type: "boolean" },
 				},
 			},
 		},
