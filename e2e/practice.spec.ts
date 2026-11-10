@@ -353,7 +353,7 @@ test("a single keystroke is enough to persist", async ({ page }) => {
 	// gap -- which silently skipped the keystroke and made this flake under load.
 	await expect.poll(() => wanted(page), { timeout: 5000 }).not.toBe("");
 	const ch = await wanted(page);
-	expect(ch).not.toBe("");	await tap(page, ch);
+	await tap(page, ch);
 	await expect.poll(() => storedKeys(page), { timeout: 5000 }).toBe(1);
 	await page.reload();
 	await ready(page);

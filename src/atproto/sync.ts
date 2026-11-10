@@ -55,9 +55,8 @@ async function list(s: Session, collection: string): Promise<StoredRecord[]> {
 	const out: StoredRecord[] = [];
 	let cursor: string | undefined;
 	for (let page = 0; page < 10 && (page === 0 || cursor); page += 1) {
-		// `repo` is a required param of listRecords and a real PDS answers without it with
-		// 400 InvalidRequest. The fake PDS in test/sync.test.ts used to ignore the param entirely, which is how
-		// this shipped: every pull threw, and #syncNow aborted before it pushed anything.
+		// `repo` is a required param of listRecords: a real PDS answers without it with 400 InvalidRequest,
+		// and a pull that throws before the push leaves nothing queued for the next attempt.
 		const res = await xrpc<{ records: StoredRecord[]; cursor?: string }>(s, "GET", "com.atproto.repo.listRecords", { repo: s.did, collection, limit: 100, ...(cursor ? { cursor } : {}) });
 		out.push(...(res.records ?? []));
 		cursor = res.cursor;

@@ -126,7 +126,7 @@ export class Account {
 		} catch (err) {
 			// A failed read must not cancel the writes below. The reason this device has anything queued is
 			// that a write failed earlier; if the read had to succeed first, an unreachable PDS would strand the
-			// outbox forever -- and it is how an InvalidRequest on pull() came to silence Sync entirely.
+			// outbox forever.
 			notes.push(`read failed: ${(err as Error).message}`);
 		}
 		const after = h.read();

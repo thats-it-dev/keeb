@@ -24,7 +24,7 @@ export const appStyles = [
 		.head h1 { margin: 0; }
 		.head-actions { display: flex; align-items: center; gap: 6px; }
 		/* Two classes, not one: the .x rule below sets display:grid with the same specificity, and whichever
-		* rule comes last in the sheet wins. That is how a phone-only button ended up in the desktop header. */
+		* rule comes last in the sheet wins. */
 		.x.drawer-only { display: none; }
 		/* And the override has to come AFTER the base rule: an @media block adds no specificity, so a media
 		* declaration written earlier in the sheet loses to the one below it at every width. */
@@ -61,9 +61,8 @@ export const appStyles = [
 		/* Sign-in is one line of the panel, not a section: it is optional and rarely touched. */
 		.sync { display: flex; gap: 8px; align-items: center; }
 		.sync input { width: 100%; max-width: 12rem; }
-		/* Stats screen: one line per key, so the eye lands on the shortest bars first. */
-		/* The progress section is a pane section now, so it is narrower than the page it used to fill:
-		tighter gaps, and the same heading type the history section above it uses. */
+		/* The progress section is a pane section, so it is narrower than the page: tighter gaps, and the same
+		heading type the history section above it uses. */
 		.stats { width: 100%; display: grid; gap: 10px; }
 		.stats h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 14px; }
@@ -91,11 +90,11 @@ export const appStyles = [
 		* item a height derived from its SIBLING -- the panel's own prose would grow the row instead -- so the
 		* pane is absolutely positioned and the text column reserves the width it needs. Both animate on the
 		* same transition, so the chart appears to stretch rather than jump. */
-		/* The history section is a plain stack now: the insight pane belongs to the shell, not to this
-		* screen, so it no longer reserves room inside it. */
+		/* The history section is a plain stack: the insight pane belongs to the shell, not to this screen, so
+		* no room is reserved inside it. */
 		.hist { display: grid; gap: 10px; width: 100%; }
-		/* The section now lives in a 19rem column, not across the page, so the totals wrap tighter and carry
-		less type than they did on the progress screen. */
+		/* The section lives in a 19rem column, so the totals wrap tighter and carry less type than a
+		full-width screen would want. */
 		.hist .grid { grid-template-columns: repeat(auto-fit, minmax(7.25rem, 1fr)); gap: 8px; }
 		.hist .card { padding: 7px 9px; }
 		.hist .card b { font-size: 1.05rem; }

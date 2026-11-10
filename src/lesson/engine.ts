@@ -62,8 +62,8 @@ function idOf(r: Resolved, char: string): string {
 	return r.byChar.get(char.toLowerCase()) ?? "";
 }
 
-// The one EWMA, in stats.ts, shared with every reader of progress. This file kept its own copy of the
-// update rule, which is how the two came to disagree about what an unmeasurable interval means.
+// One EWMA, in stats.ts, for every reader of progress: two copies of the update rule would disagree about
+// what an unmeasurable interval means.
 function bump(stat: { ttMs16: number; samples: number; errors: number }, elapsedMs: number) {
 	return observe(stat, elapsedMs);
 }
