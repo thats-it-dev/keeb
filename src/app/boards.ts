@@ -31,8 +31,8 @@ export async function importLayout(text: string, fileName: string, layouts: Layo
 		const json: unknown = JSON.parse(text);
 		if (isKeycapFile(json)) return await importKeycap(json, fileName, id, layouts, currentGeometryId);
 		const { geometry, problems } = geometryFromLayout(json, { id, name: importName(fileName), source: fileName });
-		// Re-importing the same file replaces the earlier copy rather than piling up near-duplicates.
 		if (!geometry) return { problems };
+		// Re-importing the same file replaces the earlier copy rather than piling up near-duplicates.
 		forgetGeometry(id);
 		registerGeometry(geometry);
 		await saveBoard(geometry);

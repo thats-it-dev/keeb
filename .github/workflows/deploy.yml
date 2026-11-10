@@ -34,8 +34,7 @@ jobs:
       - run: npm run lint
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
-      # A fresh copy of the template still says app-template; deploying
-      # then would overwrite the template's demo.
+      # A fresh copy of the template still says app-template; deploying then would overwrite the template's demo.
       - name: Check the app was renamed
         id: guard
         env:
@@ -43,12 +42,9 @@ jobs:
         run: |
           set -euo pipefail
           NAME=$(node -p "require('./app.config.json').name")
-          if [ "$NAME" = "app-template" ] &&
-            [ "$REPO" != "thats-it-dev/app-template" ]; then
+          if [ "$NAME" = "app-template" ] && [ "$REPO" != "thats-it-dev/app-template" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            SKIP_NOTE="Deploy skipped: app.config.json still has name"
-            SKIP_NOTE="$SKIP_NOTE app-template. Edit it first."
-            echo "$SKIP_NOTE" >> "$GITHUB_STEP_SUMMARY"
+            echo "Deploy skipped: app.config.json still has name app-template. Edit it first." >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Deploy to Cloudflare Pages
         id: deploy
@@ -60,8 +56,7 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
-          # A `Gateway: thats-it-dev/spark-gateway#N` line in the PR body points
-          # the preview at that gateway preview.
+          # A `Gateway: thats-it-dev/spark-gateway#N` line in the PR body points the preview at that gateway preview.
           if [ "$EVENT" = "pull_request" ]; then
             GATEWAY_URL=$(node scripts/gateway-url.ts <<< "$PR_BODY")
             if [ -n "$GATEWAY_URL" ]; then
@@ -70,24 +65,15 @@ jobs:
             fi
           fi
           NAME=$(node -p "require('./app.config.json').name")
-          # Production only from main; any other branch (including a manual run)
-          # is a preview.
-          if [ "$EVENT" = "pull_request" ]; then
-            BRANCH="$HEAD_REF"
-          else
-            BRANCH="$REF_NAME"
-          fi
+          # Production only from main; any other branch (including a manual run) is a preview.
+          if [ "$EVENT" = "pull_request" ]; then BRANCH="$HEAD_REF"; else BRANCH="$REF_NAME"; fi
           npm run build
-          npx wrangler@4.149.0 pages deploy dist \
-            --project-name "$NAME" --branch "$BRANCH" | tee deploy.log
+          npx wrangler@4.149.0 pages deploy dist --project-name "$NAME" --branch "$BRANCH" | tee deploy.log
           URL=$(node scripts/preview-url.ts < deploy.log)
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           echo "Deployed: $URL" >> "$GITHUB_STEP_SUMMARY"
       - name: Comment preview link
-        if: >-
-          env.CLOUDFLARE_API_TOKEN != '' &&
-          steps.guard.outputs.skip != 'true' &&
-          github.event_name == 'pull_request'
+        if: env.CLOUDFLARE_API_TOKEN != '' && steps.guard.outputs.skip != 'true' && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -97,24 +83,12 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          MARKER='<!-- thatsit-preview -->'
-          BODY=$(printf '%s\nPreview: %s\n\nCommit %s' \
-            "$MARKER" "$URL" "${SHA:0:7}")
-          if [ -n "${GATEWAY_URL:-}" ]; then
-            BODY=$(printf '%s\n\nGateway preview: %s' "$BODY" "$GATEWAY_URL")
-          fi
-          COMMENTS="repos/$REPO/issues/$PR/comments?per_page=100"
-          ID=$(gh api "$COMMENTS" --paginate --jq '
-            .[]
-            | select(
-                .user.login == "github-actions[bot]" and
-                (.body | contains("<!-- thatsit-preview -->"))
-              )
-            | .id' | jq -rs '.[0] // empty')
+          BODY=$(printf '<!-- thatsit-preview -->\nPreview: %s\n\nCommit %s' "$URL" "${SHA:0:7}")
+          if [ -n "${GATEWAY_URL:-}" ]; then BODY=$(printf '%s\n\nGateway preview: %s' "$BODY" "$GATEWAY_URL"); fi
+          ID=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --paginate --jq \
+            '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- thatsit-preview -->"))) | .id' | jq -rs '.[0] // empty')
           if [ -n "$ID" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$ID" \
-              -f body="$BODY" > /dev/null
+            gh api -X PATCH "repos/$REPO/issues/comments/$ID" -f body="$BODY" > /dev/null
           else
-            gh api -X POST "repos/$REPO/issues/$PR/comments" \
-              -f body="$BODY" > /dev/null
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$BODY" > /dev/null
           fi

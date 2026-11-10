@@ -213,9 +213,8 @@ export class AppMain extends LitElement {
 		if (Number.isFinite(v) && v >= 15 && v <= 120) this.targetCpm = wpmToCpm(v);
 	}
 
-	// Read a layout file the learner picked. Two shapes arrive here: a keyboard-layout-editor
-	// info.json, which describes a board's positions, and a MoErgo Layout Editor export, which names a
-	// board and gives the characters. The same control takes either.
+	// The file picker: what a layout file means is app/boards.ts's business, and this only says which list
+	// on screen the result belongs to.
 	async #upload(e: Event): Promise<void> {
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
