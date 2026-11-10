@@ -3,9 +3,9 @@
 import { describe, expect, it } from "vitest";
 import { LAYOUT, PROGRESS, SESSION, SETTINGS } from "../src/atproto/lexicons.ts";
 import { Sync, emptyState, type SyncState, type SyncStore } from "../src/atproto/sync.ts";
-import { newKey } from "../src/atproto/records.ts";
+import { foldProgress, newKey } from "../src/atproto/records.ts";
 import type { Session } from "../src/atproto/auth.ts";
-import type { StatMap } from "../src/stats/stats.ts";
+import { emptyStat, observe, timeToTypeMs, type StatMap } from "../src/stats/stats.ts";
 
 type Call = { path: string; params: Record<string, string>; body?: Record<string, unknown> };
 
@@ -55,6 +55,27 @@ function fake(rows: Record<string, { uri: string; value: Record<string, unknown>
 
 function jsonResponse(status: number, json: unknown): Response {
 	return { ok: status < 400, status, json: async () => json } as Response;
+}
+
+/**
+ * Replay this test's writes into its listings.
+ *
+ * A real repo answers a pull with whatever a push put there; this fake used to keep the two apart, which is
+ * why no test could describe a round trip — and a round trip is exactly where progress started doubling.
+ */
+function commit(rows: Record<string, { uri: string; value: Record<string, unknown> }[]>, calls: Call[]) {
+	for (const c of calls) {
+		if (c.path !== "com.atproto.repo.putRecord") continue;
+		const col = String(c.body?.collection);
+		const uri = `at://${DID}/${col}/${String(c.body?.rkey)}`;
+		const list = rows[col] ?? [];
+		rows[col] = list;
+		const value = c.body?.record as Record<string, unknown>;
+		const at = list.findIndex((x) => x.uri === uri);
+		if (at >= 0) list[at] = { uri, value };
+		else list.push({ uri, value });
+	}
+	calls.length = 0;
 }
 
 const memStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncState } => {
@@ -190,6 +211,132 @@ describe("sync", () => {
 		// Six existing plus the new one is seven for that layout, cap 5: the two oldest go.
 		expect(deleted.sort()).toEqual([tids[0], tids[1]].sort());
 		expect(deleted).not.toContain("zzzz0000000");
+	});
+
+	it("does not count the progress it pushed itself as new evidence", async () => {
+		// The bug: pushSession writes this browser's whole stat map into the layout's PROGRESS record, and the
+		// next pull hands that same map back as if it came from somewhere else. Folding it in added our own
+		// ten strokes to our own ten strokes, and every sync after that doubled the count again.
+		const rows = { [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [], [LAYOUT]: [] };
+		const { session, calls } = fake(rows);
+		const store = memStore();
+		const sync = new Sync(session, store);
+		const L = "go60+qwerty";
+		let local: StatMap = { a: { ttMs16: 3200, samples: 10, errors: 2 } }; // ten strokes at 200ms, two typos
+		await sync.pushSession(L, { chars: 10, errors: 2, ms: 3_000, stats: local }, Date.now());
+		commit(rows, calls);
+		for (let round = 0; round < 3; round += 1) {
+			const { progress } = await sync.pull();
+			const merged = foldProgress(local, store.state.progressSeen?.[L], progress[L]);
+			// What the app's store write does, in the same transaction as the stats it saves.
+			await store.save({ ...store.state, progressSeen: { ...store.state.progressSeen, [L]: progress[L]! } });
+			expect(merged.a!.samples).toBe(10);
+			local = merged;
+		}
+		expect(local.a).toEqual({ ttMs16: 3200, samples: 10, errors: 2 });
+	});
+
+	it("counts what another device added since the last sync, once", async () => {
+		const now = Math.round(Date.now() / 1000);
+		const rec = (samples: number, ttMs16: number, errors: number) => ({
+			uri: `at://${DID}/${PROGRESS}/2222other`,
+			value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16, samples, errors }], updatedAt: now },
+		});
+		const rows = { [SESSION]: [], [PROGRESS]: [rec(10, 4000, 1)], [SETTINGS]: [], [LAYOUT]: [] };
+		const { session } = fake(rows);
+		const store = memStore();
+		const sync = new Sync(session, store);
+		let local: StatMap = { a: { ttMs16: 1600, samples: 10, errors: 0 } }; // this device: 10 strokes at 100ms
+		const round = async () => {
+			const { progress } = await sync.pull();
+			const remote = progress["go60+qwerty"]!;
+			local = foldProgress(local, store.state.progressSeen?.["go60+qwerty"], remote);
+			await store.save({ ...store.state, progressSeen: { ...store.state.progressSeen, "go60+qwerty": remote } });
+		};
+		await round();
+		expect(local.a).toEqual({ ttMs16: 2800, samples: 20, errors: 1 }); // 100ms and 250ms, evenly weighted
+		rows[PROGRESS] = [rec(30, 3840, 3)]; // the other device practises: 20 more strokes
+		await round();
+		await round(); // and says nothing the second time
+		expect(local.a!.samples).toBe(40); // 10 here + 10 + 20 there, not 70
+		expect(local.a!.errors).toBe(3);
+		// 208 ms: the 20 new strokes arrive at the record's current mean (240 ms), weighted against the 20
+		// samples already accounted for (175 ms). Not the 183 ms an exact per-stroke ledger would print, and
+		// deliberately not a number subtracted out of two exponentially weighted means — that arithmetic gave
+		// 205 here, 0 ms when the other device sped up, and 1875 ms when it slowed down.
+		expect(Math.round(local.a!.ttMs16 / 16)).toBe(208);
+		expect(Math.round(local.a!.ttMs16 / 16)).toBeLessThanOrEqual(250); // nothing slower than the slowest evidence
+		expect(Math.round(local.a!.ttMs16 / 16)).toBeGreaterThanOrEqual(100); // nothing faster than the fastest
+	});
+
+	it("keeps two devices in line while one of them changes speed", async () => {
+		// The two-device case, typed rather than hand-assembled: a laptop and a desktop on one account, both
+		// writing the same shared progress record, with the laptop speeding up halfway through. Asserted as
+		// invariants, because the exact merged number depends on who synced last:
+		//
+		//   - every stroke and typo is counted once, in either direction, however many syncs go by;
+		//   - no key's mean may leave the range anyone actually typed at — an EWMA snapshot diff cannot tell
+		//     you the mean of the strokes in between, and pretending it can produced 0 ms and 1875 ms.
+		const rows = { [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [], [LAYOUT]: [] };
+		const L = "go60+qwerty";
+		type Device = { stats: StatMap; store: SyncStore & { state: SyncState }; calls: Call[]; sync: Sync };
+		const device = (): Device => {
+			const { session, calls } = fake(rows);
+			const store = memStore();
+			return { stats: {}, store, calls, sync: new Sync(session, store) };
+		};
+		const type = (d: Device, ms: number, n: number, errors = 0) => {
+			for (let i = 0; i < n; i += 1) d.stats.a = observe(d.stats.a ?? emptyStat(), ms);
+			if (errors) d.stats.a = { ...d.stats.a!, errors: d.stats.a!.errors + errors };
+		};
+		// What #syncNow + #endSession do: pull, fold what is new, push the whole map back as this session's progress.
+		const syncUp = async (d: Device) => {
+			const { progress } = await d.sync.pull();
+			const remote = progress[L];
+			if (remote) {
+				d.stats = foldProgress(d.stats, d.store.state.progressSeen?.[L], remote);
+				await d.store.save({ ...d.store.state, progressSeen: { ...d.store.state.progressSeen, [L]: remote } });
+			}
+			const agg = { chars: 0, errors: 0, ms: 60_000, stats: d.stats };
+			for (const s of Object.values(d.stats)) {
+				agg.chars += s.samples;
+				agg.errors += s.errors;
+			}
+			await d.sync.pushSession(L, agg, Date.now());
+			commit(rows, d.calls);
+		};
+		const laptop = device();
+		const desktop = device();
+		type(laptop, 400, 20, 2); // both devices: 20 strokes at 400ms
+		await syncUp(laptop);
+		type(desktop, 400, 20, 1);
+		await syncUp(desktop);
+		type(laptop, 100, 20); // the laptop practises and gets three times faster
+		await syncUp(laptop);
+		await syncUp(desktop);
+
+		for (const [name, d] of [
+			["laptop", laptop],
+			["desktop", desktop],
+		] as const) {
+			expect(d.stats.a!.samples, name).toBe(60); // 20 + 20 + 20, once each
+			expect(d.stats.a!.errors, name).toBe(3);
+			const ms = timeToTypeMs(d.stats.a!);
+			expect(ms, name).toBeGreaterThanOrEqual(100);
+			expect(ms, name).toBeLessThanOrEqual(400);
+		}
+		// The desktop has now seen the laptop's fast strokes; a fold that reported them as 0 ms would leave it
+		// flat at 400, and one that inflated them would put it outside anything anyone typed.
+		expect(timeToTypeMs(desktop.stats.a!)).toBeLessThan(400);
+		expect(timeToTypeMs(laptop.stats.a!)).toBeLessThan(300);
+
+		// And a device that has said nothing since the last sync is folded in as nothing.
+		const before = JSON.stringify(desktop.stats);
+		await syncUp(desktop);
+		await syncUp(laptop);
+		expect(JSON.stringify(desktop.stats)).toBe(before);
+		expect(desktop.stats.a!.samples).toBe(60);
+		expect(laptop.stats.a!.samples).toBe(60);
 	});
 
 	it("says which record it could not read rather than inventing one", async () => {

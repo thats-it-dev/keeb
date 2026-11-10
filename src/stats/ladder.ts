@@ -26,17 +26,33 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number): Ladder {
 	// gating on it froze the ladder at the first two keys.
 	const gate = order.filter((id) => /^[a-z]$/i.test(r.byId.get(id)?.char ?? ""));
 	const home = gate.filter((id) => roleById(r, id) === "home");
-	let end = Math.max(0, home.length - 1);
-	// Advance while every key that has actually been practised is at the goal speed. A key with no
-	// samples must not block: the home row spells 35 common words and none of them use j or k, so
-	// demanding reps on those two first would deadlock the ladder at nine keys.
+	const granted = Math.max(0, home.length - 1); // the last index of the group handed out on day one
+	let end = granted;
+	// Unlock one key at a time. Two things may stand in the way of the next letter:
+	//
+	//  - a key you have practised and are still too slow on, anywhere in the unlocked set;
+	//  - the newest key, if you earned it (past the starting group) and have not typed it at speed yet.
+	//    Keys inside the starting group are exempt, because the home row spells 35 common words and none of
+	//    them use j or k: demanding reps on those two first would deadlock the ladder at nine.
+	//
+	// The bug this replaces: the loop consulted *practised* keys only, so a key with no samples blocked
+	// nothing — and a newly unlocked key has no samples by definition. The moment the home row reached the
+	// goal, the loop walked the rest of the alphabet and every letter unlocked together.
 	while (end + 1 < gate.length) {
-		const practised = gate.slice(0, end + 1).filter((id) => ((stats[id] ?? emptyStat()).samples >= MIN_SAMPLES));
-		if (practised.length === 0 || !practised.every((id) => ready(id, stats, targetCpm))) break;
+		const unlockedNow = gate.slice(0, end + 1);
+		// Nothing typed yet. The starting group is what a learner gets for free; it does not also entitle
+		// them to the next letter.
+		if (!unlockedNow.some((id) => practised(stats, id))) break;
+		if (unlockedNow.some((id, i) => (i > granted || practised(stats, id)) && !ready(id, stats, targetCpm))) break;
 		end += 1;
 	}
 	const unlocked = home.length > 1 ? gate.slice(0, end + 1) : gate.slice(0, Math.max(2, end + 1));
 	return { order, unlocked, next: gate[unlocked.length] };
+}
+
+/** Enough strokes for a key's speed to mean something. */
+function practised(stats: StatMap, id: string): boolean {
+	return (stats[id] ?? emptyStat()).samples >= MIN_SAMPLES;
 }
 
 function roleById(r: Resolved, id: string) {

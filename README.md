@@ -58,12 +58,16 @@ floating point type, so the numbers that work in the browser are already the num
 
 ## The teaching model
 
-1. Each keystroke records one sample per key: time since the previous key, and whether it was right.
+1. Each keystroke records one sample per key: time since the previous key, and whether it was right. The
+   mean moves 1/16 of the way toward each timed stroke, and a stroke more than four times the current mean
+   counts as that multiple — a keystroke interval is evidence about typing, the gap after you went to make
+   tea is evidence about the kettle.
 2. `confidence = goal time-per-key / your time-per-key`. 1.0 means you hit the goal on that key.
 3. The starting group is the whole home row, which is where real English words become possible.
-4. The next key unlocks when every key that has actually been practised is at the goal speed. Keys
-   never practised (the `j` and `k` that no home-row word contains) do not block, or the ladder
-   deadlocks.
+4. The next key unlocks when every key you have practised is at the goal speed, **and** — past the starting
+   group — the newest key you were given has been typed at speed. That second half is what keeps letters
+   arriving one at a time. Keys inside the starting group that no home-row word contains (`j`, `k`) do not
+   block, or the ladder deadlocks at nine.
 5. Word weight is `frequency × (1 + weakness)`, so weak keys come back without an obvious loop.
 6. Progress is written to IndexedDB on every keystroke, keyed `geometry+keymap`. Offline is the
    default; sync is an add-on.
@@ -205,6 +209,23 @@ makes position *implicit* in the whitespace alignment of each line, so importing
 which board it belongs to — and the files above already describe the board.
 
 ## Notes for whoever picks this up
+
+- A `progress` record is a **shared accumulator**, not a device's own diary: `flush()` writes this
+  browser's whole merged map into it, so the next pull hands our own numbers back. Folding that in as if it
+  were somebody else's evidence added our strokes to our strokes, and every sync doubled the sample and
+  error counts. The rule is `mergeAll(local, progressGrowth(seen, remote))`, where `seen` — the content of
+  that record last accounted for — lives in the sync row and is written in the *same* IndexedDB
+  transaction as the stats (`applyRemoteProgress`). Seeded on both sides: `flush()` on the way out (from the
+  record it wrote, not a live reference to the caller's map), and the fold on the way in.
+- **Never difference `mean × samples`.** It looks like a total you can subtract to get "the strokes that
+  arrived in between", but the mean is exponentially weighted: the old observations have already decayed out
+  of it, so the product is not the time they took. Doing it anyway reported a device that got *faster* as a
+  key with no timing in it (0 ms) and a device that got *slower* as 1875 ms of a 400 ms stroke. The honest
+  form is in `keyGrowth`: the new **count** is arithmetic, the new **mean** is not recoverable, so the fold
+  takes the record's current mean and lets `merge` weight it by the strokes that are actually new. The bias
+  is the record's own memory — about sixteen strokes — and it shrinks precisely when it would matter most.
+- Counts already doubled by older builds stay doubled; the mean recovers on its own because it is
+  sample-weighted, and the sample count only decides how stiff it is.
 
 - The icon is generated, not stored art: `npm run icons` draws the Lucide `keyboard` glyph analytically
   (capsules and a rounded-rect ring, one pixel of antialiasing) into the same five PNG sizes plus

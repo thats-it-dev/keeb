@@ -1,4 +1,4 @@
-import { mergeAll, type StatMap } from "../stats/stats.ts";
+import { mergeAll, progressGrowth, type StatMap } from "../stats/stats.ts";
 import { emptyState as emptySyncState, type SyncState } from "../atproto/sync.ts";
 import type { SessionRow } from "../atproto/records.ts";
 import type { Geometry, Keymap } from "../keyboard/types.ts";
@@ -89,6 +89,49 @@ export async function addStats(key: string, stats: StatMap): Promise<StatMap> {
 	const merged = mergeAll(await loadStats(key), stats);
 	await put(STATS, key, merged);
 	return merged;
+}
+
+/**
+ * Fold one layout's progress record into this browser's numbers, exactly once.
+ *
+ * The record on the PDS is a shared accumulator: it contains the numbers this device pushed, plus whatever
+ * another device added. So the only honest question is what it has learned since we last looked at it, and
+ * `progressGrowth` answers that against the copy remembered in the sync row.
+ *
+ * Both rows are written in one transaction. Splitting them would be the same bug in a new costume: stats
+ * saved but the record not remembered means the next sync folds the same growth in again.
+ */
+export async function applyRemoteProgress(key: string, remote: StatMap): Promise<StatMap> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const tx = db.transaction([STATS, SYNC], "readwrite");
+		let local: StatMap | undefined;
+		let state: SyncState | undefined;
+		let merged: StatMap | undefined;
+		tx.oncomplete = () => res(merged ?? {});
+		tx.onerror = () => rej(tx.error);
+		// Every request is issued from inside a request handler, so the transaction is still open when the
+		// puts go in. Awaiting a promise here would let it commit out from under us.
+		const both = () => {
+			if (!local || !state) return;
+			const seen = (state.progressSeen ?? {})[key];
+			merged = mergeAll(local, progressGrowth(seen ?? {}, remote));
+			tx.objectStore(STATS).put({ layout: key, value: merged });
+			tx.objectStore(SYNC).put({ key: SYNC_KEY, ...state, progressSeen: { ...state.progressSeen, [key]: remote } });
+		};
+		const statsReq = tx.objectStore(STATS).get(key);
+		statsReq.onsuccess = () => {
+			local = (statsReq.result ? (statsReq.result.value as StatMap) : {}) ?? {};
+			both();
+		};
+		const syncReq = tx.objectStore(SYNC).get(SYNC_KEY);
+		syncReq.onsuccess = () => {
+			state = { ...emptySyncState(), ...((syncReq.result as SyncState | undefined) ?? {}) };
+			both();
+		};
+		statsReq.onerror = () => rej(statsReq.error);
+		syncReq.onerror = () => rej(syncReq.error);
+	});
 }
 
 export async function loadSettings(key: string): Promise<Settings> {

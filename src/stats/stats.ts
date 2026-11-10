@@ -10,9 +10,19 @@ export type KeyStat = {
 
 export type StatMap = Record<string, KeyStat>;
 
-// 1/16 weight on the newest sample: enough responsiveness to follow improvement, enough inertia to
-// survive one bad keystroke.
+/** Weight of the newest timed stroke, in 16ths of the mean: 1 means one stroke moves it 1/16 of the way. */
 const ALPHA16 = 1;
+
+/** The most a single stroke may be believed to say about a key, as a multiple of the mean it replaces. A
+ *  keystroke interval is evidence about typing; the gap after you went to make tea is evidence about the
+ *  kettle. Without a ceiling here, one 40-second pause moved a key from 121 wpm to 17 and the headline
+ *  average came with it. */
+const OUTLIER_TIMES = 4;
+
+/** And the most a key with no mean yet can be seeded with. Its first timed stroke is the one pause this
+ *  module cannot judge against anything, so it gets an absolute limit instead. Two seconds is already well
+ *  past a hunt-and-peck interval, and the 1/16 pull above is what carries a genuinely slow key down. */
+const COLD_MAX_MS = 2_000;
 
 export function emptyStat(): KeyStat {
 	return { ttMs16: 0, samples: 0, errors: 0 };
@@ -26,8 +36,18 @@ export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
 	// The keystroke still counts, because it happened: it is a character typed and a sample of exposure. It
 	// just contributes no observation of time.
 	if (!(elapsedMs > 0)) return { ...stat, samples: stat.samples + 1 };
-	const s = Math.round(elapsedMs) * 16;
-	return { ttMs16: hasTiming(stat) ? stat.ttMs16 + ALPHA16 * (s - stat.ttMs16) : s, samples: stat.samples + 1, errors: stat.errors };
+	// Past four times the current mean a stroke is not a slow keystroke, it is a pause, and it is filed as
+	// the slowest keystroke this key has evidence for.
+	const observed = Math.min(Math.round(elapsedMs) * 16, hasTiming(stat) ? stat.ttMs16 * OUTLIER_TIMES : COLD_MAX_MS * 16);
+	// One sixteenth of the way toward it, not all the way: this is the running average every screen reads,
+	// and `keyDelta` in insights.ts undoes exactly this step to recover one session from two snapshots.
+	// Applying ALPHA16 as a plain multiplier rather than a weight in 16ths made the "average" the last
+	// keystroke, which is how a key typed two hundred times could print 12 wpm off one stray pause.
+	return {
+		ttMs16: hasTiming(stat) ? stat.ttMs16 + Math.round(((observed - stat.ttMs16) * ALPHA16) / 16) : observed,
+		samples: stat.samples + 1,
+		errors: stat.errors,
+	};
 }
 
 /** True when at least one keystroke of this key was actually timed. `samples` alone is not enough: a key can
@@ -99,6 +119,39 @@ export function merge(a: KeyStat, b: KeyStat): KeyStat {
 		samples: a.samples + b.samples,
 		errors: a.errors + b.errors,
 	};
+}
+
+// What a key has learned between two snapshots of the same record: the strokes that arrived in between,
+// at the speed the record now says it is running.
+//
+// The count is exact. The mean is not recoverable, and must not be invented. `mean x samples` looks like a
+// total you could subtract, but this is an EWMA: the old observations have already been decayed out of the
+// mean, so the product is not the time they took. Differencing two snapshots therefore reads a speed
+// change as a different speed — measured, against a device that struck this key 100 times and then added
+// ten strokes at 40 ms: `0 ms` (the product shrank, so the clamp said "no timing here") when the other
+// device got faster, and `1875 ms` when it got slower instead of the 400 ms it actually typed. Both are
+// off the board in opposite directions, and either one drags the merged average with it.
+//
+// So the fold takes the only claim a record can honestly make — "this many strokes are new, and this key
+// currently runs at this speed" — and lets `merge` weight it by the new strokes. The bias is the record's
+// own memory of the older strokes, about sixteen of them, and it shrinks in exactly the case where it
+// would matter: a device that has added a lot of strokes has a mean made of them.
+export function keyGrowth(from: KeyStat | undefined, to: KeyStat): KeyStat | undefined {
+	if (!from) return to.samples > 0 ? { ...to } : undefined;
+	const added = to.samples - from.samples;
+	if (added <= 0) return undefined; // the same record, or one that came back smaller: nothing to learn here
+	return { ttMs16: Math.max(0, to.ttMs16), samples: added, errors: Math.max(0, to.errors - from.errors) };
+}
+
+// The map-level form of `keyGrowth`: what a whole progress record has learned since it was last accounted
+// for. Folding one in is `mergeAll(local, progressGrowth(seen, remote))`.
+export function progressGrowth(seen: StatMap, remote: StatMap): StatMap {
+	const out: StatMap = {};
+	for (const [id, stat] of Object.entries(remote)) {
+		const growth = keyGrowth(seen[id], stat);
+		if (growth && growth.samples > 0) out[id] = growth;
+	}
+	return out;
 }
 
 export function mergeAll(a: StatMap, b: StatMap): StatMap {
