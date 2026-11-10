@@ -1,4 +1,4 @@
-// The one-day view: how many minutes of practice today holds, and how far that is from the daily goal.
+// The one-day view: how much practice time today holds, and how far that is from the daily goal.
 //
 // Like history.ts, this file is pure. The minutes come from the local daily tally rather than from the
 // synced session rows, because a day's practice must read correctly before anything has synced — and for a
@@ -13,8 +13,8 @@ export type DailyRow = { day: string; ms: number };
  *  written just before midnight landing in a later fold. */
 export const KEEP_DAYS = 7;
 
-/** Wall-clock minutes spent practising today. `liveMs` is the session still open on screen, so the number
- *  moves while the learner types instead of waiting for the session to close. */
+/** Practice minutes spent today. `liveMs` is the session still open on screen — its keystroke time,
+ *  capped — so the number moves while the learner types and stalls within seconds when they stop. */
 export function todayMs(rows: DailyRow[], nowMs: number, liveMs = 0): number {
 	const day = dayKey(nowMs);
 	let ms = 0;
@@ -36,6 +36,8 @@ export function foldDaily(rows: DailyRow[], nowMs: number, ms: number): DailyRow
 	return kept.sort((a, b) => (a.day < b.day ? -1 : 1));
 }
 
+/** The day's progress. Minutes are keystroke time — charged sessions plus the open session's capped
+ *  gaps (see SessionRecorder.elapsed) — so the number grows with the fingers, not with the clock. */
 export type DailyGoal = {
 	/** Whole minutes practised today. Floored: a bar that says 15/15 must mean the goal was reached. */
 	minutes: number;

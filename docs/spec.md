@@ -278,15 +278,18 @@ put a second, storable answer next to the one `ladder()` derives from stats that
 
 The day belongs to keeb, not to the clone, so it is specified here rather than against keybr's code:
 
-1. Today's minutes are wall-clock time inside practice sessions — the span from the first keystroke to
-   the two-minute silence (or tab close) — not stroke time and not time with the tab merely open.
+1. Today's minutes are keystroke time: each gap between consecutive keystrokes counts, capped at 10
+   seconds, and so does at most a cap's worth of the silence after the last one. Idle with the tab open
+   is never practice, and the bar stalls within ten seconds of the fingers leaving the keyboard.
 2. The minutes come from a local daily tally (`daily` store), never from the synced session rows: a
    signed-out device has no session rows, and the bar must read correctly before any sync has run.
    The two sources are deliberately not merged, so a session charged to the tally is not also counted
    from the repo.
-3. The bar shows the open session's elapsed time immediately, so it moves while typing; the closed
-   part is charged once, at `SessionRecorder.end()`, whether or not it reaches a repo. The fold lands
-   in memory before the write is attempted, so a tab torn down mid-write still shows the minutes.
+3. The bar shows the open session's keystroke time immediately, so it moves while typing and freezes
+   at the cap when typing stops; the closed part is charged once, at `SessionRecorder.end()`, whether or
+   not it reaches a repo. The fold lands in memory before the write is attempted, so a tab torn down
+   mid-write still shows the minutes. The synced session record still carries the full span — the
+   history chart's speed maths needs the wall clock, and only the day tally uses the capped sum.
 4. The goal in minutes lives in a browser-wide localStorage slot, not in the per-layout settings —
    the tally it measures is device-wide — and never on the wire: `settingsRecord` keeps carrying
    exactly the fields it carried before. 0 hides the bar.
