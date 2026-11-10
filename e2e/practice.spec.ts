@@ -3,7 +3,7 @@
 import type { Page } from "@playwright/test";
 import { loadConfig } from "../vite/config.ts";
 import { expect, test } from "./csp.ts";
-import { keyName, openPane } from "./keys.ts";
+import { keyName, openPane, paneBody } from "./keys.ts";
 
 const cfg = loadConfig();
 const heading = cfg.heading ?? cfg.title; // the h1 shows the heading; the tab shows the title
@@ -105,7 +105,7 @@ test("stats sit above the line, settings start hidden", async ({ page }) => {
 	});
 	expect(boxes.readBottom).toBeLessThanOrEqual(boxes.lineTop); // metrics above the phrase
 	await expect(page.locator("dialog")).toBeHidden(); // board/keymap behind the settings modal
-	await page.locator("app-main .head button[aria-label='Settings']").click();
+	await page.locator("tk-header button[aria-label='Settings']").click();
 	await expect(page.locator("dialog")).toBeVisible();
 	await expect(page.locator("dialog .panel")).toBeVisible();
 	await page.locator("dialog [aria-label='Close settings']").click();
@@ -142,26 +142,25 @@ test("types a whole line and reports a plausible speed", async ({ page }) => {
 		if (ch === "") break;
 		await tap(page, ch);
 	}
-	await expect(page.locator("main")).toContainText("wpm");
+	await expect(page.locator(".page main")).toContainText("wpm");
 	const cursor = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
 	expect(cursor).toBeGreaterThan(10);
 });
 
 test("the progress bars are a pane section, not a screen to navigate to", async ({ page }) => {
 	// There used to be a "Progress" button and a "Back to typing" button, and a screen between them. The
-	// bars and the chart are sections of the insight pane now, so the whole navigation question is gone:
-	// the keyboard stays on screen, and folding the pane out is not a mode change.
+	// bars and the chart are sections of the insight panel now, so the whole navigation question is gone:
+	// the keyboard stays on screen, and opening the panel is not a mode change.
 	await page.goto("/");
 	await ready(page);
 	for (let i = 0; i < 10; i += 1) await tap(page, await wanted(page));
 	await expect(page.locator("button", { hasText: "Progress" })).toHaveCount(0);
 	await expect(page.locator("button", { hasText: "Back to typing" })).toHaveCount(0);
 	// Closed: the section exists in the DOM but is not on screen.
-		// Closed: the section exists in the DOM but is not on screen.
-	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
+	await expect(paneBody(page)).toBeHidden();
 	await openPane(page);
 	await expect(page.locator(".krow").first()).toBeVisible();
-	await expect(page.locator("tt-insight-panel > .stats")).toHaveCount(1);
+	await expect(page.locator(".insights > .stats")).toHaveCount(1);
 	// And typing still works while the pane is out: reading your bars must not pause the lesson.
 	const before = await cursorOf(page);
 	await tap(page, await wanted(page));

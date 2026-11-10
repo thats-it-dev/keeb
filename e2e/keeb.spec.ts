@@ -65,7 +65,7 @@ test("highlights the physical key of the character you typed", async ({ page }) 
 test("the same board re-maps when the keymap changes", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
-	await page.locator("app-main .head button[aria-label='Settings']").click(); // board and keymap live behind the settings modal
+	await page.locator("tk-header button[aria-label='Settings']").click(); // board and keymap live behind the settings modal
 	await page.locator("select").nth(1).selectOption("colemak-dh");
 	await page.locator("dialog [aria-label='Close settings']").click(); // typing resumes once it is closed
 	await expect(key(page, "L_C4R3")).toContainText("R"); // the key that used to be S

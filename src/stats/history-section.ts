@@ -30,9 +30,9 @@ export type HistoryProps = {
 };
 
 /**
- * The practice history as a section of the insight pane. It is slotted, not passed in as data: the SVG is
- * built from d3 scales, and a template handed to a child would be styled by the child's stylesheet, which
- * knows nothing about `.chart` or `.trend`.
+ * The practice history as a section of the insight panel. Its markup comes from here, not from a child
+ * element: the SVG is built from d3 scales, and a template handed to a child would be styled by the child's
+ * stylesheet, which knows nothing about `.chart` or `.trend`.
  *
  * Speed on a Go60 says nothing about the same fingers on a Corne, so the rows are filtered by layout exactly
  * like the key bars beside them. The character count here is the honest one the key screen could not show:
@@ -49,7 +49,7 @@ export function historySection(p: HistoryProps) {
 		// generated per render, labelled, never written to storage or to a repo.
 		if (p.sessions.length || !isPreviewHost(location.hostname, __APP_NAME__)) return nothing;
 		return html`
-			<div class="hist" slot="hist">
+			<div class="hist">
 				<h3>history · ${p.boardName}</h3>
 				<p class="demo-note">
 					<b>preview</b> No synced sessions yet.
@@ -97,7 +97,7 @@ export function historySection(p: HistoryProps) {
 		.y0((q) => y(q.wpm))
 		.y1((q) => y(q.strokeWpm));
 	return html`
-		<div class="hist" slot="hist">
+		<div class="hist">
 			<h3>history · ${p.boardName}</h3>
 			${p.demo
 				? html`<p class="demo-note">

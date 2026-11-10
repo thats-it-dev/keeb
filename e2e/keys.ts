@@ -23,32 +23,27 @@ export function keyName(ch: string): string {
 	return named[ch] ?? ch;
 }
 
-// Fold the insight pane out, whichever shape it took, WITHOUT assuming what state it is in now. The pane
-// remembers being open in localStorage, and csp.ts clears that only on a context's first load -- so a test
-// that reloads can arrive with the pane already open, and a helper that clicked the rail would then CLOSE it.
-// That is what made "open the pane" fail with `hidden` after 15 seconds of waiting. Set the state, do not
-// toggle it.
-export const openPane = async (page: Page) => {
-	if (!(await page.locator("tt-insight-panel .body").isVisible())) await togglePane(page);
-	await expect(page.locator("tt-insight-panel .body")).toBeVisible();
-	await expect(page.locator("tt-insight-panel .rail")).toHaveAttribute("aria-expanded", "true");
-};
+// The insight panel's own scroll column. Named directly, not under the shell's aside landmark: Playwright's
+// descendant combinator does not cross a slot, and the section reaches the panel that way.
+export const paneBody = (page: Page) => page.locator(".insights");
 
-/** The opposite guarantee, for the tests whose whole claim is about a folded pane. */
-export const closePane = async (page: Page) => {
-	if (await page.locator("tt-insight-panel .body").isVisible()) await togglePane(page);
-	await expect(page.locator("tt-insight-panel .body")).toBeHidden();
-	// Settle both animated numbers. closePane only clicks when the pane ARRIVED open, which means the pane's
-	// width and the host's padding-right are both easing from 19rem toward the rail -- and either measured
-	// mid-flight reports a value that belongs to no state the app has ever had (measured: 34.46px against a
-	// claim of exactly 36px).
-	await expect(page.locator("tt-insight-panel")).toHaveCSS("width", "36px");
-	await expect(page.locator("app-main")).toHaveCSS("padding-right", "36px");
-};
+const paneToggle = (page: Page) => page.locator("tk-header .aside-toggle");
 
-async function togglePane(page: Page): Promise<void> {
-	const rail = page.locator("tt-insight-panel .rail");
-	// On a phone the pane sits off-canvas, so its own rail is not clickable and the header button is the opener.
-	if (await rail.isVisible()) await rail.click();
-	else await page.locator("app-main .head button[aria-label='Insights']").click();
+// Open or close the insight panel WITHOUT assuming what state it is in now. The shell remembers the choice
+// in localStorage, and csp.ts clears that only on a context's first load -- so a test that reloads can
+// arrive with the panel already open, and a helper that clicked the toggle would then CLOSE it. Set the
+// state, do not toggle it.
+export async function openPane(page: Page): Promise<void> {
+	if ((await paneToggle(page).getAttribute("aria-expanded")) !== "true") await paneToggle(page).click();
+	await expect(paneToggle(page)).toHaveAttribute("aria-expanded", "true");
+	await expect(paneBody(page)).toBeVisible();
+}
+
+/** The opposite guarantee, for the tests whose whole claim is about a hidden panel. */
+export async function closePane(page: Page): Promise<void> {
+	if ((await paneToggle(page).getAttribute("aria-expanded")) === "true") await paneToggle(page).click();
+	await expect(paneToggle(page)).toHaveAttribute("aria-expanded", "false");
+	// Docked, a hidden panel is a 0-width column; on a phone it is a drawer parked off-canvas. Either way
+	// the content has no box, which is what toBeHidden waits for after the 0.25s transition.
+	await expect(paneBody(page)).toBeHidden();
 }
