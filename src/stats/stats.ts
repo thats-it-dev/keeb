@@ -159,3 +159,14 @@ export function mergeAll(a: StatMap, b: StatMap): StatMap {
 	for (const [id, stat] of Object.entries(b)) out[id] = out[id] ? merge(out[id], stat) : { ...stat };
 	return out;
 }
+
+// Summing per-key samples gives the session totals without double-counting a repeated key.
+export function totals(stats: StatMap): { chars: number; errors: number } {
+	let chars = 0;
+	let errors = 0;
+	for (const s of Object.values(stats)) {
+		chars += s.samples;
+		errors += s.errors;
+	}
+	return { chars, errors };
+}

@@ -1,74 +1,32 @@
 import { LitElement, html, nothing } from "https://kit.thatsit.app/lit.js";
-import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeometry } from "./data/geometries.ts";
-import { KEYMAPS, allKeymaps, forgetKeymap, keymapById, registerKeymap } from "./data/keymaps.ts";
-import { applyRemoteProgress, deleteBoard, deleteMap, layoutKey, loadBoards, loadHistory, loadMaps, loadSettings, loadStats, loadSyncState, saveBoard, saveHistory, saveMap, saveSettings, saveStats, saveSyncState, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
-import { auth } from "./atproto/auth.ts";
-import { Sync, type SharedLayoutRow, type SyncState } from "./atproto/sync.ts";
-import { boardFromLayout, layoutRecord, SHARED_PREFIX, type SessionRow } from "./atproto/records.ts";
-import { cpmToWpm, targetTimeMs, wpmToCpm, type StatMap } from "./stats/stats.ts";
+import { allGeometries, geometryById } from "./data/geometries.ts";
+import { allKeymaps, keymapById } from "./data/keymaps.ts";
+import { layoutKey, loadHistory, loadSettings, loadStats, saveSettings, saveStats, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { type SessionRow } from "./atproto/records.ts";
+import { cpmToWpm, targetTimeMs, totals, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { overview, type KeyInfo } from "./stats/overview.ts";
 import { historySection } from "./stats/history-section.ts";
 import { demoSessions, isPreviewHost } from "./stats/demo.ts";
 import { insightPanel, type PanelCard } from "./stats/panel.ts";
 import { PANEL_OPEN_KEY } from "./stats/panel-element.ts";
-import { resolve, type Resolved } from "./keyboard/resolve.ts";
+import { resolve, keyLabel, type Resolved } from "./keyboard/resolve.ts";
 import { FINGER_NAME, type Geometry, type Keymap } from "./keyboard/types.ts";
-import { geometryFromLayout, importId, importName } from "./layout/parse.ts";
-import { isKeycapFile, keymapFromKeycap, type KeycapFile } from "./layout/keycap.ts";
 import { iconPanelRight, iconSettings } from "./ui/icons.ts";
 import { appStyles } from "./ui/app-styles.ts";
 import { settingsDialog } from "./ui/settings-dialog.ts";
 import { progressSection } from "./stats/progress-section.ts";
+import { Account } from "./app/account.ts";
+import { importLayout, loadLayouts, removeBoard, removeMap, type LayoutChange } from "./app/boards.ts";
+import { rememberSelection, savedSelection } from "./app/selection.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
-
-// Which board and which keymap, per browser. Progress itself lives in IndexedDB.
-const STORE = "keeb:layout";
-
-function saved(): { g: string; k: string } {
-	try {
-		const v = JSON.parse(localStorage.getItem(STORE) ?? "") as { g?: string; k?: string };
-		if (typeof v.g === "string" && typeof v.k === "string" && allGeometries().some((g) => g.id === v.g) && allKeymaps().some((k) => k.id === v.k)) {
-			return { g: v.g, k: v.k };
-		}
-	} catch {
-		/* first run or junk in the slot */
-	}
-	return { g: GEOMETRIES[0].id, k: KEYMAPS[0].id };
-}
-
-// What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on
-// the board, and an invisible row label reads as a bug in the screen rather than as the space bar. A key
-// with no character at all (an unmapped pinky column) falls back to its id, which is at least something
-// to point at.
-function keyLabel(k: { id: string; char: string }): string {
-	if (k.char === " ") return "space";
-	return k.char.trim() === "" ? k.id : k.char;
-}
-
-// Summing per-key samples gives the session totals without double-counting a repeated key.
-function totals(stats: StatMap): { chars: number; errors: number } {	let chars = 0;
-	let errors = 0;
-	for (const s of Object.values(stats)) {
-		chars += s.samples;
-		errors += s.errors;
-	}
-	return { chars, errors };
-}
-
-// SyncState lives in IndexedDB with everything else that has to survive a reload.
-const syncStore = {
-	load: () => loadSyncState(),
-	// The store keeps one row; the spread is what makes it that row rather than a second one.
-	save: async (s: SyncState) => saveSyncState(s),
-};
 
 export class AppMain extends LitElement {
 	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, panelOpen: { type: Boolean, attribute: "data-panel-open", reflect: true } };
 	static styles = appStyles;
 
-	geometryId = saved().g;
+	geometryId = savedSelection().g;
 	settingsOpen = false;
 	// Practice sessions as the PDS keeps them, cached in IndexedDB. Empty until something has synced.
 	sessions: SessionRow[] = [];
@@ -84,16 +42,40 @@ export class AppMain extends LitElement {
 	// Fake history for previews, switched on by ?demo=1. Generated per render and never stored anywhere:
 	// a preview visit must not be able to write a made-up session into a real repo or a real device.
 	demo = new URLSearchParams(location.search).has("demo");
-	keymapId = saved().k;
+	keymapId = savedSelection().k;
 	// Layout files the learner imported, straight out of IndexedDB.
 	boards: Geometry[] = [];
 	maps: Keymap[] = [];
 	importProblems: string[] = [];
-	// Signed-in account, and the one line the sync layer is allowed to say out loud.
+	// Signed-in account, and the one line the sync layer is allowed to say out loud. The account owns the
+	// truth; these two fields are the render-visible copy it pushes through invalidate().
 	did = "";
 	syncNote = "";
-	#sync: Sync | undefined;
-	#handle = "";
+	#account = new Account({
+		read: () => ({ geometryId: this.geometryId, keymapId: this.keymapId, targetCpm: this.targetCpm, stats: this.stats, sessions: this.sessions, layouts: { boards: this.boards, maps: this.maps } }),
+		writeStats: (stats) => (this.stats = stats),
+		writeSessions: (sessions) => (this.sessions = sessions),
+		writeLayouts: ({ boards, maps }) => {
+			this.boards = boards;
+			this.maps = maps;
+		},
+		writeGoal: (targetCpm) => (this.targetCpm = targetCpm),
+		reload: () => void this.#load({ g: this.geometryId, k: this.keymapId }),
+		pick: (geometryId, keymapId) => {
+			this.#pick("g", geometryId);
+			this.#pick("k", keymapId);
+		},
+		select: (geometryId, keymapId) => {
+			this.geometryId = geometryId;
+			this.keymapId = keymapId;
+		},
+		endSession: () => this.#endSession(),
+		invalidate: () => {
+			this.did = this.#account.did;
+			this.syncNote = this.#account.note;
+			this.requestUpdate();
+		},
+	});
 	// What the counters read when the current session started, so a session record holds a delta.
 	#baseline = { chars: 0, errors: 0 };
 	#startedAt = 0;
@@ -115,20 +97,18 @@ export class AppMain extends LitElement {
 
 	override firstUpdated(): void {
 		// Stored boards and keymaps have to be registered before the saved selection is read, and the ids
-		// re-assigned afterwards: the field initializers called saved() against an empty registry, so they
-		// hold the shipped defaults even when the stored choice says otherwise.
-		void Promise.all([loadBoards(), loadMaps()]).then(([boards, maps]) => {
-			this.boards = boards;
-			this.maps = maps;
-			for (const b of boards) registerGeometry(b);
-			for (const m of maps) registerKeymap(m);
-			const sel = saved();
+		// re-assigned afterwards: the field initializers called savedSelection() against an empty registry, so
+		// they hold the shipped defaults even when the stored choice says otherwise.
+		void loadLayouts().then((layouts) => {
+			this.boards = layouts.boards;
+			this.maps = layouts.maps;
+			const sel = savedSelection();
 			const moved = sel.g !== this.geometryId || sel.k !== this.keymapId;
 			this.geometryId = sel.g;
 			this.keymapId = sel.k;
 			// updated() reloads when an id changed; when nothing moved this is the only place that loads.
 			if (!moved) void this.#load(sel);
-			void this.#bootSync();
+			void this.#account.boot();
 			// Closing the tab ends a practice session; the browser gets one last look at it.
 			window.addEventListener("pagehide", () => void this.#endSession());
 		});
@@ -139,19 +119,6 @@ export class AppMain extends LitElement {
 				this.sessions = sessions;
 			})
 			.catch(() => undefined);
-	}
-
-	// Restore a session if this browser has one, and finish a sign-in redirect if one is in flight.
-	async #bootSync(): Promise<void> {
-		try {
-			const s = await auth.session();
-			if (!s) return;
-			this.did = s.did;
-			this.#sync = new Sync(s, syncStore);
-			await this.#syncNow(false);
-		} catch (err) {
-			this.syncNote = (err as Error).message;
-		}
 	}
 
 	override disconnectedCallback(): void {
@@ -190,7 +157,7 @@ export class AppMain extends LitElement {
 		const [stored, settings] = await Promise.all([loadStats(key), loadSettings(key)]);
 		if (this.#pending !== token) return; // a newer selection won the race
 		this.settings = { ...DEFAULT_SETTINGS, ...settings, geometry: sel.g, keymap: sel.k };
-		localStorage.setItem(STORE, JSON.stringify(sel));
+		rememberSelection(sel);
 		this.stats = stored;
 		this.targetCpm = this.settings.targetCpm;
 		this.#saved = JSON.stringify(stored);
@@ -258,8 +225,8 @@ export class AppMain extends LitElement {
 		const errors = now.errors - this.#baseline.errors;
 		const ms = Date.now() - this.#startedAt;
 		this.#startedAt = 0;
-		if (chars <= 0 || !this.#sync) return; // offline-first: the practice data is already in IndexedDB
-		const res = await this.#sync.pushSession(layoutKey(this.geometryId, this.keymapId), { chars, errors, ms, stats: this.stats }, Date.now());
+		if (chars <= 0 || !this.#account.connected) return; // offline-first: the practice data is already in IndexedDB
+		const res = await this.#account.pushSession({ chars, errors, ms, stats: this.stats });
 		this.syncNote = res.error ?? (res.sent ? `synced ${chars} characters` : "");
 	}
 
@@ -302,117 +269,22 @@ export class AppMain extends LitElement {
 		if (Number.isFinite(v) && v >= 15 && v <= 120) this.targetCpm = wpmToCpm(v);
 	}
 
-	/** Register and store one shared layout, if this browser does not already have it. Idempotent by id. */
-	async #adoptShared(row: SharedLayoutRow): Promise<void> {
-		const { geometry, keymap } = boardFromLayout(row.rkey, row.layout);
-		if (!allGeometries().some((x) => x.id === geometry.id)) {
-			registerGeometry(geometry);
-			await saveBoard(geometry);
-			this.boards = [...this.boards, geometry];
-		}
-		if (!allKeymaps().some((x) => x.id === keymap.id)) {
-			registerKeymap(keymap);
-			await saveMap(keymap);
-			this.maps = [...this.maps, keymap];
-		}
-	}
-
-	/**
-	 * Publish the layout on screen, then adopt the record this device just wrote. Adopting is not a courtesy
-	 * to the other browser: without it this one keeps typing under `import:whatever` while the account says
-	 * `shared:<rkey>`, and the two never recognize each other again.
-	 */
-	async #publishLayout(): Promise<void> {
-		if (!this.#sync) return;
-		this.syncNote = "";
-		const g = geometryById(this.geometryId);
-		const k = keymapById(this.keymapId);
-		const r = this.#resolved;
-		const byKey: Record<string, string> = {};
-		for (const key of r.keys) byKey[key.id] = key.char;
-		try {
-			const rkey = await this.#sync.pushLayout(layoutKey(g.id, k.id), layoutRecord(g.name, g.source, g, r.keys.map((key) => ({ id: key.id, char: key.char }))));
-			await this.#adoptShared({ rkey, layout: { name: g.name, source: g.source, geometry: { split: g.split, rowRoles: g.rowRoles, keys: g.keys }, byKey } });
-			const id = SHARED_PREFIX + rkey;
-			this.#pick("g", id);
-			this.#pick("k", id);
-			await this.#syncNow(false);
-			this.syncNote = "layout published";
-		} catch (err) {
-			this.syncNote = `layout not published: ${(err as Error).message}`;
-		}
-	}
-
-	// Bring the account and this browser into line, in whichever direction each piece is newer.
+	// Sync, sign-in and publishing are the account's business; see app/account.ts. These are the three
+	// hooks the screen needs, and every one of them leaves the note for the learner on this.#account.note.
 	async #syncNow(adapt = true): Promise<void> {
-		if (!this.#sync) return;
-		this.syncNote = "";
-		const key = layoutKey(this.geometryId, this.keymapId);
-		const notes: string[] = [];
-		try {
-			const { settings, progress, sessions, layouts } = await this.#sync.pull();
-			// Shared boards land before anything reads the settings record: the account may name a layout this
-			// browser has never seen, and the adoption check below only accepts an id it can resolve.
-			for (const row of layouts) await this.#adoptShared(row);
-			await saveHistory(sessions);
-			this.sessions = sessions;
-			const remote = progress[key];
-			if (remote) {
-				// Only what the record has learned since the last fold counts. It carries this browser's own
-				// pushed numbers, so folding it in whole added our strokes to our strokes — once per sync. The
-				// memory of what was already folded lives in the sync row, which store.ts reads and writes in the
-				// same transaction as the stats.
-				const before = JSON.stringify(this.stats);
-				this.stats = await applyRemoteProgress(key, remote);
-				if (JSON.stringify(this.stats) !== before) {
-					// The engine holds its own copy; rebuilding the lesson is what makes the merged speed count.
-					void this.#load({ g: this.geometryId, k: this.keymapId });
-				}
-			}
-			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
-		// over on a quiet page: at boot, or when they press Sync.
-			if (adapt && (settings.geometry || settings.keymap || settings.targetCpm)) {
-				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : this.geometryId;
-				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : this.keymapId;
-				if (settings.targetCpm) this.targetCpm = settings.targetCpm;
-				if (g !== this.geometryId || k !== this.keymapId) {
-					this.geometryId = g;
-					this.keymapId = k;
-				} else void this.#load({ g, k });
-			}
-		} catch (err) {
-			// A failed read must not cancel the writes below. The reason this device has anything queued is
-			// that a write failed earlier; if the read had to succeed first, an unreachable PDS would strand the
-			// outbox forever -- and it is how an InvalidRequest on pull() came to silence Sync entirely.
-			notes.push(`read failed: ${(err as Error).message}`);
-		}
-		try {
-			await this.#sync.pushSettings({ geometry: this.geometryId, keymap: this.keymapId, targetCpm: this.targetCpm, unlocked: [] }, Date.now());
-		} catch (err) {
-			notes.push(`settings not sent: ${(err as Error).message}`);
-		}
-		const queued = await this.#sync.flush(Date.now());
-		this.syncNote = [...notes, queued.error ?? (queued.sent ? `${queued.sent} session(s) sent` : "up to date")].join(" · ");
+		await this.#account.syncNow(adapt);
 	}
 
 	async #signIn(): Promise<void> {
-		this.syncNote = "";
-		try {
-			// One call, one authorisation request: asking twice would replace the PKCE state in storage and
-			// the callback would no longer match the URL the browser was sent to.
-			const url = await auth.authorizeUrl(this.#handle);
-			location.assign(url);
-		} catch (err) {
-			this.syncNote = (err as Error).message;
-		}
+		await this.#account.signIn();
 	}
 
 	async #signOut(): Promise<void> {
-		await this.#endSession();
-		await auth.signOut();
-		this.did = "";
-		this.#sync = undefined;
-		this.syncNote = "signed out; progress stays on this device";
+		await this.#account.signOut();
+	}
+
+	async #publishLayout(): Promise<void> {
+		await this.#account.publish(geometryById(this.geometryId), this.#resolved.keys.map((key) => ({ id: key.id, char: key.char })));
 	}
 
 	// Read a layout file the learner picked. Two shapes arrive here: a keyboard-layout-editor
@@ -421,52 +293,29 @@ export class AppMain extends LitElement {
 	async #upload(e: Event): Promise<void> {
 		const file = (e.target as HTMLInputElement).files?.[0];
 		if (!file) return;
-		const id = importId(file.name);
-		try {
-			const json: unknown = JSON.parse(await file.text());
-			if (isKeycapFile(json)) return void (await this.#importKeycap(json, file.name, id));
-			const { geometry, problems } = geometryFromLayout(json, { id, name: importName(file.name), source: file.name });
-			this.importProblems = problems;
-			if (!geometry) return;
-			// Re-importing the same file replaces the earlier copy rather than piling up near-duplicates.
-			forgetGeometry(id);
-			registerGeometry(geometry);
-			await saveBoard(geometry);
-			this.boards = [...this.boards.filter((b) => b.id !== id), geometry];
-			this.geometryId = id;
-		} catch (err) {
-			this.importProblems = [`${file.name}: ${(err as Error).message}`];
-		}
-	}
-
-	// A layout editor export carries characters, not positions: the board it names has to be one we know.
-	// When it names something we don't have, it is checked against the board already on screen, and the
-	// resulting problem says so in terms of both.
-	async #importKeycap(file: KeycapFile, fileName: string, id: string): Promise<void> {
-		const named = String(file.keyboard ?? "").toLowerCase();
-		const base = allGeometries().find((g) => g.id === named) ?? geometryById(this.geometryId);
-		const { keymap, problems } = keymapFromKeycap(file, base, id, importName(fileName));
-		this.importProblems = problems;
-		if (!keymap) return;
-		forgetKeymap(id);
-		registerKeymap(keymap);
-		await saveMap(keymap);
-		this.maps = [...this.maps.filter((m) => m.id !== id), keymap];
-		this.keymapId = id;
+		this.#applyLayout(await importLayout(await file.text(), file.name, { boards: this.boards, maps: this.maps }, this.geometryId));
 	}
 
 	async #removeMap(id: string): Promise<void> {
-		forgetKeymap(id);
-		await deleteMap(id);
-		this.maps = this.maps.filter((m) => m.id !== id);
-		if (this.keymapId === id) this.keymapId = KEYMAPS[0].id;
+		const next = await removeMap(id, { boards: this.boards, maps: this.maps }, this.keymapId);
+		this.maps = next.maps;
+		this.keymapId = next.keymapId;
 	}
 
 	async #removeBoard(id: string): Promise<void> {
-		forgetGeometry(id);
-		await deleteBoard(id);
-		this.boards = this.boards.filter((b) => b.id !== id);
-		if (this.geometryId === id) this.geometryId = GEOMETRIES[0].id;
+		const next = await removeBoard(id, { boards: this.boards, maps: this.maps }, this.geometryId);
+		this.boards = next.boards;
+		this.geometryId = next.geometryId;
+	}
+
+	// One place where an imported or shared layout reaches the screen: the lists, the selection, and the
+	// problems the parser found, all from the same result object.
+	#applyLayout(change: LayoutChange): void {
+		if (change.problems) this.importProblems = change.problems;
+		if (change.boards) this.boards = change.boards;
+		if (change.maps) this.maps = change.maps;
+		if (change.geometryId) this.geometryId = change.geometryId;
+		if (change.keymapId) this.keymapId = change.keymapId;
 	}
 
 	#next(): void {
@@ -497,7 +346,7 @@ export class AppMain extends LitElement {
 					keymapId: this.keymapId,
 					goalWpm: cpmToWpm(this.targetCpm),
 					did: this.did,
-					handle: this.#handle,
+					handle: this.#account.handle,
 					syncNote: this.syncNote,
 					boards: this.boards,
 					maps: this.maps,
@@ -507,7 +356,7 @@ export class AppMain extends LitElement {
 					onPick: (part, value) => this.#pick(part, value),
 					onGoal: (e) => this.#goal(e),
 					onUpload: (e) => void this.#upload(e),
-					onHandle: (v) => (this.#handle = v),
+					onHandle: (v) => (this.#account.handle = v),
 					onSignIn: () => void this.#signIn(),
 					onSignOut: () => void this.#signOut(),
 					onSync: () => void this.#syncNow(),

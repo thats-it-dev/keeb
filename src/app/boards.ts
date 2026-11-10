@@ -21,23 +21,22 @@ export async function loadLayouts(): Promise<Layouts> {
 	return { boards, maps };
 }
 
-/**
- * Register, store, and select one layout read from a file. Two shapes arrive here: a
+/** Register, store, and select one layout read from a file. Two shapes arrive here: a
  * keyboard-layout-editor info.json, which describes a board's positions, and a MoErgo Layout Editor
  * export, which names a board and gives the characters. The same control takes either.
  */
-export async function importLayout(text: string, fileName: string, currentGeometryId: string): Promise<LayoutChange> {
+export async function importLayout(text: string, fileName: string, layouts: Layouts, currentGeometryId: string): Promise<LayoutChange> {
 	const id = importId(fileName);
 	try {
 		const json: unknown = JSON.parse(text);
-		if (isKeycapFile(json)) return await importKeycap(json, fileName, id, currentGeometryId);
+		if (isKeycapFile(json)) return await importKeycap(json, fileName, id, layouts, currentGeometryId);
 		const { geometry, problems } = geometryFromLayout(json, { id, name: importName(fileName), source: fileName });
 		// Re-importing the same file replaces the earlier copy rather than piling up near-duplicates.
 		if (!geometry) return { problems };
 		forgetGeometry(id);
 		registerGeometry(geometry);
 		await saveBoard(geometry);
-		return { problems, geometryId: id };
+		return { problems, boards: [...layouts.boards.filter((b) => b.id !== id), geometry], geometryId: id };
 	} catch (err) {
 		return { problems: [`${fileName}: ${(err as Error).message}`] };
 	}
@@ -46,7 +45,7 @@ export async function importLayout(text: string, fileName: string, currentGeomet
 // A layout editor export carries characters, not positions: the board it names has to be one we know.
 // When it names something we don't have, it is checked against the board already on screen, and the
 // resulting problem says so in terms of both.
-async function importKeycap(file: KeycapFile, fileName: string, id: string, currentGeometryId: string): Promise<LayoutChange> {
+async function importKeycap(file: KeycapFile, fileName: string, id: string, layouts: Layouts, currentGeometryId: string): Promise<LayoutChange> {
 	const named = String(file.keyboard ?? "").toLowerCase();
 	const base = allGeometries().find((g) => g.id === named) ?? geometryById(currentGeometryId);
 	const { keymap, problems } = keymapFromKeycap(file, base, id, importName(fileName));
@@ -54,7 +53,7 @@ async function importKeycap(file: KeycapFile, fileName: string, id: string, curr
 	forgetKeymap(id);
 	registerKeymap(keymap);
 	await saveMap(keymap);
-	return { problems, keymapId: id };
+	return { problems, maps: [...layouts.maps.filter((m) => m.id !== id), keymap], keymapId: id };
 }
 
 /** The board or keymap a shared record brought with it: register and store it, if we don't already have it. */

@@ -53,3 +53,12 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 	const { width, height } = bounds(keys);
 	return { geometry: g, keys, byId, byChar, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems };
 }
+
+// What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on
+// the board, and an invisible row label reads as a bug in the screen rather than as the space bar. A key
+// with no character at all (an unmapped pinky column) falls back to its id, which is at least something
+// to point at.
+export function keyLabel(k: { id: string; char: string }): string {
+	if (k.char === " ") return "space";
+	return k.char.trim() === "" ? k.id : k.char;
+}
