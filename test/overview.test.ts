@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { overview, barWidth, wpm, type KeyInfo } from "../src/stats/overview.ts";
-import { emptyStat, type StatMap } from "../src/stats/stats.ts";
+import { overview, wpm, type KeyInfo } from "../src/stats/overview.ts";
+import { emptyStat } from "../src/stats/stats.ts";
 
 const goalCpm = 240; // 250 ms per key
 const key = (id: string, hand: KeyInfo["hand"] = "left"): KeyInfo => ({ id, label: id.toUpperCase(), hand });
@@ -8,30 +8,6 @@ const ROW = ["a", "s", "d", "f", "g", "h", "j", "k", "l"].flatMap((c, i) => [key
 
 // A stat at exactly `ms`, with enough samples that the ladder would treat it as measured.
 const at = (ms: number, samples = 40, errors = 0) => ({ ttMs16: ms * 16, samples, errors });
-
-describe("barWidth", () => {
-	it("puts the goal in the middle and doubles and halves symmetrically", () => {
-		expect(barWidth(250, 250)).toBe(50);
-		expect(barWidth(500, 250)).toBe(25); // twice as slow
-		expect(barWidth(125, 250)).toBe(75); // twice as fast, same distance the other way
-	});
-
-	it("rises monotonically as the key gets faster, so a longer bar always means a quicker key", () => {
-		const ms = [900, 600, 400, 250, 150, 90, 40, 20];
-		const w = ms.map((m) => barWidth(m, 250));
-		expect([...w].sort((a, b) => a - b)).toEqual(w);
-	});
-
-	it("stays inside the track and leaves a trace of a bar at the extremes", () => {
-		for (const m of [1, 10, 250, 10_000, 100_000]) expect(barWidth(m, 250)).toBeGreaterThanOrEqual(2);
-		for (const m of [1, 10, 250, 10_000]) expect(barWidth(m, 250)).toBeLessThanOrEqual(100);
-	});
-
-	it("draws nothing for a key with no timing or no goal", () => {
-		expect(barWidth(0, 250)).toBe(0);
-		expect(barWidth(200, 0)).toBe(0);
-	});
-});
 
 describe("overview", () => {
 	it("puts the slowest practised key first", () => {

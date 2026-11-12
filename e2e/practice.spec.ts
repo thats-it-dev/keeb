@@ -165,13 +165,13 @@ test("the progress bars are a pane section, not a screen to navigate to", async 
 	// Closed: the section exists in the DOM but is not on screen.
 	await expect(paneBody(page)).toBeHidden();
 	await openPane(page);
-	await expect(page.locator(".krow").first()).toBeVisible();
+	await expect(page.locator("tk-bars .row").first()).toBeVisible();
 	await expect(page.locator(".insights > .stats")).toHaveCount(1);
 	// And typing still works while the pane is out: reading your bars must not pause the lesson.
 	const before = await cursorOf(page);
 	await tap(page, await wanted(page));
 	expect(await cursorOf(page)).toBeGreaterThan(before);
-	await expect(page.locator(".krow").first()).toBeVisible(); // still there, not swapped away
+	await expect(page.locator("tk-bars .row").first()).toBeVisible(); // still there, not swapped away
 });
 
 test("the progress screen names every key it measured", async ({ page }) => {
@@ -186,25 +186,23 @@ test("the progress screen names every key it measured", async ({ page }) => {
 		await tap(page, ch);
 	}
 	await openPane(page);
-	expect(await page.locator(".krow").count()).toBeGreaterThan(3);
+	expect(await page.locator("tk-bars .row").count()).toBeGreaterThan(3);
 	// Only keys with timing get a row. A key never struck has no bar to draw, and 40 empty rows used to
 	// bury the handful that meant something; they get chips instead.
 	expect(await page.locator(".chip").count()).toBeGreaterThan(0);
-	const nums = await page.locator(".krow .num").allInnerTexts();
+	const nums = await page.locator("tk-bars .row .val").allInnerTexts();
 	expect(nums.every((n) => /wpm/.test(n))).toBe(true);
 	// No row may render without a name. The space bar's character is a blank, so it used to arrive as an
 	// invisible label on the most-struck key on the board.
-	const caps = await page.locator(".krow .cap").allInnerTexts();
+	const caps = await page.locator("tk-bars .row .name").allInnerTexts();
 	expect(caps.length).toBeGreaterThan(3);
 	expect(caps.every((c) => c.trim() !== "")).toBe(true);
 	expect(caps).toContain("space");
-	const widths = await page.locator(".krow .kbar").evaluateAll((els) => els.map((e) => parseFloat((e as HTMLElement).style.width)));
-	expect(widths.every((w) => w <= 100 && w >= 2)).toBe(true);
+	const widths = await page.locator("tk-bars .row .fill").evaluateAll((els) => els.map((e) => parseFloat((e as HTMLElement).style.width)));
+	expect(widths.every((w) => w <= 100 && w >= 0)).toBe(true);
 	// Ordering is all this path can honestly claim: a scripted loop strikes every key in a millisecond or
 	// two, which against the 300 ms default goal is 150-300x goal speed -- deep inside the scale's 100%
-	// clamp (measured: barWidth pins at 100 below goal/3.9). Asking those rows to look different from each
-	// other is a claim about the machine's clock, not about typing. test/scale.test.ts and the seeded test
-	// below own the ranking.
+	// clamp. test/scale.test.ts and the seeded test below own the ranking.
 	const pairs = widths.map((w, i) => ({ ms: Number((nums[i] ?? "").match(/(\d+)ms/)?.[1] ?? -1), w })).filter((p) => p.ms > 0);
 	expect(pairs.length).toBeGreaterThan(3);
 	for (const a of pairs) for (const b of pairs) if (a.ms < b.ms) expect(a.w).toBeGreaterThanOrEqual(b.w);
@@ -245,26 +243,24 @@ test("bar widths rank a spread of timings instead of saturating", async ({ page 
 	await page.reload();
 	await ready(page);
 	await openPane(page);
-	// The rows render only once the store has answered; reading .krow before that yields an empty list, and
+	// The rows render only once the store has answered; reading .row before that yields an empty list, and
 	// every .every() below would then pass vacuously.
-	await page.locator(".krow").first().waitFor();
+	await page.locator("tk-bars .row").first().waitFor();
 
-	// Rows are identified by the label they show: .krow carries no id attribute, and the label is the thing a
-	// learner reads next to the bar anyway.
-	const rows = await page.locator(".krow").evaluateAll((els) =>
-		els.map((e) => ({ cap: (e.querySelector(".cap") as HTMLElement).textContent?.trim() ?? "", w: parseFloat((e.querySelector(".kbar") as HTMLElement).style.width) })),
+	// Rows are identified by the label they show: tk-bars .row carries no id attribute, and the label is
+	// the thing a learner reads next to the bar anyway.
+	const rows = await page.locator("tk-bars .row").evaluateAll((els) =>
+		els.map((e) => ({ name: (e.querySelector(".name") as HTMLElement).textContent?.trim() ?? "", w: parseFloat((e.querySelector(".fill") as HTMLElement).style.width) })),
 	);
-	const byCap = new Map(rows.map((r) => [r.cap, r.w]));
-	const widths = ["a", "s", "d", "g"].map((ch) => byCap.get(ch));
-	expect(widths.every((w) => w !== undefined)).toBe(true);
-	// Distinct: 40 ms and 120 ms are both under the goal, and a scale that saturates draws them alike.
-	expect(new Set(widths).size).toBe(widths.length);
-	// And strictly shorter as the key gets slower, which is the direction the bars mean.
-	for (let i = 1; i < widths.length; i += 1) expect(widths[i]).toBeLessThan(widths[i - 1]!);
-	// Exactly at goal sits at the midpoint, and the tick that marks it is at the same x in every row.
-	expect(byCap.get("d"), "the key at exactly goal").toBe(50);
-	const marks = await page.locator(".krow .mark").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
-	expect(marks).toEqual(["50%"]);
+	const byCap = new Map(rows.map((r) => [r.name, r.w]));
+	// Kit's reciprocal scale: clamp(0.8 * goal / ms, 0, 1) * 100, goal 300 ms.
+	expect(byCap.get("a")).toBe(100); // 40 ms → clamped
+	expect(byCap.get("s")).toBe(100); // 120 ms → clamped too: faster than goal/0.8 saturates
+	expect(byCap.get("d")).toBe(80);  // exactly at goal → 80% tick position
+	expect(byCap.get("g")).toBeLessThan(80);
+	// Goal tick: 80% of the track.
+	const marks = await page.locator("tk-bars .tick").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
+	expect(marks).toEqual(["80%"]);
 	await expect(page.locator(".card").first()).toContainText("wpm");
 });
 

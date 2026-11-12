@@ -26,21 +26,6 @@ export type KeyRow = {
 	bestMs: number;
 };
 
-/**
- * Bar width, as a percentage, on a scale that is symmetric in TIME rather than in speed: the goal sits at
- * 50 and each doubling or halving of ms moves 25 points. A linear goal-relative bar looked right at 200 wpm
- * and went useless at 400 -- every key saturated at 100% and the screen could not rank anything, which is
- * the only reason to draw a bar. Log means a key twice as slow and a key twice as fast take up the same
- * room, which is how they feel to type.
- */
-export function barWidth(ms: number, goalMs: number): number {
-	if (ms <= 0 || goalMs <= 0) return 0;
-	return Math.max(2, Math.min(100, Math.round(50 - 25 * (Math.log2(ms / goalMs)))));
-}
-
-/** The goal tick, in the same coordinates as the bars. Always 50 by construction. */
-export const GOAL_AT = 50;
-
 export type Overview = {
 	/** Every key of the current layout, worst first; anything unmeasured sinks to the bottom. */
 	keys: KeyRow[];
