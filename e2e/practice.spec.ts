@@ -261,7 +261,7 @@ test("bar widths rank a spread of timings instead of saturating", async ({ page 
 	// Goal tick: 80% of the track.
 	const marks = await page.locator(".stats tk-bars .tick").evaluateAll((els) => [...new Set(els.map((e) => (e as HTMLElement).style.left))]);
 	expect(marks).toEqual(["80%"]);
-	await expect(page.locator(".card").first()).toContainText("wpm");
+	await expect(page.locator("tk-stats").first()).toContainText("wpm");
 });
 
 test("switching keyboards cannot write the old layout's stats into the new layout's record", async ({ page }) => {

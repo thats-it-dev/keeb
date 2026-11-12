@@ -67,8 +67,8 @@ test("cached sessions draw a curve and honest totals", async ({ page }) => {
 	expect(await page.locator(".hist .line.s1").getAttribute("d")).toContain("M");
 	expect(await page.locator(".hist .line.s2").getAttribute("d")).toBe("");
 	await expect(page.locator(".hist tk-timeseries .goal")).toHaveCount(1);
-	const card = (name: string) => page.locator(".hist .card", { hasText: name }).locator("b");
-	await expect(card("characters")).toHaveText("1500"); // 400 + 500 + 600, a real stroke count
+	const card = (name: string) => page.locator(".hist tk-stat", { hasText: name }).locator(".value");
+	await expect(card("characters")).toHaveText("1,500"); // 400 + 500 + 600, a real stroke count
 	await expect(card("sessions")).toHaveText("3");
 	await expect(card("practised")).toHaveText("4 min");
 	await expect(card("streak")).toHaveText("3 d");
@@ -81,7 +81,7 @@ test("a day with no sessions is a gap, not a point on a line", async ({ page }) 
 	// the three-day run and the stub. The visible break is the hole; the dot marks the isolated day.
 	expect(d.split("M").length - 1).toBe(2);
 	expect(await page.locator(".hist .dot").count()).toBe(1); // isolated day renders as a dot
-	await expect(page.locator(".hist .card", { hasText: "streak" }).locator("b")).toHaveText("3 d");
+	await expect(page.locator(".hist tk-stat", { hasText: "streak" }).locator(".value")).toHaveText("3 d");
 });
 
 test("a day with sessions but no characters dips to the axis, not a gap", async ({ page }) => {
@@ -109,8 +109,8 @@ test("history from another board does not leak into this one's chart", async ({ 
 test("a session with no readable date counts, but is not drawn", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "d1", atMs: 0, chars: 700, ms: 60_000 }), row({ rkey: "d2", atMs: noon(0), chars: 300, ms: 60_000 })]);
 	expect(await page.locator(".hist .dot").count()).toBe(1); // the undated one is in the totals only
-	await expect(page.locator(".hist .card", { hasText: "characters" }).locator("b")).toHaveText("1000");
-	await expect(page.locator(".hist .card", { hasText: "sessions" }).locator("b")).toHaveText("2");
+	await expect(page.locator(".hist tk-stat", { hasText: "characters" }).locator(".value")).toHaveText("1,000");
+	await expect(page.locator(".hist tk-stat", { hasText: "sessions" }).locator(".value")).toHaveText("2");
 	await expect(page.locator(".hist")).toContainText("no readable date");
 });
 

@@ -1,6 +1,5 @@
 import { html, nothing } from "https://kit.thatsit.app/lit.js";
 import { wpm, type Overview } from "./overview.ts";
-import { card } from "../ui/card.ts";
 
 export function progressSection(o: Overview, goalMs: number) {
 	const chips = (list: Overview["keys"]) => html`<span class="chips">${list.map((k) => html`<span class="chip" title="no samples yet">${k.label}</span>`)}</span>`;
@@ -11,10 +10,13 @@ export function progressSection(o: Overview, goalMs: number) {
 	// local per-key stats hid exactly the person who most wants to see it.
 	const keys = o.covered
 		? html`
-				<div class="grid">
-					${card("average", `${o.avgWpm} wpm`)} ${card("at goal", `${o.readyPct}%`)} ${card("errors", `${o.errPct}%`)} ${card("keys", `${o.covered}/${o.total}`)}
-					${card("hands", `${o.handBalance}/${100 - o.handBalance}`)}
-				</div>
+				<tk-stats>
+					<tk-stat label="average" .value=${o.avgWpm} unit="wpm"></tk-stat>
+					<tk-stat label="at goal" .value=${`${o.readyPct}%`}></tk-stat>
+					<tk-stat label="errors" .value=${`${o.errPct}%`}></tk-stat>
+					<tk-stat label="keys" .value=${`${o.covered}/${o.total}`}></tk-stat>
+					<tk-stat label="hands" .value=${`${o.handBalance}/${100 - o.handBalance}`}></tk-stat>
+				</tk-stats>
 				${o.focusLabel
 					? html`<p class="empty" data-focus=${o.focusLabel}>Every word on screen uses <b>${o.focusLabel}</b> — it is the letter of yours that has never held the goal speed.</p>`
 					: html`<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. Nothing there is below goal, so the next letter is unlocked.` : ""}</p>`}
