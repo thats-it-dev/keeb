@@ -182,6 +182,7 @@ test("the chart draws the pausing, and refuses to draw it without the data", asy
 	await page.reload();
 	await openPane(page);
 	await page.locator(".hist .line.s1").waitFor({ state: "attached" }); // chart lays out once the pane has a width
+	await page.locator(".hist .band").waitFor({ state: "attached" }); // the band shares the layout pass; wait for it too
 
 	// The SVG lives in the chart's shadow root, so read it through the locator (which pierces shadow
 	// DOM) rather than a querySelector inside evaluate. The band is only rendered when there is stroke
