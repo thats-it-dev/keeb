@@ -48,34 +48,17 @@ export const appStyles = [
 		.row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; justify-content: center; }
 		/* Today's minutes under the numbers: the track takes the middle, the words hold both ends. */
 		.daily { display: flex; gap: 10px; align-items: center; width: 100%; max-width: 30rem; }
-		.daily .track { flex: 1; }
-		.daily .num { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 0.8rem; white-space: nowrap; }
 		.hit { color: var(--primary); font-weight: 600; }
 		.warn { color: var(--text-muted); }
 		.full { grid-column: 1 / -1; }
 		.board { display: flex; align-items: center; gap: 10px; }
 		.problems { margin: 0; padding-left: 1.1em; color: var(--accent); font-size: 0.85rem; }
 		/* Sign-in is one line of the panel, not a section: it is optional and rarely touched. */
-		.sync { display: flex; gap: 8px; align-items: center; }
-		.sync input { width: 100%; max-width: 12rem; }
 		/* The progress section is a pane section, so it is narrower than the page: tighter gaps, and the same
 		heading type the history section above it uses. */
 		.stats { width: 100%; display: grid; gap: 10px; }
 		.stats h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
-		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 14px; }
 		.card { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: var(--radius); background: var(--code-bg); }
-		.card b { font-size: 1.4rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-		.card span.label { font-size: 0.75rem; }
-		.rows { display: grid; gap: 5px; }
-		.krow { display: grid; grid-template-columns: 2.2rem 1fr 5.5rem; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
-		.krow .cap { font-weight: 600; }
-		.krow .num { text-align: right; color: var(--text-muted); font-size: 0.8rem; }
-		.track { position: relative; height: 8px; border-radius: 4px; background: var(--code-bg); overflow: hidden; }
-		.kbar { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--primary); }
-		.kbar.bad { background: var(--accent); }
-		/* The goal line: without it a half-full bar cannot be read as slow or as on target. */
-		.mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text-muted); }
-		.next { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--radius); }
 		.empty { margin: 0; color: var(--text-muted); }
 		/* Keys with no data get a chip, not a row: 40 empty bars would bury the 20 that mean something. */
 		.chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
@@ -83,31 +66,8 @@ export const appStyles = [
 		/* History: a line per day, broken at the days you skipped -- an unbroken slope through a rest day
 		* would claim a decline that never happened. */
 		.hist { display: grid; gap: 10px; width: 100%; }
-		/* The section lives in a 19rem column, so the totals wrap tighter and carry less type than a
-		full-width screen would want. */
-		.hist .grid { grid-template-columns: repeat(auto-fit, minmax(7.25rem, 1fr)); gap: 8px; }
-		.hist .card { padding: 7px 9px; }
-		.hist .card b { font-size: 1.05rem; }
-		.hist .legend, .hist .empty { font-size: 0.72rem; }
-		/* Fill the column instead of letterboxing: viewBox is 340x118, and a fixed 8rem height in a 280px
-		wide pane would waste the bottom of every box. */
-		.hist .chart { height: auto; aspect-ratio: 340 / 118; }
+		.hist .empty { font-size: 0.72rem; }
 		.hist h3 { margin: 0; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
-		.chart { width: 100%; height: 8rem; display: block; overflow: visible; }
-		.chart text { font-size: 8px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
-		.chart .grid line { stroke: var(--border-color); stroke-width: 0.5; }
-		.chart .axis { stroke: var(--text-muted); stroke-width: 0.75; opacity: 0.45; }
-		.chart .goal { stroke: var(--text-muted); stroke-width: 0.75; stroke-dasharray: 3 2; }
-		.chart circle.ok { fill: var(--primary); }
-		.chart circle.under { fill: var(--accent); }
-		.chart .gap { fill: var(--accent); opacity: 0.13; stroke: none; }
-		.chart .typing { fill: none; stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 4 2.5; stroke-linejoin: round; opacity: 0.85; }
-		.chart .trend { fill: none; stroke: var(--primary); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; opacity: 0.9; }
-		.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: 0; font-size: 0.75rem; color: var(--text-muted); grid-column: 1; }
-		.legend .key { display: inline-block; width: 16px; border-top: 2px solid; margin-right: 5px; vertical-align: middle; }
-		.legend .key.clock { border-top-color: var(--primary); }
-		.legend .key.typing { border-top-style: dashed; border-top-color: var(--text-muted); }
-		.legend .gapkey { display: inline-block; width: 16px; height: 8px; background: var(--accent); opacity: 0.13; margin-right: 5px; }
 		/* Demo data announces itself. A chart that looks like progress and is not progress is the one
 		* failure mode this screen has been built to avoid. */
 		.demo-note { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 8px 10px; border: 1px dashed var(--accent); border-radius: var(--radius); color: var(--text-muted); font-size: 0.85rem; }
