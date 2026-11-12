@@ -77,7 +77,9 @@ test("cached sessions draw a curve and honest totals", async ({ page }) => {
 test("a day with no sessions is a gap, not a point on a line", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "b1", atMs: noon(0) }), row({ rkey: "b2", atMs: noon(1) }), row({ rkey: "b3", atMs: noon(2) }), row({ rkey: "b4", atMs: noon(6) })]);
 	const d = (await page.locator(".hist .line.s1").getAttribute("d")) ?? "";
-	expect(d.split("M").length - 1).toBe(1); // the line breaks at the 3-day hole
+	// Kit draws the isolated day as both a zero-length path stub and a dot, so the path holds two M's:
+	// the three-day run and the stub. The visible break is the hole; the dot marks the isolated day.
+	expect(d.split("M").length - 1).toBe(2);
 	expect(await page.locator(".hist .dot").count()).toBe(1); // isolated day renders as a dot
 	await expect(page.locator(".hist .card", { hasText: "streak" }).locator("b")).toHaveText("3 d");
 });
@@ -179,11 +181,17 @@ test("the chart draws the pausing, and refuses to draw it without the data", asy
 	await seed(page, rows);
 	await page.reload();
 	await openPane(page);
+	await page.locator(".hist .line.s1").waitFor({ state: "attached" }); // chart lays out once the pane has a width
 
-	const paths = await page.locator(".hist tk-timeseries").evaluate((el) => {
-		const d = (sel: string) => el.querySelector(sel)?.getAttribute("d") ?? "";
-		return { s1: d(".line.s1"), s2: d(".line.s2"), band: d(".band") };
-	});
+	// The SVG lives in the chart's shadow root, so read it through the locator (which pierces shadow
+	// DOM) rather than a querySelector inside evaluate. The band is only rendered when there is stroke
+	// data, so an absent path is the "no band" answer rather than a locator that waits forever.
+	const pathD = async (sel: string) => {
+		const loc = page.locator(`.hist ${sel}`);
+		if ((await loc.count()) === 0) return "";
+		return (await loc.first().getAttribute("d")) ?? "";
+	};
+	const paths = { s1: await pathD(".line.s1"), s2: await pathD(".line.s2"), band: await pathD(".band") };
 	expect(paths.s1).not.toBe("");
 	// Two separate lines: the clock speed, and the same characters over the stroke time alone.
 	expect(paths.s2).not.toBe("");
@@ -204,11 +212,8 @@ test("the chart draws the pausing, and refuses to draw it without the data", asy
 	await seed(page, rows.map((r) => ({ ...r, stats: {} })));
 	await page.reload();
 	await openPane(page);
-	const bare = await page.locator(".hist tk-timeseries").evaluate((el) => ({
-		s1: el.querySelector(".line.s1")?.getAttribute("d") ?? "",
-		s2: el.querySelector(".line.s2")?.getAttribute("d") ?? "",
-		band: el.querySelector(".band")?.getAttribute("d") ?? "",
-	}));
+	await page.locator(".hist .line.s1").waitFor({ state: "attached" });
+	const bare = { s1: await pathD(".line.s1"), s2: await pathD(".line.s2"), band: await pathD(".band") };
 	expect(bare.s1).not.toBe("");
 	expect(bare.s2).toBe("");
 	expect(bare.band).toBe("");

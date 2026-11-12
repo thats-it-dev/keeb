@@ -18,7 +18,7 @@ export function progressSection(o: Overview, goalMs: number) {
 				${o.focusLabel
 					? html`<p class="empty" data-focus=${o.focusLabel}>Every word on screen uses <b>${o.focusLabel}</b> — it is the letter of yours that has never held the goal speed.</p>`
 					: html`<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. Nothing there is below goal, so the next letter is unlocked.` : ""}</p>`}
-				<tk-bars .data=${o.measured.map((k) => ({ key: k.label, ms: k.ms }))} label="key" value="ms" .goal=${goalMs} unit="ms" .format=${(ms: number) => `${ms} ms · ${wpm(ms)} wpm`}></tk-bars>
+				<tk-bars .data=${o.measured.map((k) => ({ key: k.label, ms: k.ms }))} label="key" value="ms" lower .goal=${goalMs} unit="ms" .format=${(ms: number) => `${ms} ms · ${wpm(ms)} wpm`}></tk-bars>
 				${o.untried.length ? html`<p class="empty">Unlocked but never practised ${chips(o.untried)}</p>` : nothing}
 				${stillLocked.length ? html`<p class="empty">Still locked ${chips(stillLocked)}</p>` : nothing}
 			`
