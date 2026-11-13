@@ -3,6 +3,7 @@ import { cpmToWpm } from "./stats.ts";
 import { formatPractised } from "./format.ts";
 import { history as buildHistory, series, type Point } from "./history.ts";
 import { isPreviewHost, paneSessions } from "./demo.ts";
+import { plural } from "../plural.ts";
 import type { SessionRow } from "../atproto/records.ts";
 
 export type HistoryProps = {
@@ -68,9 +69,9 @@ export function historySection(p: HistoryProps) {
 			</tk-stats>
 			<tk-timeseries .data=${pts} x="day" .series=${lineSeries} band="wpm strokeWpm" band-label="pausing" .goal=${goal} unit="wpm"></tk-timeseries>
 			<p class="empty">
-				${h.activeDays} day${h.activeDays === 1 ? "" : "s"} practised${others > 0 ? `, plus ${others} session(s) on other boards` : ""}. The repo
+				${h.activeDays} ${plural(h.activeDays, "day", "days")} practised${others > 0 ? `, plus ${others} ${plural(others, "session", "sessions")} on other boards` : ""}. The repo
 				keeps the newest 50 sessions per layout, so these totals are that window rather than your whole life
-				${h.undated ? `, and ${h.undated} session(s) had no readable date` : ""}.
+				${h.undated ? `, and ${h.undated} ${plural(h.undated, "session", "sessions")} had no readable date` : ""}.
 			</p>
 		</div>
 	`;
