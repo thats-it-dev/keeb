@@ -89,6 +89,18 @@ export class SessionRecorder {
 		return this.#startedAt ? this.#typingMs + Math.min(Math.max(0, Date.now() - this.#lastKeyAt), GAP_CAP_MS) : 0;
 	}
 
+	/** Current session accuracy: (chars - errors) / chars * 100, rounded to 1 decimal.
+	 * Returns null when no session is open or when the session has typed 0 chars. */
+	sessionAccuracy(): number | null {
+		if (!this.#startedAt) return null;
+		const statsNow = this.host.read().stats;
+		const totalsNow = totals(statsNow);
+		const chars = totalsNow.chars - this.#baseline.chars;
+		if (chars === 0) return null;
+		const errors = totalsNow.errors - this.#baseline.errors;
+		return Math.round(((chars - errors) / chars) * 1000) / 10;
+	}
+
 	/** Close the session: the characters since it opened become one row on the repo, if there is an account. */
 	async end(): Promise<void> {
 		if (!this.#startedAt) return;

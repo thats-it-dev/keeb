@@ -273,6 +273,11 @@ put a second, storable answer next to the one `ladder()` derives from stats that
 11. A stroke with no measurable interval changes `samples` but never `bestMs16`.
 12. Merging a progress record with itself does not change `bestMs16` (min is idempotent) and does not
     double `samples`.
+13. The readout shows live session accuracy as `acc` = (chars − errors) / chars × 100, rounded to one
+    decimal; it is hidden (null) before a session opens, after it closes, or while the session has typed
+    0 chars.
+14. The history panel shows per-day accuracy as `100 − errPct`; a day with sessions but no characters
+    plots no accuracy point (acc = 0).
 
 ## 13. Daily time goal (not from keybr)
 

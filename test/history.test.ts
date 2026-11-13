@@ -148,6 +148,31 @@ describe("history", () => {
 	});
 });
 
+describe("series() exposes acc and chars", () => {
+it("carries acc (100 - errPct) when chars > 0", () => {
+const h = history([s({ atMs: noon(0), chars: 100, errors: 5 })]); // 95% accuracy
+const pts = series(h);
+expect(pts[0]!.acc).toBe(95);
+expect(pts[0]!.chars).toBe(100);
+});
+
+it("sets acc to 0 when chars is 0", () => {
+const h = history([s({ atMs: noon(0), chars: 0, errors: 0 })]);
+const pts = series(h);
+expect(pts[0]!.acc).toBe(0);
+expect(pts[0]!.chars).toBe(0);
+});
+
+it("leaves acc as 0 for a day with no sessions", () => {
+const h = history([s({ atMs: noon(0) }), s({ atMs: noon(2) })]);
+const pts = series(h);
+expect(pts.length).toBe(3);
+// middle day (noon(1)) has no session
+expect(pts[1]!.acc).toBe(0);
+expect(pts[1]!.chars).toBe(0);
+});
+});
+
 describe("the typing-only line", () => {
 	// One session per day, first appearance of the key: then the snapshot IS the session, and the stroke
 	// time is samples x mean. That is the arithmetic the shaded band between the two lines is drawn from.

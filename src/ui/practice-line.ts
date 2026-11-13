@@ -9,13 +9,14 @@ import type { Resolved } from "../keyboard/resolve.ts";
  */
 /** What the row above the practice line says. The focus cell only appears when the lesson has a letter to
  *  fix, so a learner who is simply getting faster is not shown an empty promise. */
-export type Readout = { nowWpm: number; avgWpm: number; goalWpm: number; focusLabel: string };
+export type Readout = { nowWpm: number; avgWpm: number; goalWpm: number; focusLabel: string; acc?: number };
 
 export function readout(o: Readout) {
 	const cell = (label: string, value: string) => html`<div class="metric"><span class="label">${label}</span><b>${value}</b></div>`;
 	return html`
 		<div class="read">
 			${cell("now", `${o.nowWpm} wpm`)} ${cell("avg", `${o.avgWpm} wpm`)} ${cell("goal", `${o.goalWpm} wpm`)}
+			${o.acc !== undefined ? cell("acc", `${o.acc}%`) : nothing}
 			${o.focusLabel ? cell("focus", o.focusLabel) : nothing}
 		</div>
 	`;
