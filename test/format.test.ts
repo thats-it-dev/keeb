@@ -48,4 +48,17 @@ describe("formatThousands", () => {
 	it("formats zero", () => {
 		expect(formatThousands(0)).toBe("0");
 	});
+
+	it("rounds fractional input", () => {
+		expect(formatThousands(1.5)).toBe("2");
+		expect(formatThousands(1.6)).toBe("2");
+		expect(formatThousands(1234.4)).toBe("1,234");
+		expect(formatThousands(1234.6)).toBe("1,235");
+	});
+
+	it("formats negative input", () => {
+		expect(formatThousands(-1234)).toBe("-1,234");
+		expect(formatThousands(-99)).toBe("-99");
+		expect(formatThousands(-1_000_000)).toBe("-1,000,000");
+	});
 });
