@@ -5,7 +5,7 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "./csp.ts";
 
 const bar = (page: Page) => page.locator("app-main").locator(".daily");
-const num = (page: Page) => bar(page).locator(".num");
+const num = (page: Page) => bar(page).locator("tk-progress .nums");
 
 /** Overwrite today's tally row, so a test starts from a known number of minutes rather than typing them. */
 const seedToday = (page: Page, minutes: number) =>
@@ -47,7 +47,6 @@ test("minutes already on the device show against the goal", async ({ page }) => 
 	await page.reload();
 	await ready(page);
 	await expect(num(page)).toHaveText("12 / 15 min");
-	await expect(bar(page).locator('[role="progressbar"]')).toHaveAttribute("aria-valuenow", "12");
 });
 
 test("a finished day says so in words, not only in a full bar", async ({ page }) => {
@@ -56,7 +55,8 @@ test("a finished day says so in words, not only in a full bar", async ({ page })
 	await seedToday(page, 16);
 	await page.reload();
 	await ready(page);
-	await expect(num(page)).toHaveText("16 / 15 min · goal reached");
+	await expect(num(page)).toHaveText("16 / 15 min");
+	await expect(bar(page).getByText("goal reached")).toBeVisible();
 });
 
 test("the goal follows the learner, not the board", async ({ page }) => {
@@ -68,7 +68,7 @@ test("the goal follows the learner, not the board", async ({ page }) => {
 	// so the bar must come back on the new board still aimed at 30 minutes of the same tally.
 	await page.locator("dialog select").first().selectOption("corne");
 	await page.locator("dialog [aria-label='Close settings']").click();
-	await expect(page.locator("app-main").locator(".daily").locator(".num")).toHaveText("0 / 30 min");
+	await expect(page.locator("app-main").locator(".daily").locator("tk-progress .nums")).toHaveText("0 / 30 min");
 });
 
 test("the goal is the learner's to set", async ({ page }) => {

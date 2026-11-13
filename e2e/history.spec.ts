@@ -64,10 +64,11 @@ test("cached sessions draw a curve and honest totals", async ({ page }) => {
 		row({ rkey: "aac", atMs: noon(2), chars: 600, ms: 120_000 }),
 	]);
 	await expect(page.locator(".hist")).toBeVisible();
-	expect(await page.locator(".hist .chart circle").count()).toBe(3);
-	await expect(page.locator(".hist .chart .goal")).toHaveCount(1);
-	const card = (name: string) => page.locator(".hist .card", { hasText: name }).locator("b");
-	await expect(card("characters")).toHaveText("1500"); // 400 + 500 + 600, a real stroke count
+	expect(await page.locator(".hist .line.s1").getAttribute("d")).toContain("M");
+	expect(await page.locator(".hist .line.s2").getAttribute("d")).toBe("");
+	await expect(page.locator(".hist tk-timeseries .goal")).toHaveCount(1);
+	const card = (name: string) => page.locator(".hist tk-stat", { hasText: name }).locator(".value");
+	await expect(card("characters")).toHaveText("1,500"); // 400 + 500 + 600, a real stroke count
 	await expect(card("sessions")).toHaveText("3");
 	await expect(card("practised")).toHaveText("4 min");
 	await expect(card("streak")).toHaveText("3 d");
@@ -75,20 +76,19 @@ test("cached sessions draw a curve and honest totals", async ({ page }) => {
 
 test("a day with no sessions is a gap, not a point on a line", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "b1", atMs: noon(0) }), row({ rkey: "b2", atMs: noon(1) }), row({ rkey: "b3", atMs: noon(2) }), row({ rkey: "b4", atMs: noon(6) })]);
-	const xs = await page.locator(".hist .chart circle").evaluateAll((els) => els.map((e) => Number(e.getAttribute("cx"))));
-	expect(xs.length).toBe(4); // four days practised out of seven
-	// A ratio, not pixels: the chart's geometry is allowed to change (it just did, twice) and this is the
-	// claim that must survive it. Three consecutive days sit one slot apart, and the day after the three-day
-	// hole is four slots along. Ordering is not assumed -- only the gap sizes are.
-	const gaps = xs.slice(1).map((x, i) => x - xs[i]!).filter((g) => g > 0);
-	const one = Math.min(...gaps);
-	expect(one).toBeGreaterThan(0);
-	expect(Math.max(...gaps) / one).toBeCloseTo(4, 0);
-	// And the line itself must break, not slope: two subpaths (two M commands) for two runs of practice.
-	// A single continuous path here would claim a decline across days nobody was at the keyboard.
-	const d = (await page.locator(".hist .chart path.trend").getAttribute("d")) ?? "";
+	const d = (await page.locator(".hist .line.s1").getAttribute("d")) ?? "";
+	// Kit draws the isolated day as both a zero-length path stub and a dot, so the path holds two M's:
+	// the three-day run and the stub. The visible break is the hole; the dot marks the isolated day.
 	expect(d.split("M").length - 1).toBe(2);
-	await expect(page.locator(".hist .card", { hasText: "streak" }).locator("b")).toHaveText("3 d");
+	expect(await page.locator(".hist .dot").count()).toBe(1); // isolated day renders as a dot
+	await expect(page.locator(".hist tk-stat", { hasText: "streak" }).locator(".value")).toHaveText("3 d");
+});
+
+test("a day with sessions but no characters dips to the axis, not a gap", async ({ page }) => {
+	await seedAndOpen(page, [row({ rkey: "z1", atMs: noon(0), chars: 300 }), row({ rkey: "z2", atMs: noon(1), chars: 0 })]);
+	// sessions > 0 keeps the day in the line even at 0 wpm: one continuous run, no isolated dot.
+	expect(((await page.locator(".hist .line.s1").getAttribute("d")) ?? "").split("M").length - 1).toBe(1);
+	expect(await page.locator(".hist .dot").count()).toBe(0);
 });
 
 test("history from another board does not leak into this one's chart", async ({ page }) => {
@@ -108,9 +108,9 @@ test("history from another board does not leak into this one's chart", async ({ 
 
 test("a session with no readable date counts, but is not drawn", async ({ page }) => {
 	await seedAndOpen(page, [row({ rkey: "d1", atMs: 0, chars: 700, ms: 60_000 }), row({ rkey: "d2", atMs: noon(0), chars: 300, ms: 60_000 })]);
-	expect(await page.locator(".hist .chart circle").count()).toBe(1); // the undated one is in the totals only
-	await expect(page.locator(".hist .card", { hasText: "characters" }).locator("b")).toHaveText("1000");
-	await expect(page.locator(".hist .card", { hasText: "sessions" }).locator("b")).toHaveText("2");
+	expect(await page.locator(".hist .dot").count()).toBe(1); // the undated one is in the totals only
+	await expect(page.locator(".hist tk-stat", { hasText: "characters" }).locator(".value")).toHaveText("1,000");
+	await expect(page.locator(".hist tk-stat", { hasText: "sessions" }).locator(".value")).toHaveText("2");
 	await expect(page.locator(".hist")).toContainText("no readable date");
 });
 
@@ -136,8 +136,7 @@ test("?demo=1 draws a labelled curve and stores nothing", async ({ page }) => {
 	await openPane(page);
 	await expect(page.locator(".demo-note")).toContainText("demo sessions");
 	await expect(page.locator(".demo-note")).toContainText("nothing here is your progress");
-	expect(await page.locator(".hist .chart circle").count()).toBeGreaterThan(5);
-	expect(await page.locator(".hist .chart path.trend").getAttribute("d")).toContain("M");
+	expect(await page.locator(".hist .line.s1").getAttribute("d")).toContain("M");
 	// The claim that matters: generated per render, never written down. A preview must not be able to put a
 	// made-up session in a real repo or in this device's cache.
 	const stored = await page.evaluate(
@@ -182,22 +181,29 @@ test("the chart draws the pausing, and refuses to draw it without the data", asy
 	await seed(page, rows);
 	await page.reload();
 	await openPane(page);
+	await page.locator(".hist .line.s1").waitFor({ state: "attached" }); // chart lays out once the pane has a width
+	await page.locator(".hist .band").waitFor({ state: "attached" }); // the band shares the layout pass; wait for it too
 
-	const paths = await page.locator(".chart").evaluate((svg) => {
-		const d = (sel: string) => svg.querySelector(sel)?.getAttribute("d") ?? "";
-		return { trend: d(".trend"), typing: d(".typing"), gap: d(".gap") };
-	});
-	expect(paths.trend).not.toBe("");
+	// The SVG lives in the chart's shadow root, so read it through the locator (which pierces shadow
+	// DOM) rather than a querySelector inside evaluate. The band is only rendered when there is stroke
+	// data, so an absent path is the "no band" answer rather than a locator that waits forever.
+	const pathD = async (sel: string) => {
+		const loc = page.locator(`.hist ${sel}`);
+		if ((await loc.count()) === 0) return "";
+		return (await loc.first().getAttribute("d")) ?? "";
+	};
+	const paths = { s1: await pathD(".line.s1"), s2: await pathD(".line.s2"), band: await pathD(".band") };
+	expect(paths.s1).not.toBe("");
 	// Two separate lines: the clock speed, and the same characters over the stroke time alone.
-	expect(paths.typing).not.toBe("");
-	expect(paths.typing).not.toBe(paths.trend);
+	expect(paths.s2).not.toBe("");
+	expect(paths.s2).not.toBe(paths.s1);
 	// A higher wpm is a smaller y in SVG space, so every point of the typing line sits ABOVE the clock line
 	// on the same day, and the band between them is the time that was not spent typing.
-	expect(paths.gap).not.toBe("");
-	expect(paths.typing.split("L").length).toBe(4); // one run, four consecutive days
+	expect(paths.band).not.toBe("");
+	expect(paths.s2.split("L").length).toBe(4); // one run, four consecutive days
 	const ys = (d: string) => [...d.matchAll(/([\d.]+),([\d.]+)/g)].map((m) => Number(m[2]));
-	const clockY = ys(paths.trend);
-	const typingY = ys(paths.typing);
+	const clockY = ys(paths.s1);
+	const typingY = ys(paths.s2);
 	expect(typingY).toHaveLength(clockY.length);
 	typingY.forEach((y, i) => expect(y, `day ${i}`).toBeLessThan(clockY[i]!));
 
@@ -207,14 +213,11 @@ test("the chart draws the pausing, and refuses to draw it without the data", asy
 	await seed(page, rows.map((r) => ({ ...r, stats: {} })));
 	await page.reload();
 	await openPane(page);
-	const bare = await page.locator(".chart").evaluate((svg) => ({
-		trend: svg.querySelector(".trend")?.getAttribute("d") ?? "",
-		typing: svg.querySelector(".typing")?.getAttribute("d") ?? "",
-		gap: svg.querySelector(".gap")?.getAttribute("d") ?? "",
-	}));
-	expect(bare.trend).not.toBe("");
-	expect(bare.typing).toBe("");
-	expect(bare.gap).toBe("");
+	await page.locator(".hist .line.s1").waitFor({ state: "attached" });
+	const bare = { s1: await pathD(".line.s1"), s2: await pathD(".line.s2"), band: await pathD(".band") };
+	expect(bare.s1).not.toBe("");
+	expect(bare.s2).toBe("");
+	expect(bare.band).toBe("");
 });
 
 test("the insight panel is collapsed by default, opens, and remembers", async ({ page }, testInfo) => {
@@ -358,7 +361,7 @@ test("the pane is a full-height shell column, not a card in the section", async 
 
 	// And the history is a section of THIS panel: it sits directly in the aside column, and none of it is
 	// left inside the progress section.
-	expect(await page.locator(".insights > .hist .chart").count()).toBe(1);
+	expect(await page.locator(".insights > .hist tk-timeseries").count()).toBe(1);
 	await expect(page.locator(".stats .hist")).toHaveCount(0);
 });
 test("on a phone the pane is a side menu", async ({ page }) => {

@@ -1,37 +1,26 @@
 import { html, nothing } from "https://kit.thatsit.app/lit.js";
-import { barWidth, GOAL_AT, type Overview } from "./overview.ts";
-import { card } from "../ui/card.ts";
+import { wpm, type Overview } from "./overview.ts";
 
-/**
- * The progress section of the insight pane: one line per key, so the eye lands on the shortest bars first.
- *
- * One scale for every row, goal in the middle: the tick sits at 50% here and in `barWidth`, and the two must
- * not drift or the chart reads as "past the line" for keys that are not.
- */
 export function progressSection(o: Overview, goalMs: number) {
 	const chips = (list: Overview["keys"]) => html`<span class="chips">${list.map((k) => html`<span class="chip" title="no samples yet">${k.label}</span>`)}</span>`;
 	// "waiting" is every key with no samples, unlocked or not; the locked ones are the rest.
 	const stillLocked = o.waiting.filter((k) => !o.untried.some((u) => u.id === k.id));
-	const row = (k: Overview["keys"][number]) => html`
-		<div class="krow ${k.next ? "next" : ""} ${k.focus ? "focused" : ""}">
-			<span class="cap">${k.label}</span>
-			<span class="track"><span class="kbar ${k.conf < 1 ? "bad" : ""}" style="width:${barWidth(k.ms, goalMs)}%"></span><span class="mark" style="left:${GOAL_AT}%"></span></span>
-			<span class="num">${k.wpm} wpm · ${k.ms}ms${k.errors ? ` · ${k.errors} miss` : ""}${k.focus ? " · in every word" : ""}</span>
-		</div>
-	`;
 	// History is its own section, outside the keys branch. It comes from synced sessions, and a browser
 	// that has typed nothing local can still hold a year of practice on its repo -- gating the chart on
 	// local per-key stats hid exactly the person who most wants to see it.
 	const keys = o.covered
 		? html`
-				<div class="grid">
-					${card("average", `${o.avgWpm} wpm`)} ${card("at goal", `${o.readyPct}%`)} ${card("errors", `${o.errPct}%`)} ${card("keys", `${o.covered}/${o.total}`)}
-					${card("hands", `${o.handBalance}/${100 - o.handBalance}`)}
-				</div>
+				<tk-stats>
+					<tk-stat label="average" .value=${o.avgWpm} unit="wpm"></tk-stat>
+					<tk-stat label="at goal" .value=${`${o.readyPct}%`}></tk-stat>
+					<tk-stat label="errors" .value=${`${o.errPct}%`}></tk-stat>
+					<tk-stat label="keys" .value=${`${o.covered}/${o.total}`}></tk-stat>
+					<tk-stat label="hands" .value=${`${o.handBalance}/${100 - o.handBalance}`}></tk-stat>
+				</tk-stats>
 				${o.focusLabel
 					? html`<p class="empty" data-focus=${o.focusLabel}>Every word on screen uses <b>${o.focusLabel}</b> — it is the letter of yours that has never held the goal speed.</p>`
 					: html`<p class="empty">${o.slowest.length ? `Slowest: ${o.slowest.map((k) => k.label).join(", ")}. Nothing there is below goal, so the next letter is unlocked.` : ""}</p>`}
-				<div class="rows">${o.measured.map(row)}</div>
+				<tk-bars .data=${o.measured.map((k) => ({ key: k.label, ms: k.ms }))} label="key" value="ms" lower .goal=${goalMs} unit="ms" .format=${(ms: number) => `${ms} ms · ${wpm(ms)} wpm`}></tk-bars>
 				${o.untried.length ? html`<p class="empty">Unlocked but never practised ${chips(o.untried)}</p>` : nothing}
 				${stillLocked.length ? html`<p class="empty">Still locked ${chips(stillLocked)}</p>` : nothing}
 			`
