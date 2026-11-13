@@ -44,7 +44,7 @@
 - Consumes: `series(h: History, limit?: number): Point[]` from `src/stats/history.ts` (`Point = { day: string; wpm: number; strokeWpm: number; minutes: number; sessions: number }`), `buildHistory = history(rows: SessionRow[], nowMs?)`, `cpmToWpm` from `./stats.ts`, `paneSessions`, `isPreviewHost` from `./demo.ts`.
 - Produces: `.hist` section containing `<tk-timeseries>` (Task 3 swaps the card grid in the same file but leaves the chart untouched).
 
-- [ ] **Step 1: Rewrite the chart assertions in `e2e/history.spec.ts`**
+- [x] **Step 1: Rewrite the chart assertions in `e2e/history.spec.ts`**
 
   Keep the seeded-data helpers (`row`, `seed`, `seedAndOpen`) unchanged. Change:
 
@@ -82,11 +82,11 @@
     - Keep `expect(paths.s2.split("L").length).toBe(4)` (four consecutive measured days).
     - Bare case: `expect(bare.s2).toBe("")` and `expect(bare.band).toBe("")` (`.band` element absent → read `d` as `""`).
   - "the pane is a full-height shell column…": `.insights > .hist .chart` → `.insights > .hist tk-timeseries`
-- [ ] **Step 2: Run e2e to verify it fails**
+- [x] **Step 2: Run e2e to verify it fails**
 
   Run: `npm run e2e:one -- e2e/history.spec.ts`
   Expected: FAIL — no `tk-timeseries` / `.line` elements rendered.
-- [ ] **Step 3: Rewrite the chart in `src/stats/history-section.ts`**
+- [x] **Step 3: Rewrite the chart in `src/stats/history-section.ts`**
 
   Remove the d3 imports, `CH`, `parseDay`, and the hand-built SVG + legend. The chart becomes:
 
@@ -102,16 +102,16 @@
   <tk-timeseries .data=${pts} x="day" .series=${lineSeries} band="wpm strokeWpm" band-label="pausing" .goal=${goal} unit="wpm"></tk-timeseries>
   ```
   Keep: the `<h3>`, the demo-note paragraph, the card grid (Task 3's job), and the `<p class="empty">` footer (it still carries the "N day(s) practised / plus N session(s) on other boards / N session(s) had no readable date" line). The kit generates its own legend, aria summary and readout — delete the old `aria-label`.
-- [ ] **Step 4: Remove the d3 dependencies**
+- [x] **Step 4: Remove the d3 dependencies**
 
   Edit `package.json`: delete `d3-array`, `d3-scale`, `d3-shape` from dependencies and `@types/d3-array`, `@types/d3-scale`, `@types/d3-shape` from devDependencies. Run `npm install` to update the lockfile.
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
   Run: `npm run e2e:one -- e2e/history.spec.ts`
   Expected: PASS (all tests in the spec).
   Run: `npm run typecheck && npm test`
   Expected: PASS.
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   ```bash
   git add src/stats/history-section.ts e2e/history.spec.ts package.json package-lock.json
@@ -135,7 +135,7 @@
 - Consumes: `Overview.measured: KeyRow[]` (`{ id, label, ms, wpm, samples, errors, … }`), the `goalMs: number` parameter `progressSection` already receives, `wpm(msPerChar: number): number` from `./overview.ts`.
 - Produces: the `.stats` section now renders `<tk-bars>` with rows `{ key: string; ms: number }` in `o.measured` order (Task 3 swaps the card grid in the same file but leaves the bars untouched).
 
-- [ ] **Step 1: Update the bar assertions in `e2e/practice.spec.ts`**
+- [x] **Step 1: Update the bar assertions in `e2e/practice.spec.ts`**
 
   - "the progress bars are a pane section, not a screen to navigate to": `.krow` → `tk-bars .row` (two occurrences).
   - "the progress screen names every key it measured":
@@ -156,29 +156,29 @@
       (Assert with a small tolerance if `evaluateAll` returns floats: `Math.abs(w - expected) < 0.1`.)
     - Goal tick: `const marks = await page.locator("tk-bars .tick").evaluateAll(els => [...new Set(els.map(e => (e as HTMLElement).style.left))]); expect(marks).toEqual(["80%"]);`
     - Keep the final `.card` hasText "wpm" assertion (Task 3 changes it later).
-- [ ] **Step 2: Run e2e to verify it fails**
+- [x] **Step 2: Run e2e to verify it fails**
 
   Run: `npm run e2e:one -- e2e/practice.spec.ts`
   Expected: FAIL — no `tk-bars .row` elements.
-- [ ] **Step 3: Rewrite the rows in `src/stats/progress-section.ts`**
+- [x] **Step 3: Rewrite the rows in `src/stats/progress-section.ts`**
 
   Delete the `row` helper, the `barWidth` import, and the `<div class="rows">${o.measured.map(row)}</div>` block. Where the rows were:
   ```html
   <tk-bars .data=${o.measured.map((k) => ({ key: k.label, ms: k.ms }))} label="key" value="ms" .goal=${goalMs} unit="ms" .format=${(ms: number) => `${ms} ms · ${wpm(ms)} wpm`}></tk-bars>
   ```
   Keep: the card grid (Task 3), the focus/slowest paragraphs, the untried/still-locked chips, the empty state.
-- [ ] **Step 4: Delete `barWidth`/`GOAL_AT` and their tests**
+- [x] **Step 4: Delete `barWidth`/`GOAL_AT` and their tests**
 
   - `src/stats/overview.ts`: delete `barWidth` and `GOAL_AT` (knip will flag them as unused exports).
   - `test/scale.test.ts`: delete the file.
   - `test/overview.test.ts`: delete the `describe("barWidth", …)` block and drop `barWidth`, `GOAL_AT` from the import.
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
   Run: `npm run e2e:one -- e2e/practice.spec.ts`
   Expected: PASS.
   Run: `npm run typecheck && npm test`
   Expected: PASS.
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   ```bash
   git add src/stats/progress-section.ts src/stats/overview.ts test/overview.test.ts test/scale.test.ts e2e/practice.spec.ts
@@ -201,7 +201,7 @@ Runs after Task 1 and 2 (shared files: both section files and both e2e files).
 - Consumes: `Overview` fields (`avgWpm`, `readyPct`, `errPct`, `covered`, `total`, `handBalance`) and `History` fields (`sessions`, `chars`, `minutes`, `streak`, `best?.wpm`).
 - Produces: both sections render `<tk-stats>` with `<tk-stat>` children; `src/ui/card.ts` is gone.
 
-- [ ] **Step 1: Update the card assertions in the e2e specs**
+- [x] **Step 1: Update the card assertions in the e2e specs**
 
   - `e2e/history.spec.ts`: the helper `const card = (name) => page.locator(".hist .card", { hasText: name }).locator("b")` becomes
     ```ts
@@ -209,11 +209,11 @@ Runs after Task 1 and 2 (shared files: both section files and both e2e files).
     ```
     and expectations become: characters `1,500` (kit's `compact()` uses `Intl.NumberFormat` with no compact notation below 10 000), sessions `3`, practised `4 min`, streak `3 d`.
   - `e2e/practice.spec.ts`: the last assertion of "bar widths rank a spread…" `page.locator(".card").first()` hasText "wpm" → `page.locator("tk-stats").first()` hasText "wpm".
-- [ ] **Step 2: Run e2e to verify it fails**
+- [x] **Step 2: Run e2e to verify it fails**
 
   Run: `npm run e2e:one -- e2e/history.spec.ts && npm run e2e:one -- e2e/practice.spec.ts`
   Expected: FAIL — no `tk-stat` / `tk-stats` elements.
-- [ ] **Step 3: Swap the card grids**
+- [x] **Step 3: Swap the card grids**
 
   - `src/stats/progress-section.ts`: replace `<div class="grid">${card("average", …)} …</div>` with
     ```html
@@ -236,13 +236,13 @@ Runs after Task 1 and 2 (shared files: both section files and both e2e files).
     </tk-stats>
     ```
   - Delete `src/ui/card.ts` and its imports in both section files.
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
   Run: `npm run e2e:one -- e2e/history.spec.ts && npm run e2e:one -- e2e/practice.spec.ts`
   Expected: PASS.
   Run: `npm run typecheck && npm test && npm run lint`
   Expected: PASS (knip: `card.ts` gone, no unused exports).
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add src/stats/progress-section.ts src/stats/history-section.ts src/ui/card.ts e2e/history.spec.ts e2e/practice.spec.ts
@@ -263,7 +263,7 @@ Runs after Task 1 and 2 (shared files: both section files and both e2e files).
 - Consumes: `DailyGoal = { minutes: number; goalMinutes: number; pct: number; reached: boolean }` from `src/stats/daily.ts` (already computed by the caller).
 - Produces: `dailyBar(d: DailyGoal)` renders `<div class="daily">` wrapping a single-row `<tk-bars>`; returns `nothing` when `goalMinutes <= 0` (unchanged contract, used by `app-main.ts:332`).
 
-- [ ] **Step 1: Update the assertions in `e2e/daily.spec.ts`**
+- [x] **Step 1: Update the assertions in `e2e/daily.spec.ts`**
 
   - `const num = (page) => bar(page).locator(".num")` → `bar(page).locator("tk-bars .row .val")`.
   - "a day nobody has practised…": `toHaveText("0 / 15 min")` → `toHaveText("0 min")`, plus `await expect(bar(page).locator(".readout")).toContainText("0 of 1 at goal")`.
@@ -271,11 +271,11 @@ Runs after Task 1 and 2 (shared files: both section files and both e2e files).
   - "a finished day says so in words, not only in a full bar": `toHaveText("16 / 15 min · goal reached")` → `toHaveText("16 min")` on `.val` and `await expect(bar(page).locator(".readout")).toContainText("1 of 1 at goal")` — the "in words" claim is now the readout status.
   - "the goal follows the learner, not the board": `toHaveText("0 / 30 min")` → `toHaveText("0 min")`.
   - "the goal is the learner's to set": `toHaveText("12 / 30 min")` → `toHaveText("12 min")`; the goal-0 case keeps `await expect(bar(page)).toHaveCount(0)`.
-- [ ] **Step 2: Run e2e to verify it fails**
+- [x] **Step 2: Run e2e to verify it fails**
 
   Run: `npm run e2e:one -- e2e/daily.spec.ts`
   Expected: FAIL — no `tk-bars` inside `.daily`.
-- [ ] **Step 3: Rewrite `src/ui/daily-bar.ts`**
+- [x] **Step 3: Rewrite `src/ui/daily-bar.ts`**
 
   ```ts
   export function dailyBar(d: DailyGoal) {
@@ -288,13 +288,13 @@ Runs after Task 1 and 2 (shared files: both section files and both e2e files).
   }
   ```
   (Keep the file's existing comment, trimmed to what still applies: the bar answers "can I stop now?"; a finished day says so in words via the readout.)
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
   Run: `npm run e2e:one -- e2e/daily.spec.ts`
   Expected: PASS.
   Run: `npm run typecheck && npm test`
   Expected: PASS.
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   ```bash
   git add src/ui/daily-bar.ts e2e/daily.spec.ts
@@ -315,14 +315,14 @@ Runs after Tasks 1–4 (needs `card.ts` gone and no d3 imports left).
 - Consumes: nothing new.
 - Produces: no dead CSS, no dead deps; `npm run verify` green.
 
-- [ ] **Step 1: Remove dead CSS from `src/ui/app-styles.ts`**
+- [x] **Step 1: Remove dead CSS from `src/ui/app-styles.ts`**
 
   Grep each selector before deleting (knip covers code, not CSS). Delete the rules that no longer match any markup: `.grid`, `.card b`, `.card span.label`, `.rows`, `.krow` (+ `.krow .cap`, `.krow .num`), `.kbar` (+ `.kbar.bad`), `.mark`, `.next`, `.chart` (+ all `.chart *` rules), `.legend` (+ children), `.hist .grid`, `.hist .card`, `.hist .legend`, `.daily .track`, `.daily .num`. Keep: `.card` base (insight cards still use `class="card"`), `.insights > .card *` rules, `.hist` base, `.hist h3`, `.hist .empty`, `.empty`, `.daily` (now just a width wrapper: `width: 100%; max-width: 30rem;`), `.demo-note`, `.link`, `.chips`, `.chip`.
-- [ ] **Step 2: Run the full verification**
+- [x] **Step 2: Run the full verification**
 
   Run: `npm run verify`
   Expected: typecheck, unit tests, knip, full e2e all PASS.
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
   ```bash
   git add src/ui/app-styles.ts
