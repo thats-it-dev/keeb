@@ -1,5 +1,6 @@
 import { html, nothing } from "https://kit.thatsit.app/lit.js";
 import { cpmToWpm } from "./stats.ts";
+import { formatPractised } from "./format.ts";
 import { history as buildHistory, series, type Point } from "./history.ts";
 import { isPreviewHost, paneSessions } from "./demo.ts";
 import type { SessionRow } from "../atproto/records.ts";
@@ -61,7 +62,7 @@ export function historySection(p: HistoryProps) {
 			<tk-stats>
 				<tk-stat label="sessions" .value=${h.sessions}></tk-stat>
 				<tk-stat label="characters" .value=${h.chars}></tk-stat>
-				<tk-stat label="practised" .value=${h.minutes} unit="min"></tk-stat>
+				<tk-stat label="practised" .value=${formatPractised(h.minutes)}></tk-stat>
 				<tk-stat label="streak" .value=${h.streak} unit="d"></tk-stat>
 				<tk-stat label="best day" .value=${h.best?.wpm ?? 0} unit="wpm"></tk-stat>
 			</tk-stats>
