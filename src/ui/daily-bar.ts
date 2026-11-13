@@ -10,7 +10,7 @@ export function dailyBar(d: DailyGoal) {
 	if (d.goalMinutes <= 0) return nothing;
 	return html`
 		<div class="daily">
-			<tk-bars .data=${[{ today: "today", min: d.minutes }]} label="today" value="min" .goal=${d.goalMinutes} unit="min"></tk-bars>
+			<tk-progress .value=${d.minutes} .max=${d.goalMinutes} label="today" unit="min"></tk-progress>
 		</div>
 	`;
 }
