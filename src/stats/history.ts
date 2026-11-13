@@ -161,12 +161,12 @@ export function series(h: History, limit = 30): Point[] {
 		// Walking backwards from the newest day and emitting oldest-first, by index: no copy, no reverse.
 		const day = shiftDay(newest, -i);
 		const d = byDay.get(day);
-		out.push({ day, wpm: d?.wpm ?? 0, strokeWpm: d?.strokeWpm ?? 0, minutes: d?.minutes ?? 0, sessions: d?.sessions ?? 0 });
+		out.push({ day, wpm: d?.wpm ?? 0, strokeWpm: d?.strokeWpm ?? 0, minutes: d?.minutes ?? 0, sessions: d?.sessions ?? 0, chars: d?.chars ?? 0, acc: d && d.chars ? 100 - d.errPct : 0 });
 	}
 	return out;
 }
 
-export type Point = { day: string; wpm: number; strokeWpm: number; minutes: number; sessions: number };
+export type Point = { day: string; wpm: number; strokeWpm: number; minutes: number; sessions: number; chars: number; acc: number };
 
 /** The day `delta` days from `day`, in local time. Noon arithmetic keeps DST from shifting the date. */
 function shiftDay(day: string, delta: number): string {

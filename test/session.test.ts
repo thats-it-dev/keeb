@@ -6,6 +6,12 @@ import { SessionRecorder, type RecorderHost } from "../src/app/session.ts";
 import { DEFAULT_SETTINGS } from "../src/data/store.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
+/** Computes session accuracy = (chars − errors) / chars × 100, rounded to 1 decimal. */
+function accuracy(chars: number, errors: number): number | null {
+	if (chars === 0) return null;
+	return Math.round(((chars - errors) / chars) * 1000) / 10;
+}
+
 const T0 = 1_700_000_000_000;
 const SEC = 1000;
 
@@ -122,5 +128,66 @@ describe("SessionRecorder day charges", () => {
 		await r.rec.end();
 		expect(r.charges.length).toBe(0);
 		expect(r.delivered.length).toBe(0);
+	});
+});
+
+describe("SessionRecorder.sessionAccuracy", () => {
+	it("is null when no session is open", () => {
+		const r = recorder();
+		expect(r.rec.sessionAccuracy()).toBeNull();
+	});
+
+	it("is null while the session is open but no characters have been typed", async () => {
+		const r = recorder();
+		r.stats.a!.samples = 10;
+		r.stats.a!.errors = 2;
+		r.rec.begin(); // captures baseline: 10 chars, 2 errors
+		expect(r.rec.sessionAccuracy()).toBeNull(); // 0 chars delta
+		await r.rec.end();
+		expect(r.rec.sessionAccuracy()).toBeNull(); // no open session
+	});
+
+	it("returns the session percentage while the session is open", async () => {
+		clock([T0, T0 + SEC, T0 + 2 * SEC]);
+		const r = recorder();
+		// Baseline: 10 chars, 2 errors.
+		r.stats.a!.samples = 10;
+		r.stats.a!.errors = 2;
+		r.stats.a!.ttMs16 = 10 * 200;
+		r.stats.a!.bestMs16 = 10 * 150;
+		r.rec.begin(); // captures baseline
+		// Now add 10 more chars, 2 of which are errors → delta: 10 chars, 2 errors → 80%
+		r.stats.a!.samples = 20;
+		r.stats.a!.errors = 4;
+		expect(r.rec.sessionAccuracy()).toBe(80);
+		await r.rec.end();
+		expect(r.rec.sessionAccuracy()).toBeNull();
+	});
+
+	it("rounds to one decimal", async () => {
+		clock([T0, T0 + SEC]);
+		const r = recorder();
+		// Baseline: 0 chars.
+		r.stats.a!.samples = 0;
+		r.stats.a!.errors = 0;
+		r.rec.begin();
+		// Add 7 chars, 1 error → 6/7 = 85.714… → rounds to 85.7
+		r.stats.a!.samples = 7;
+		r.stats.a!.errors = 1;
+		expect(r.rec.sessionAccuracy()).toBe(85.7);
+		await r.rec.end();
+		expect(r.rec.sessionAccuracy()).toBeNull();
+	});
+
+	it("returns 100 for a perfect session", async () => {
+		clock([T0, T0 + SEC]);
+		const r = recorder();
+		r.stats.a!.samples = 0;
+		r.stats.a!.errors = 0;
+		r.rec.begin();
+		r.stats.a!.samples = 50;
+		// errors stays 0
+		expect(r.rec.sessionAccuracy()).toBe(100);
+		await r.rec.end();
 	});
 });

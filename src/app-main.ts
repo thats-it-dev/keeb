@@ -328,7 +328,7 @@ export class AppMain extends LitElement {
 							onRemoveMap: (id) => void this.#removeMap(id),
 						})}
 						<div class="col">
-							${o ? readout({ nowWpm: cpmToWpm(this.nowCpm), avgWpm: o.avgWpm, goalWpm: cpmToWpm(this.targetCpm), focusLabel: o.focusLabel }) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
+							${o ? readout({ nowWpm: cpmToWpm(this.nowCpm), avgWpm: o.avgWpm, goalWpm: cpmToWpm(this.targetCpm), focusLabel: o.focusLabel, acc: this.#session.sessionAccuracy() ?? undefined }) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
 							${dailyBar(dailyGoal(this.#tally.rows, Date.now(), this.#session.elapsed(), this.dailyGoalMin))}
 							${this.ready
 								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords}></tt-practice>`
