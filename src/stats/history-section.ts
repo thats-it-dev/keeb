@@ -71,8 +71,12 @@ export function historySection(p: HistoryProps) {
 				<tk-stat label="streak" .value=${h.streak} unit="d"></tk-stat>
 				<tk-stat label="best day" .value=${h.best?.wpm ?? 0} unit="wpm"></tk-stat>
 			</tk-stats>
-			<tk-timeseries .data=${pts} x="day" .series=${lineSeries} band="wpm strokeWpm" band-label="pausing" .goal=${goal} unit="wpm"></tk-timeseries>
-			<tk-timeseries .data=${pts} x="day" .series=${accSeries} unit="%"></tk-timeseries>
+			<div class="wpm-chart">
+				<tk-timeseries .data=${pts} x="day" .series=${lineSeries} band="wpm strokeWpm" band-label="pausing" .goal=${goal} unit="wpm"></tk-timeseries>
+			</div>
+			<div class="acc-chart">
+				<tk-timeseries .data=${pts} x="day" .series=${accSeries} unit="%"></tk-timeseries>
+			</div>
 			<p class="empty">
 				${h.activeDays} ${plural(h.activeDays, "day", "days")} practised${others > 0 ? `, plus ${others} ${plural(others, "session", "sessions")} on other boards` : ""}. The repo
 				keeps the newest 50 sessions per layout, so these totals are that window rather than your whole life
