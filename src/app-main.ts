@@ -30,7 +30,7 @@ import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true } };
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true } } as const;
 	static styles = appStyles;
 
 	geometryId = savedSelection().g;
@@ -206,28 +206,28 @@ export class AppMain extends LitElement {
 		this.#session.begin();
 		this.#session.arm();
 		this.lastId = p.key(ch, performance.now()) ?? "";
-		this.nowCpm = p.instantCpm;
-		// Read the engine AFTER the keystroke. p.key() replaces it with a new object; holding the reference
-		// from before the call would persist the stats as they stood one key ago — and on the very first
-		// keystroke that is undefined, so nothing is saved at all.
+		const elapsed = this.#session.elapsed();
+		const chars = this.#session.getCharsTyped();
+		this.nowCpm = elapsed > 0 && chars > 0 ? Math.round((chars / elapsed) * 60000) : 0;
+		// Read the engine AFTER p.key(): holding a stale reference saves old stats.
 		if (p.engine) await this.#session.stroke(p.engine);
 	}
 
 	#pick(part: "g" | "k", value: string): void {
-		// Close the session while the old layout is still selected. #load replaces this.stats with the new
-		// layout's map, and the session's end computes a delta against the baseline it took from the OLD one —
-		// that difference is usually negative, and a negative delta is discarded, so switching mid-session
-		// would silently lose the characters you had just typed.
+		// Close the session while the old layout is still selected to avoid mixing stats across layouts.
 		if (part === "g" ? value !== this.geometryId : value !== this.keymapId) void this.#session.end();
 		if (part === "g") this.geometryId = value;
 		else this.keymapId = value;
 	}
 
-	// The field is words per minute; the stored goal stays characters per minute, so the number that goes
-	// to the PDS and drives the ladder does not depend on a word ever being five letters.
+	// Words per minute field → stored as characters per minute (goal × 5).
 	#goal(e: Event): void {
 		const v = Number((e.target as HTMLInputElement).value);
-		if (Number.isFinite(v) && v >= 15 && v <= 120) this.targetCpm = wpmToCpm(v);
+		if (Number.isFinite(v) && v >= 15 && v <= 120) {
+			this.targetCpm = wpmToCpm(v);
+			this.settings = { ...this.settings, targetCpm: this.targetCpm };
+			void saveSettings(layoutKey(this.geometryId, this.keymapId), this.settings);
+		}
 	}
 
 	// The two curriculum switches. They are stored with the goal, and they change which letters are in play,

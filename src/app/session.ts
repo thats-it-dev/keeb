@@ -89,6 +89,13 @@ export class SessionRecorder {
 		return this.#startedAt ? this.#typingMs + Math.min(Math.max(0, Date.now() - this.#lastKeyAt), GAP_CAP_MS) : 0;
 	}
 
+	/** Characters typed since the session opened (since last layout load). */
+	getCharsTyped(): number {
+		const statsNow = this.host.read().stats;
+		const totalsNow = totals(statsNow);
+		return totalsNow.chars - this.#baseline.chars;
+	}
+
 	/** Current session accuracy: (chars - errors) / chars * 100, rounded to 1 decimal.
 	 * Returns null when no session is open or when the session has typed 0 chars. */
 	sessionAccuracy(): number | null {

@@ -19,6 +19,7 @@ export class TtPractice extends LitElement {
 		 * running away from your fingers. The underline costs no layout, so nothing shifts sideways as it
 		 * moves (the reason the old padded-chip version went). */
 		.now { color: var(--text-muted); text-decoration: underline; text-decoration-color: var(--primary); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+		.badnow { color: var(--accent); text-decoration: underline; text-decoration-color: var(--primary); text-decoration-thickness: 2px; text-underline-offset: 5px; } /* mistyped target: red + underline so cursor never vanishes */
 		:host { display: block; }
 	`;
 	resolved?: Resolved;
@@ -102,7 +103,8 @@ export class TtPractice extends LitElement {
 		return out;
 	}
 
-	#state(i: number): "now" | "hit" | "bad" | "todo" {
+	#state(i: number): "now" | "hit" | "bad" | "badnow" | "todo" {
+		if (this.wrong.has(i) && i === this.cursor) return "badnow";
 		if (this.wrong.has(i)) return "bad";
 		if (i === this.cursor) return "now";
 		return i < this.cursor ? "hit" : "todo";
