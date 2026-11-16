@@ -206,11 +206,11 @@ export class AppMain extends LitElement {
 		this.#session.begin();
 		this.#session.arm();
 		this.lastId = p.key(ch, performance.now()) ?? "";
+		// Read the engine AFTER p.key(): holding a stale reference saves old stats.
+		if (p.engine) await this.#session.stroke(p.engine);
 		const elapsed = this.#session.elapsed();
 		const chars = this.#session.getCharsTyped();
 		this.nowCpm = elapsed > 0 && chars > 0 ? Math.round((chars / elapsed) * 60000) : 0;
-		// Read the engine AFTER p.key(): holding a stale reference saves old stats.
-		if (p.engine) await this.#session.stroke(p.engine);
 	}
 
 	#pick(part: "g" | "k", value: string): void {
