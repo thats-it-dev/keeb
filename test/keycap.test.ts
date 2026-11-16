@@ -7,6 +7,9 @@ import type { KeycapBinding, KeycapFile } from "../src/layout/keycap.ts";
 
 type Fixture = KeycapFile & { layers: KeycapBinding[][] };
 const file = JSON.parse(readFileSync(new URL("./fixtures/go60-keycap.json", import.meta.url), "utf8")) as Fixture;
+
+// 6-layer fixture from the real Go60 Gallium layout
+const big = JSON.parse(readFileSync(new URL("./fixtures/go60-36.json", import.meta.url), "utf8")) as Fixture;
 const kp = (v: string): KeycapBinding => ({ value: "&kp", params: [{ value: v }] });
 
 describe("recognising a layout editor export", () => {
@@ -104,5 +107,29 @@ describe("character of a single binding", () => {
 		expect(charOfBinding({ value: "&mo", params: [{ value: "2" }] })).toBeUndefined();
 		expect(charOfBinding({ value: "&mkp", params: [{ value: "LCLK" }] })).toBeUndefined();
 		expect(charOfBinding({ value: "&workspace_left" })).toBeUndefined(); // a macro, referred to by name
+	});
+});
+
+describe("6-layer Go60 (go60-36.json)", () => {
+	const { keymap, layerNames, problems } = keymapFromKeycap(big, GO60);
+
+	it("imports every layer", () => {
+		expect(problems).toEqual([]);
+		expect(keymap!.layers).toHaveLength(6);
+		expect(layerNames).toEqual(["Main", "Sym", "NavNum", "Fn", "mouse", "Magic"]);
+	});
+
+	it("detects layer-switch keys", () => {
+		const keys = keymap!.layerKeys!.filter((k) => k.toLayer > 0);
+		expect(keys).toEqual([
+			{ keyId: "L_T3", toLayer: 3, action: "tap" },
+			{ keyId: "R_T2", toLayer: 1, action: "tap" },
+			{ keyId: "R_T1", toLayer: 2, action: "hold" },
+		]);
+	});
+
+	it("maps &trans back to the base layer", () => {
+		const trans = keymap!.layerKeys!.filter((k) => k.toLayer === 0);
+		expect(trans.length).toBeGreaterThan(0); // &trans on layers 1-5
 	});
 });

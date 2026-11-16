@@ -53,6 +53,8 @@ export type Geometry = {
 // Six columns, index 0 = the outer (far pinky) column; "" means "use the geometry's own label".
 export type KeymapRow = readonly [string, string, string, string, string, string];
 
+export type LayerKey = { keyId: string; toLayer: number; action: "tap" | "hold" };
+
 export type Keymap = {
 	id: string;
 	name: string;
@@ -62,6 +64,12 @@ export type Keymap = {
 	// board that came out of someone's own file has characters on keys the 3x6 grid has no slot for
 	// (thumb clusters, inner columns, a row that is not upper/home/lower).
 	byKey?: Record<string, string>;
+	// All layers from a keycap file.
+	layers?: string[][];
+	// Display names for each layer.
+	layerNames?: string[];
+	// Layer-switch keys detected across layers 1+.
+	layerKeys?: LayerKey[];
 };
 
 export type RenderKey = Key & { char: string; finger: Finger; taught: boolean };

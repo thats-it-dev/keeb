@@ -1,4 +1,4 @@
-import type { Geometry, Keymap, KeymapRow } from "../keyboard/types.ts";
+import type { Geometry, Keymap, KeymapRow, LayerKey } from "../keyboard/types.ts";
 
 // A MoErgo Layout Editor (keycap) JSON export. Unlike info.json this carries no positions: the
 // "keyboard" field names a board we have to know, and "layers" is a flat array of bindings in that
@@ -52,6 +52,7 @@ export function isKeycapFile(json: unknown): json is KeycapFile {
 export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-import", name = "From layout file"): KeycapImport {
 	const problems: string[] = [];
 	const names = Array.isArray(file.layer_names) ? (file.layer_names as unknown[]).map(String) : [];
+	const layers = (file.layers as unknown[][]) ?? [];
 	if (typeof file.keyboard !== "string" || !file.keyboard) return { problems: [...problems, "no `keyboard` field: cannot tell which board this is"], layerNames: names };
 	if (file.keyboard.trim().toLowerCase() !== base.id.toLowerCase()) {
 		return { problems: [...problems, `this file is for a "${file.keyboard}", not the ${base.name} selected here`], layerNames: names };
@@ -79,6 +80,68 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 		return { problems, layerNames: names };
 	}
 
+	// --- Pad layer names ---
+	const paddedNames: string[] = [];
+	for (let i = 0; i < layers.length; i++) {
+		paddedNames.push(names[i] ?? `Layer ${i}`);
+	}
+
+	// --- Build character layers ---
+	const charLayers = layers.map((layer) => {
+		const b = layer.map((b, i) => {
+			if (i >= base.keys.length) return "";
+			const binding = b as KeycapBinding;
+			if (!binding || typeof binding.value !== "string") return "";
+			return charOfBinding(binding) ?? "";
+		});
+		return b;
+	});
+
+	// --- Detect layer-switch keys (scan all layers, skip dupes by keyId+toLayer) ---
+	// Only record the first layer-switch action per key; a character binding on layer 0
+	// does not suppress an &trans or lt on a higher layer.
+	const seenSwitch = new Set<string>();
+	const layerKeys: LayerKey[] = [];
+	for (let li = 0; li < layers.length; li++) {
+		const layer = layers[li] as KeycapBinding[];
+		for (let i = 0; i < layer.length; i++) {
+			const binding = layer[i];
+			if (!binding || typeof binding.value !== "string") continue;
+			const baseKey = base.keys[i];
+			if (!baseKey) continue;
+
+			if (binding.value === "&trans") {
+				const dk = `${baseKey.id}:0`;
+				if (!seenSwitch.has(dk)) {
+					seenSwitch.add(dk);
+					layerKeys.push({ keyId: baseKey.id, toLayer: 0, action: "tap" });
+				}
+				continue;
+			}
+
+			// Custom binding with ZMK devicetree text in params[0].value
+			const customVal =
+				binding.value.toLowerCase() === "custom"
+					? (binding.params?.[0]?.value as string | undefined)
+						: undefined;
+			if (!customVal) continue;
+
+			const ltMatch = /^&lt(_\w+)?\s+(\d+)\s+\w+$/.exec(customVal);
+			if (!ltMatch) continue;
+
+			const toLayer = parseInt(ltMatch[2], 10);
+			if (isNaN(toLayer) || toLayer < 0) continue;
+
+			const action: "tap" | "hold" =
+				ltMatch[1] !== undefined ? "hold" : "tap";
+			const dk = `${baseKey.id}:${toLayer}`;
+			if (!seenSwitch.has(dk)) {
+				seenSwitch.add(dk);
+				layerKeys.push({ keyId: baseKey.id, toLayer, action });
+			}
+		}
+	}
+
 	const rows: Partial<Record<"upper" | "home" | "lower", { l: string[]; r: string[] }>> = {};
 	for (const [i, key] of base.keys.entries()) {
 		const role = roleOfRow(base, key);
@@ -88,9 +151,17 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 	}
 	const done = Object.fromEntries(Object.entries(rows).map(([role, pair]) => [role, { l: tuple(pair.l), r: tuple(pair.r) }])) as Keymap["rows"];
 	return {
-		keymap: { id, name, source: `keycap layers: ${names.join(", ") || "unnamed"}`, rows: done },
+		keymap: {
+			id,
+			name,
+			source: `keycap layers: ${names.join(", ") || "unnamed"}`,
+			rows: done,
+			layers: charLayers,
+			layerNames: paddedNames,
+			layerKeys,
+		},
 		geometryId: base.id,
-		layerNames: names,
+		layerNames: paddedNames,
 		problems,
 	};
 }
