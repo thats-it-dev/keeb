@@ -195,7 +195,7 @@ export class AppMain extends LitElement {
 		// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
 		// that passed through here charged an error to the target key and turned the letter the learner has
 		// not typed yet red. That reads as the line running ahead of the fingers.
-		if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+		if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== "Enter")) return;
 		e.preventDefault();
 		void this.#type(e.key);
 	};

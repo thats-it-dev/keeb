@@ -116,8 +116,22 @@ describe("the curriculum", () => {
 		let now = 1_000;
 		let was = e.ladder.unlocked.length;
 		let grew = 0;
-		for (let i = 0; i < 900 && [...e.text][e.index] !== undefined; i += 1) {
-			const res = press({ resolved: r, targetCpm: TARGET }, e, [...e.text][e.index]!, now);
+		for (let i = 0; i < 900; i += 1) {
+			const want = [...e.text][e.index];
+			if (want === undefined) {
+				// Line finished, press space to advance to next line
+				const advance = press({ resolved: r, targetCpm: TARGET }, e, " ", now);
+				e = advance.engine;
+				now += 200;
+				const is = e.ladder.unlocked.length;
+				if (is !== was) {
+					expect(is - was, `letters added by one run: ${unlockedChars(e.stats).join("")}`).toBeLessThanOrEqual(1);
+					grew += is - was;
+					was = is;
+				}
+				continue;
+			}
+			const res = press({ resolved: r, targetCpm: TARGET }, e, want, now);
 			e = res.engine;
 			now += 200; // inside the 300 ms goal, so keys do clear it
 			const is = e.ladder.unlocked.length;
