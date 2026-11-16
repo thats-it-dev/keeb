@@ -102,3 +102,23 @@ test("remembers the choice on the next visit", async ({ page }) => {
 	await ready(page);
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(58);
 });
+
+test("shows the active layer's characters and hints the layer key", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	// open settings, upload the 6-layer fixture
+	await page.locator("tk-header button[aria-label='Settings']").click();
+	await page.locator("dialog input[type='file']").setInputFiles("test/fixtures/go60-36.json");
+	await page.locator("dialog [aria-label='Close settings']").click();
+	await ready(page);
+	// on the base layer L_C4R3 shows "R" from layer 0 bindings
+	await expect(key(page, "L_C4R3")).toContainText("R");
+	// press the layer key: L_T3 (geometry label "Ctrl") taps to layer 3 (Fn)
+	// Use page.keyboard.press() which dispatches at the page level where #onKey listens
+	await page.keyboard.press("Control");
+	// L_C4R3 now shows "Q" from the Fn layer at that position
+	await expect(key(page, "L_C4R3")).toContainText("Q");
+	// hint: the lesson target char lives on the base layer, not on Fn — a &trans key (toLayer 0)
+	// gets the accent ring
+	await expect(page.locator("tt-keyboard rect.hint")).toBeVisible();
+});

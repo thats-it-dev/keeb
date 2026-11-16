@@ -192,6 +192,9 @@ export class AppMain extends LitElement {
 		if (this.settingsOpen) return; // the modal owns the keyboard while it is up
 		const t = e.target as HTMLElement | null;
 		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
+		// Layer keys (e.g. Alt as layer switch): pass through even when e.altKey is set.
+		const mk = e.key === "Control" ? "ctrl" : e.key === "Shift" ? "shift" : e.key;
+		if (this.#resolved.layerKeyByPhysical.has(mk.toLowerCase())) { e.preventDefault(); void this.#type(mk); return; }
 		// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
 		// that passed through here charged an error to the target key and turned the letter the learner has
 		// not typed yet red. That reads as the line running ahead of the fingers.
@@ -284,7 +287,6 @@ export class AppMain extends LitElement {
 		// which letter the lesson is built around, and three calls to #overview() would be three chances to
 		// disagree about the stats it reads.
 		const o = this.ready ? this.#overview() : undefined;
-		const hintId = ""; // Task 4 wires this to this.#practice?.hintId
 		// The insights panel is the kit shell's aside: a docked column from 900px, a drawer below it. The shell
 		// owns the folding, the drawer, the Escape key and the remembered choice (store-key); it starts open
 		// only on a branch preview, where the history section carries the only demo-sessions prompt.
@@ -334,7 +336,7 @@ export class AppMain extends LitElement {
 							${this.ready
 								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords}></tt-practice>`
 								: nothing}
-							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .layer=${0} .hintId=${hintId}></tt-keyboard>
+							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .layer=${this.#practice?.layer ?? 0} .hintId=${this.#practice?.hintId ?? ""}></tt-keyboard>
 							<div class="row">
 								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 								${lastKey(r, this.lastId)}
@@ -360,7 +362,6 @@ export class AppMain extends LitElement {
 		const l = ladder(r, this.stats, this.targetCpm, { keyboardOrder: this.keyboardOrder });
 		return overview(this.stats, this.targetCpm, keys, { unlocked: l.unlocked, next: l.next, focus: l.focus });
 	}
-
 	#history() {
 		return historySection({
 			boardName: geometryById(this.geometryId).name,
@@ -371,7 +372,6 @@ export class AppMain extends LitElement {
 			onDemo: (on) => this.#demo(on),
 		});
 	}
-
 
 	// The cards live with the pane, not with the section they describe, so both have to pick the same rows the
 	// chart draws -- demo or real, this layout only.

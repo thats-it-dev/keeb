@@ -80,17 +80,14 @@ export class TtPractice extends LitElement {
 			const layerChars = r.layers[e.layer].map((c) => c.toLowerCase());
 			if (layerChars.includes(targetLower)) return "";
 		}
-		// Find a &trans key on the active layer that targets the layer where this char IS defined.
+		// Find a key on the active layer that falls back to layer 0 (a &trans key).
+		// &trans keys have toLayer:0 in layerKeys and a transparent (empty) binding on
+		// the active layer. They are physical keys present on every layer.
 		const layerKeys = r.layerKeys ?? [];
-		const activeLayerKeys = layerKeys.filter((lk) => lk.keyId !== undefined);
-		for (const lk of activeLayerKeys) {
+		for (const lk of layerKeys) {
+			if (lk.toLayer !== 0) continue;
 			const gk = r.byId.get(lk.keyId);
-			if (!gk) continue;
-			// A &trans key has toLayer === 0 — does layer 0 have the char?
-			if (lk.toLayer === 0) {
-				const baseChar = gk.char.toLowerCase();
-				if (baseChar === targetLower) return gk.id;
-			}
+			if (gk) return gk.id;
 		}
 		// Fallback: scan layerKeys for any switch pointing to a layer that has the char.
 		for (const lk of layerKeys) {
