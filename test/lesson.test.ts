@@ -10,10 +10,33 @@ import { isCleanWord } from "../src/lesson/clean.ts";
 import { teachingOrder } from "../src/lesson/ladder.ts";
 import { speakable } from "../src/lesson/phonotactics.ts";
 import { emptyStat, timeToTypeMs, type StatMap } from "../src/stats/stats.ts";
+import type { Keymap } from "../src/keyboard/types.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
 const TARGET = 200; // cpm, a 300ms-per-character goal
 const course: Course = { resolved: r, targetCpm: TARGET };
+
+// A minimal keymap with a layer switch on the R_T3 key (label "Alt") that goes to layer 1.
+// The layer data gives layer 1 a non-empty char at position 0 so we can test layer transitions.
+const kmapWithLayers: Keymap = {
+	id: "go60-test-layers",
+	name: "Go60 test layers",
+	source: "test",
+	rows: keymapById("qwerty").rows,
+	layers: [
+		// layer 0 (same as QWERTY base) — abbreviated: just the first few positions + the Alt key is "" (transparent)
+		["=", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "Tab", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]", "\\", "Esc", "a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'", "", "", "", "", "", "z", "x", "c", "v", "b", "n", "m", ",", ".", "/", "`", "Del", "⌫", "LGui", "[", "]", "Layer", "Shift", "Ctrl", "Alt", " ", "Enter"],
+		// layer 1 (alternate) — same shape, different char at pos 0
+		["~", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_", "+", "Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{", "}", "|", "Esc", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":", "\"", "", "", "", "", "", "Z", "X", "C", "V", "B", "N", "M", "<", ">", "?", "~", "Del", "⌫", "LGui", "{", "}", "Layer", "Shift", "Ctrl", "", " ", "Enter"],
+	],
+	layerKeys: [
+		// R_T3 (Alt) taps to layer 1 — this is the switch we test against.
+		{ keyId: "R_T3", toLayer: 1, action: "tap" },
+	],
+};
+
+const layerR = resolve(GO60, kmapWithLayers);
+const layerCourse: Course = { resolved: layerR, targetCpm: TARGET };
 
 // A fake typist with a fixed speed per character, so a slow key should show up as drilled more.
 const SPEED: Record<string, number> = { s: 90, t: 95, a: 110, r: 130, n: 140, e: 120, i: 260, o: 150, g: 170, m: 240 };
@@ -228,5 +251,31 @@ describe("lesson engine", () => {
 		expect(viaEnter.engine.pending).not.toBe("");
 		expect(viaEnter.engine.index).toBe(0);
 		expect(viaEnter.engine.line).toBe(engine.line + 1);
+	});
+
+	it("pressing a layer key switches the active layer", () => {
+		const e = start(layerCourse, {});
+		expect(e.layer).toBe(0);
+		// R_T3 (Alt) taps to layer 1.
+		const res = press(layerCourse, e, "Alt", 0);
+		expect(res.engine.layer).toBe(1);
+		expect(res.accepted).toBe(true);
+		expect(res.targetId).toBe("");
+		expect(res.pressedId).toBe("R_T3");
+	});
+
+	it("does not change expected character when layer changes", () => {
+		// The layer only affects which physical key maps to which character on display;
+		// the expected character in the lesson text stays the same regardless of layer.
+		const e = start(layerCourse, {});
+		const before = e.index;
+		const expected = [...e.text][e.index];
+		const afterSwitch = press(layerCourse, e, "Alt", 100);
+		expect(afterSwitch.engine.layer).toBe(1);
+		expect(afterSwitch.engine.index).toBe(before); // index unchanged
+		// Typing the original expected character is still valid regardless of layer.
+		const afterChar = press(layerCourse, afterSwitch.engine, expected!, 300);
+		expect(afterChar.accepted).toBe(true);
+		expect(afterChar.engine.index).toBe(before + 1);
 	});
 });

@@ -25,6 +25,8 @@ export type Engine = {
 	// How many lines this course has placed. It seeds the generator, so a line is reproducible.
 	line: number;
 	ladder: Ladder;
+	// Active layer index, 0 = base layer.
+	layer: number;
 };
 
 export type KeyResult = {
@@ -41,12 +43,18 @@ export type KeyResult = {
 };
 
 export function start(course: Course, stats: StatMap): Engine {
-	return place(course, { stats, ladder: ladder(course.resolved, stats, course.targetCpm, course), text: "", index: 0, pending: "", stamp: 0, line: 0 });
+	return place(course, { stats, ladder: ladder(course.resolved, stats, course.targetCpm, course), text: "", index: 0, pending: "", stamp: 0, line: 0, layer: 0 });
 }
 
 // One keystroke. Timing is attributed to the key that was expected: on a remapped split the browser's
 // physical code says nothing about the position, but the expected character always does.
 export function press(course: Course, e: Engine, typed: string, now: number): KeyResult {
+	// Layer-switch keys: no stat, no error, just switch the active layer.
+	const layerKey = course.resolved.layerKeyByPhysical.get(typed.toLowerCase());
+	if (layerKey) {
+		const engine = { ...e, layer: layerKey.toLayer };
+		return { engine, accepted: true, targetId: "", pressedId: layerKey.keyId, elapsedMs: 0, finished: false };
+	}
 	// Enter mid-line does nothing: it is not a lesson character.
 	if (e.pending !== "" && typed === "Enter") {
 		return { engine: e, accepted: false, targetId: "", pressedId: "", elapsedMs: 0, finished: false };
@@ -109,7 +117,7 @@ function place(course: Course, e: Engine): Engine {
 		realWords: course.realWords ?? false,
 		seed: e.line + 1,
 	});
-	return { ...e, ladder: l, text, index: 0, line: e.line + 1, pending: idOf(course.resolved, [...text][0] ?? ""), stamp: 0 };
+	return { ...e, ladder: l, text, index: 0, line: e.line + 1, pending: idOf(course.resolved, [...text][0] ?? ""), stamp: 0, layer: e.layer };
 }
 
 export type { Engine as LessonEngine };

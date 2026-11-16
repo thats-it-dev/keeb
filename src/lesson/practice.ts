@@ -2,6 +2,7 @@ import { LitElement, html, css } from "https://kit.thatsit.app/lit.js";
 import { press, start } from "../lesson/engine.ts";
 import { cpmFrom, type StatMap } from "../stats/stats.ts";
 import type { Resolved } from "../keyboard/resolve.ts";
+import type { LayerKey } from "../keyboard/types.ts";
 
 // The typing pane. It owns the lesson engine and reports every keystroke back up, so the keyboard
 // view can highlight the key and the store can persist it.
@@ -58,6 +59,51 @@ export class TtPractice extends LitElement {
 	 *  owns that name for moving the DOM focus. */
 	get focusId(): string | undefined {
 		return this.engine?.ladder.focus;
+	}
+
+	/** Active layer index — forwarded to the keyboard view. */
+	get layer(): number {
+		return this.engine?.layer ?? 0;
+	}
+
+	/** Hint key id: if the target character is not on the active layer, return the layer-switch key
+	 *  that gets back to it (usually a `&trans` entry pointing to layer 0). */
+	get hintId(): string {
+		const e = this.engine;
+		const r = this.resolved;
+		if (!e || !r) return "";
+		const targetChar = [...e.text][e.index] ?? "";
+		if (!targetChar) return "";
+		const targetLower = targetChar.toLowerCase();
+		// Check if the target char is on the active layer.
+		if (r.layers?.[e.layer]) {
+			const layerChars = r.layers[e.layer].map((c) => c.toLowerCase());
+			if (layerChars.includes(targetLower)) return "";
+		}
+		// Find a &trans key on the active layer that targets the layer where this char IS defined.
+		const layerKeys = r.layerKeys ?? [];
+		const activeLayerKeys = layerKeys.filter((lk) => lk.keyId !== undefined);
+		for (const lk of activeLayerKeys) {
+			const gk = r.byId.get(lk.keyId);
+			if (!gk) continue;
+			// A &trans key has toLayer === 0 — does layer 0 have the char?
+			if (lk.toLayer === 0) {
+				const baseChar = gk.char.toLowerCase();
+				if (baseChar === targetLower) return gk.id;
+			}
+		}
+		// Fallback: scan layerKeys for any switch pointing to a layer that has the char.
+		for (const lk of layerKeys) {
+			if (lk.toLayer === 0) continue; // &trans handled above
+			if (r.layers?.[lk.toLayer]) {
+				const layerChars = r.layers[lk.toLayer].map((c) => c.toLowerCase());
+				if (layerChars.includes(targetLower)) {
+					const gk = r.byId.get(lk.keyId);
+					if (gk) return gk.id;
+				}
+			}
+		}
+		return "";
 	}
 
 	// Returns the key id to highlight, so the parent can drive the keyboard view from one event.
