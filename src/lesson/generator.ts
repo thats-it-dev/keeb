@@ -46,8 +46,6 @@ const MIN_CANDIDATES = 15;
 const FREQ_DECAY = 0.012;
 /** How many words to sketch before keeping the one that drills the most. */
 const DRAFTS = 4;
-/** How many letters the line forces in beyond the focus. The rest wait their turn on a later line. */
-const FORCED_PER_LINE = 3;
 /** How many times to redraw a word that repeats the one before it. Repetition is what makes a generated
  *  lesson feel broken, and a rare focus letter on a full board is exactly where it shows. */
 const REPEATS = 3;
@@ -70,12 +68,11 @@ export function lesson(input: LessonInput): Lesson {
 	}
 
 	// An unlocked letter that never appears is a letter nobody is asked to type, one nobody types never gets
-	// faster, and one that never gets faster holds the next letter locked. One line cannot carry every rare
-	// letter as well as the focus, so it carries FORCED_PER_LINE of them and the rest take their turn on a
-	// later line: the starting position moves with the seed, so the wait is bounded by how many are waiting.
+	// faster, and one that never gets faster holds the next letter locked. Every missing unlocked letter
+	// is forced into its own word so the learner meets all keys.
 	const gaps = letters.filter((ch) => !line.some((w) => w.includes(ch)));
 	const first = gaps.length === 0 ? 0 : input.seed % gaps.length;
-	for (let i = 0; i < Math.min(FORCED_PER_LINE, gaps.length, line.length); i += 1) {
+	for (let i = 0; i < Math.min(gaps.length, line.length); i += 1) {
 		line[i] = modelWord(allowed, [...need, gaps[(first + i) % gaps.length]!], stats, targetCpm, ids, rng);
 	}
 

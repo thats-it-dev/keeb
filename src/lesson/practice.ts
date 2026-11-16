@@ -19,6 +19,7 @@ export class TtPractice extends LitElement {
 		 * running away from your fingers. The underline costs no layout, so nothing shifts sideways as it
 		 * moves (the reason the old padded-chip version went). */
 		.now { color: var(--text-muted); text-decoration: underline; text-decoration-color: var(--primary); text-decoration-thickness: 2px; text-underline-offset: 5px; }
+		.badnow { color: var(--accent); text-decoration: underline; text-decoration-color: var(--primary); text-decoration-thickness: 2px; text-underline-offset: 5px; } /* mistyped target: red + underline so cursor never vanishes */
 		:host { display: block; }
 	`;
 	resolved?: Resolved;
@@ -63,29 +64,27 @@ export class TtPractice extends LitElement {
 	key(typed: string, now: number): string | undefined {
 		if (!this.engine || !this.resolved) return undefined;
 		const before = this.cursor;
-		// Compare against the line that was on screen: after press() this.engine.text is the *next* run.
 		const expected = [...this.engine.text][before] ?? "";
 		const res = press(this.#course, this.engine, typed, now);
 		this.engine = res.engine;
 		if (res.elapsedMs > 0) this.instantCpm = cpmFrom(res.elapsedMs);
-		// Marks belong to a line. When a run ends the line is replaced, so its colours go with it;
-		// a mistype inside the current line stays red where it happened.
-		if (res.finished) this.wrong = new Set();
-		else if (typed !== "Enter" && typed !== expected && before < [...this.engine.text].length) this.wrong.add(before);
-		this.cursor = this.engine.index;
+		if (res.accepted && res.targetId === "") {
+			// Space or Enter started a new line: its marks start clean.
+			this.wrong = new Set();
+		} else if (res.finished) {
+			// The finished line stays on screen: red marks and the cursor are preserved until advance.
+		} else if (this.engine.pending !== "" && typed !== "Enter" && typed !== expected && before < [...this.engine.text].length) {
+			this.wrong.add(before);
+		}
+		if (!res.finished) this.cursor = this.engine.index;
 		this.requestUpdate();
 		return res.pressedId || undefined;
-	}
-
-	get done(): boolean {
-		return !!this.engine && this.cursor >= [...this.engine.text].length;
 	}
 
 	override render() {
 		const text = this.engine?.text ?? "";
 		return html`
 			<p class="line" aria-live="polite" data-text=${text}>${this.#runs(text)}</p>
-			${this.done ? html`<p class="todo">Line done — press space or enter.</p>` : html``}
 		`;
 	}
 
@@ -104,7 +103,8 @@ export class TtPractice extends LitElement {
 		return out;
 	}
 
-	#state(i: number): "now" | "hit" | "bad" | "todo" {
+	#state(i: number): "now" | "hit" | "bad" | "badnow" | "todo" {
+		if (this.wrong.has(i) && i === this.cursor) return "badnow";
 		if (this.wrong.has(i)) return "bad";
 		if (i === this.cursor) return "now";
 		return i < this.cursor ? "hit" : "todo";

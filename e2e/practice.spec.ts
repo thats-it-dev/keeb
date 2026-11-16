@@ -97,7 +97,7 @@ test("the lesson is text, not a field you type into", async ({ page }) => {
 	// A mistyped character turns red and stays red, even under the cursor.
 	const ch = await wanted(page);
 	await tap(page, ch === "z" ? "y" : "z");
-	await expect(page.locator("tt-practice .bad")).toBeVisible();
+	await expect(page.locator("tt-practice .bad, tt-practice .badnow")).toBeVisible();
 });
 
 test("stats sit above the line, settings start hidden", async ({ page }) => {
@@ -337,11 +337,11 @@ test("a finished line starts clean", async ({ page }) => {
 	expect(text.length).toBeGreaterThan(3);
 	const want = await wanted(page);
 	await tap(page, want === "z" ? "q" : "z"); // leave one red letter behind
-	await expect(page.locator("tt-practice .bad")).not.toHaveCount(0);
+	await expect(page.locator("tt-practice .bad, tt-practice .badnow")).not.toHaveCount(0);
 	for (const ch of [...text]) await tap(page, ch);
 	await tap(page, "Enter"); // advance to next line
 	expect(await cursorOf(page)).toBe(0); // a fresh line is on screen
-	await expect(page.locator("tt-practice .bad")).toHaveCount(0); // and none of its letters are red
+	await expect(page.locator("tt-practice .bad, tt-practice .badnow")).toHaveCount(0); // and none of its letters are red
 	await expect(page.locator("tt-practice .line .now")).not.toHaveCount(0);
 });
 

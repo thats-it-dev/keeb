@@ -107,6 +107,16 @@ describe("lesson engine", () => {
 		for (const w of e.text.split(" ")) expect(w, `word ${w} lacks focus ${focus}`).toContain(focus!);
 	});
 
+	it("forces every unlocked letter into the generated line", () => {
+		// A line must not leave any unlocked letter out. Every missing letter is forced into its own word.
+		const e = start(course, typedStats());
+		const unlocked = e.ladder.unlocked.map((id) => r.byId.get(id)?.char.toLowerCase()).filter((c): c is string => c !== undefined);
+		const onScreen = [...e.text].filter((ch) => ch !== " ");
+		for (const ch of unlocked) {
+			expect(onScreen.includes(ch), `${ch} should appear in the line`).toBe(true);
+		}
+	});
+
 	it("carries the focused letter through every line as the ladder grows", () => {
 		// The bug this pins: a line that patched an unexercised letter in replaced whole words with words
 		// built around that letter alone, so past a dozen letters half of them stopped carrying the focus.
