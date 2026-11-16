@@ -73,7 +73,7 @@ export class SessionRecorder {
 		const stats = { ...engine.stats };
 		this.host.writeStats(stats);
 		const now = JSON.stringify(stats);
-		if (now === this.#saved) return; // nothing moved: wrong key, or the line is already finished
+		if (now === this.#saved) return; // stats unchanged since last save (ignored key or repeated save)
 		this.#saved = now;
 		await saveStats(key, stats);
 		// The layout ids are stored with the numbers so a reload finds the same board without asking anyone.

@@ -7,6 +7,8 @@ export type Resolved = {
 	byId: Map<string, RenderKey>;
 	// Lowercased typed character -> key id. Only single-character labels are indexable.
 	byChar: Map<string, string>;
+	// Key id for Enter, so the board lights it when the learner advances.
+	enterKey: string | undefined;
 	viewBox: { x: number; y: number; width: number; height: number };
 	problems: string[];
 };
@@ -51,7 +53,8 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 		byChar.set(c, k.id);
 	}
 	const { width, height } = bounds(keys);
-	return { geometry: g, keys, byId, byChar, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems };
+	const enterKey = keys.find((k) => k.label === "Enter" || k.char === "Enter")?.id;
+	return { geometry: g, keys, byId, byChar, enterKey, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems };
 }
 
 // What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on

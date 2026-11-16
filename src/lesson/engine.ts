@@ -47,10 +47,15 @@ export function start(course: Course, stats: StatMap): Engine {
 // One keystroke. Timing is attributed to the key that was expected: on a remapped split the browser's
 // physical code says nothing about the position, but the expected character always does.
 export function press(course: Course, e: Engine, typed: string, now: number): KeyResult {
+	// Enter mid-line does nothing: it is not a lesson character.
+	if (e.pending !== "" && typed === "Enter") {
+		return { engine: e, accepted: false, targetId: "", pressedId: "", elapsedMs: 0, finished: false };
+	}
 	// Enter or space starts the next line only when the current line is finished; other keys are ignored.
 	if (e.pending === "" && (typed === " " || typed === "Enter")) {
 		const engine = place(course, e);
-		return { engine, accepted: true, targetId: "", pressedId: idOf(course.resolved, typed) || "", elapsedMs: 0, finished: false };
+		const pressedId = typed === "Enter" ? (course.resolved.enterKey ?? "") : idOf(course.resolved, " ");
+		return { engine, accepted: true, targetId: "", pressedId, elapsedMs: 0, finished: false };
 	}
 	// A finished line (pending === "") ignores all other keys.
 	if (e.pending === "") {

@@ -71,7 +71,7 @@ export class TtPractice extends LitElement {
 		// Marks belong to a line. When a run ends the line is replaced, so its colours go with it;
 		// a mistype inside the current line stays red where it happened.
 		if (res.finished) this.wrong = new Set();
-		else if (!res.accepted && expected !== "") this.wrong.add(before);
+		else if (typed !== "Enter" && typed !== expected && before < [...this.engine.text].length) this.wrong.add(before);
 		this.cursor = this.engine.index;
 		this.requestUpdate();
 		return res.pressedId || undefined;
