@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GEOMETRIES } from "../src/data/geometries.ts";
 import { KEYMAPS } from "../src/data/keymaps.ts";
@@ -5,6 +6,14 @@ import { geometryById } from "../src/data/geometries.ts";
 import { keymapById } from "../src/data/keymaps.ts";
 import { charFor, resolve } from "../src/keyboard/resolve.ts";
 import { roleOf } from "../src/keyboard/geometry.ts";
+import { GO60 } from "../src/data/go60.ts";
+import { keymapFromKeycap } from "../src/layout/keycap.ts";
+
+// Fixture: 6-layer Go60 keycap (has layers + layerKeys).
+const bigFixture = JSON.parse(
+	readFileSync(new URL("./fixtures/go60-36.json", import.meta.url), "utf8"),
+) as import("../src/layout/keycap").KeycapFile & { layers: unknown[][] };
+const kmap = keymapFromKeycap(bigFixture, GO60).keymap!;
 
 const GO = geometryById("go60");
 
@@ -66,6 +75,19 @@ describe("resolve", () => {
 		const r = resolve(GO, map);
 		expect(r.byId.get(r.byChar.get("\u00e9")!)?.id).toBe(home.id);
 		expect(r.byId.get(home.id)!.taught).toBe(true); // overriding a character does not un-teach the key
+	});
+
+	it("exposes layer data from a multi-layer keymap", () => {
+		const r = resolve(GO, kmap);
+		expect(r.layers).toHaveLength(6);
+		expect(r.layerNames).toEqual(["Main", "Sym", "NavNum", "Fn", "mouse", "Magic"]);
+		// Layer-switch keys: ctrl (L_T3), space (R_T2), enter (R_T1) from the fixture.
+		expect(r.layerKeyByPhysical.has("ctrl")).toBe(true);
+		expect(r.layerKeyByPhysical.has(" ")).toBe(true);
+		expect(r.layerKeyByPhysical.has("enter")).toBe(true);
+		expect(r.layerKeyByPhysical.get(" ")).toEqual({ keyId: "R_T2", toLayer: 1, action: "tap", label: " " });
+		expect(r.layerKeyByPhysical.get("ctrl")).toEqual({ keyId: "L_T3", toLayer: 3, action: "tap", label: "Ctrl" });
+		expect(r.layerKeyByPhysical.get("enter")).toEqual({ keyId: "R_T1", toLayer: 2, action: "hold", label: "Enter" });
 	});
 
 });

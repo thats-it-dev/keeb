@@ -1,5 +1,5 @@
 import { bounds, fingerOf, geometryProblems, roleOf } from "../keyboard/geometry.ts";
-import type { Geometry, Key, Keymap, RenderKey } from "../keyboard/types.ts";
+import type { Geometry, Key, Keymap, LayerKey, RenderKey } from "../keyboard/types.ts";
 
 export type Resolved = {
 	geometry: Geometry;
@@ -11,6 +11,12 @@ export type Resolved = {
 	enterKey: string | undefined;
 	viewBox: { x: number; y: number; width: number; height: number };
 	problems: string[];
+	// Layer data from the keymap, if present.
+	layers?: string[][];
+	layerNames?: string[];
+	layerKeys?: LayerKey[];
+	// Physical key label (lowercased) -> layer key info for layer-switch keys.
+	layerKeyByPhysical: Map<string, LayerKey & { label: string }>;
 };
 
 const ALPHA = ["upper", "home", "lower"] as const;
@@ -54,7 +60,26 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 	}
 	const { width, height } = bounds(keys);
 	const enterKey = keys.find((k) => k.label === "Enter" || k.char === "Enter")?.id;
-	return { geometry: g, keys, byId, byChar, enterKey, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems };
+
+	// Layer data from the keymap.
+	const layers = kmap.layers;
+	const layerNames = kmap.layerNames;
+	const layerKeys = kmap.layerKeys;
+
+	// Build layerKeyByPhysical: physical label (geometry key.label lowercased) → layer key info.
+	// Skip toLayer:0 entries (those are &trans transitory keys, not real layer switches).
+	const layerKeyByPhysical = new Map<string, LayerKey & { label: string }>();
+	if (layerKeys) {
+		for (const lk of layerKeys) {
+			if (lk.toLayer === 0) continue;
+			const gk = g.keys.find((k) => k.id === lk.keyId);
+			if (gk) {
+				layerKeyByPhysical.set(gk.label.toLowerCase(), { ...lk, label: gk.label });
+			}
+		}
+	}
+
+	return { geometry: g, keys, byId, byChar, enterKey, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems, layers, layerNames, layerKeys, layerKeyByPhysical };
 }
 
 // What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on
