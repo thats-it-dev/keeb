@@ -1,10 +1,11 @@
 import { LitElement, html, css, nothing, svg } from "https://kit.thatsit.app/lit.js";
 import type { Resolved } from "./resolve.ts";
 import type { RenderKey } from "./types.ts";
+import { charForLayer } from "./layer.ts";
 
 // Draws a resolved layout. Coordinates are already in 1/100 key units, so the SVG user unit is a hundredth.
 export class TtKeyboard extends LitElement {
-	static properties = { resolved: { type: Object }, active: { state: true }, missed: { state: true }, focusId: { state: true } };
+	static properties = { resolved: { type: Object }, active: { state: true }, missed: { state: true }, focusId: { state: true }, layer: { state: true }, hintId: { state: true } };
 	static styles = css`
 		svg { display: block; width: 100%; height: auto; }
 		.k rect { fill: var(--bg); stroke: var(--border-color); stroke-width: 2; rx: 8; }
@@ -18,22 +19,26 @@ export class TtKeyboard extends LitElement {
 		 * recoloured border, because this board already uses fill for "you just hit this" and red for "you
 		 * missed", and a state that has to survive being drawn on top of both is a shape. */
 		.ring { fill: none; stroke: var(--primary); stroke-width: 4; stroke-dasharray: 8 6; pointer-events: none; }
+		/* A solid accent ring highlights the key that will unlock next layer. Distinct from the focus ring. */
+		.hint rect { fill: none; stroke: var(--accent); stroke-width: 4; pointer-events: none; }
 	`;
 	resolved?: Resolved;
 	active = "";
 	missed = "";
 	focusId = "";
+	layer = 0;
+	hintId = "";
 
 	override render() {
 		if (!this.resolved) return html``;
 		const v = this.resolved.viewBox; // computed here, not in updated(): a private field set after the first
 		// render never repaints, so the board loaded cropped to a 1x1 key until you touched a select.
 		return html`<svg viewBox=${`${v.x} ${v.y} ${v.width} ${v.height}`} role="img" aria-label=${this.resolved.keys.length + " keys"}>
-			${this.resolved.keys.map((k) => this.#key(k))}
+			${this.resolved.keys.map((k, i) => this.#key(k, i))}
 		</svg>`;
 	}
 
-	#key(k: RenderKey) {
+	#key(k: RenderKey, index: number): ReturnType<typeof svg> {
 		const cls = ["k", k.rot ? "curved" : "", k.taught ? "" : "unt", k.id === this.active ? "on" : "", k.id === this.missed ? "missed" : ""]
 			.filter(Boolean)
 			.join(" ");
@@ -41,12 +46,15 @@ export class TtKeyboard extends LitElement {
 		const cy = k.y + k.h / 2;
 		const t = k.rot ? `rotate(${k.rot / 10} ${cx} ${cy})` : nothing; // an empty transform attribute makes the group unmeasurable
 		const ring = k.id === this.focusId ? svg`<rect class="ring" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
+		const hint = k.id === this.hintId ? svg`<rect class="hint" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
+		const ch = charForLayer(this.resolved!, index, this.layer);
 		// Nested templates must use the svg tag: parsed on their own, <g>/<rect>/<text> land in the HTML
 		// namespace and render nothing at all.
 		return svg`<g class=${cls} data-id=${k.id} transform=${t}>
 			<rect x=${k.x} y=${k.y} width=${k.w} height=${k.h}></rect>
 			${ring}
-			<text x=${cx} y=${cy}>${k.char === "" ? k.label : display(k.char)}</text>
+			${hint}
+			<text x=${cx} y=${cy}>${ch === "" ? k.label : display(ch)}</text>
 		</g>`;
 	}
 }

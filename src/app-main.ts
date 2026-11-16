@@ -284,6 +284,7 @@ export class AppMain extends LitElement {
 		// which letter the lesson is built around, and three calls to #overview() would be three chances to
 		// disagree about the stats it reads.
 		const o = this.ready ? this.#overview() : undefined;
+		const hintId = ""; // Task 4 wires this to this.#practice?.hintId
 		// The insights panel is the kit shell's aside: a docked column from 900px, a drawer below it. The shell
 		// owns the folding, the drawer, the Escape key and the remembered choice (store-key); it starts open
 		// only on a branch preview, where the history section carries the only demo-sessions prompt.
@@ -333,7 +334,7 @@ export class AppMain extends LitElement {
 							${this.ready
 								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords}></tt-practice>`
 								: nothing}
-							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""}></tt-keyboard>
+							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .layer=${0} .hintId=${hintId}></tt-keyboard>
 							<div class="row">
 								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 								${lastKey(r, this.lastId)}
