@@ -339,6 +339,7 @@ test("a finished line starts clean", async ({ page }) => {
 	await tap(page, want === "z" ? "q" : "z"); // leave one red letter behind
 	await expect(page.locator("tt-practice .bad")).not.toHaveCount(0);
 	for (const ch of [...text]) await tap(page, ch);
+	await tap(page, "Enter"); // advance to next line
 	expect(await cursorOf(page)).toBe(0); // a fresh line is on screen
 	await expect(page.locator("tt-practice .bad")).toHaveCount(0); // and none of its letters are red
 	await expect(page.locator("tt-practice .line .now")).not.toHaveCount(0);
@@ -385,7 +386,10 @@ test("the unlocked set grows as the keys speed up", async ({ page }) => {
 	// Practise at the goal pace, so every key should clear it.
 	for (let i = 0; i < 900; i += 1) {
 		const ch = await wanted(page);
-		if (ch === "") break;
+		if (ch === "") {
+			await tap(page, "Enter"); // advance to next line
+			continue;
+		}
 		await tap(page, ch);
 	}
 	const now = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { ladder: { unlocked: string[] } } }).engine.ladder.unlocked.length);

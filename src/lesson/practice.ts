@@ -71,7 +71,7 @@ export class TtPractice extends LitElement {
 		// Marks belong to a line. When a run ends the line is replaced, so its colours go with it;
 		// a mistype inside the current line stays red where it happened.
 		if (res.finished) this.wrong = new Set();
-		else if (typed !== expected) this.wrong.add(before);
+		else if (typed !== "Enter" && typed !== expected && before < [...this.engine.text].length) this.wrong.add(before);
 		this.cursor = this.engine.index;
 		this.requestUpdate();
 		return res.pressedId || undefined;
@@ -85,7 +85,7 @@ export class TtPractice extends LitElement {
 		const text = this.engine?.text ?? "";
 		return html`
 			<p class="line" aria-live="polite" data-text=${text}>${this.#runs(text)}</p>
-			${this.done ? html`<p class="todo">Line done — keep going.</p>` : html``}
+			${this.done ? html`<p class="todo">Line done — press space or enter.</p>` : html``}
 		`;
 	}
 

@@ -47,6 +47,20 @@ export function start(course: Course, stats: StatMap): Engine {
 // One keystroke. Timing is attributed to the key that was expected: on a remapped split the browser's
 // physical code says nothing about the position, but the expected character always does.
 export function press(course: Course, e: Engine, typed: string, now: number): KeyResult {
+	// Enter mid-line does nothing: it is not a lesson character.
+	if (e.pending !== "" && typed === "Enter") {
+		return { engine: e, accepted: false, targetId: "", pressedId: "", elapsedMs: 0, finished: false };
+	}
+	// Enter or space starts the next line only when the current line is finished; other keys are ignored.
+	if (e.pending === "" && (typed === " " || typed === "Enter")) {
+		const engine = place(course, e);
+		const pressedId = typed === "Enter" ? (course.resolved.enterKey ?? "") : idOf(course.resolved, " ");
+		return { engine, accepted: true, targetId: "", pressedId, elapsedMs: 0, finished: false };
+	}
+	// A finished line (pending === "") ignores all other keys.
+	if (e.pending === "") {
+		return { engine: e, accepted: false, targetId: "", pressedId: idOf(course.resolved, typed) || "", elapsedMs: 0, finished: false };
+	}
 	const targetId = e.pending;
 	const elapsedMs = e.stamp === 0 ? 0 : Math.max(0, now - e.stamp);
 	const correct = typed === want(e) && targetId !== "";
@@ -59,8 +73,8 @@ export function press(course: Course, e: Engine, typed: string, now: number): Ke
 	const pressedId = idOf(course.resolved, typed) || targetId;
 	const advanced: Engine = { ...e, stats, index };
 	if (index >= [...e.text].length) {
-		// A new run. `stamp` resets to 0 so the pause between runs is never charged to a key.
-		return { engine: { ...place(course, advanced), stamp: 0 }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: true };
+		// Hold the finished line; learner presses space or enter to start the next line.
+		return { engine: { ...advanced, pending: "", stamp: 0 }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: true };
 	}
 	return { engine: { ...advanced, pending: idOf(course.resolved, [...e.text][index] ?? ""), stamp: now }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: false };
 }

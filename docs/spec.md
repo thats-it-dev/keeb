@@ -278,6 +278,10 @@ put a second, storable answer next to the one `ladder()` derives from stats that
     0 chars.
 14. The history panel shows per-day accuracy as `100 − errPct`; a day with sessions but no characters
     plots no accuracy point (acc = 0).
+15. A finished line stays on screen until the learner presses space or Enter; any other key on a
+    finished line does nothing (no stat, no error). The next line is only placed at that keystroke.
+    This is a keeb deviation from keybr: keybr flows straight into the next run, keeb holds the
+    finished line so the learner controls the pace.
 
 ## 13. Daily time goal (not from keybr)
 

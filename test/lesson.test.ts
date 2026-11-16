@@ -124,6 +124,7 @@ describe("lesson engine", () => {
 				expect(speakable(w) && isCleanWord(w), `line ${line}: ${w}`).toBe(true);
 			}
 			({ engine: e, now } = typeRun(e, now));
+			e = press(course, e, " ", now).engine;
 		}
 	});
 
@@ -166,9 +167,15 @@ describe("lesson engine", () => {
 		// keystroke at a run boundary dragged one key's mean toward zero, and the mean of means followed it.
 		let engine = start(course, {});
 		let now = 1000;
-		for (let i = 0; i < 400 && [...engine.text][engine.index] !== undefined; i += 1) {
-			engine = press(course, engine, [...engine.text][engine.index]!, now).engine;
-			now += 230; // a fixed, machine-honest cadence
+		for (let i = 0; i < 400; i += 1) {
+			const want = [...engine.text][engine.index];
+			if (want === undefined) {
+				engine = press(course, engine, " ", now).engine;
+				now += 230;
+				continue;
+			}
+			engine = press(course, engine, want, now).engine;
+			now += 230;
 		}
 		const rows = Object.values(engine.stats).filter((s) => timeToTypeMs(s) > 0);
 		expect(rows.length).toBeGreaterThan(3);
@@ -182,5 +189,34 @@ describe("lesson engine", () => {
 		const asReal = start({ ...course, realWords: true }, typedStats()).text;
 		expect(asGenerated).not.toBe(asReal);
 		expect(asReal.split(" ").some((w) => WORDS.includes(w))).toBe(true);
+	});
+
+	it("holds the finished line until space or enter starts the next one", () => {
+		let engine = start(course, {});
+		let now = 5000;
+		while ([...engine.text][engine.index] !== undefined) {
+			const res = press(course, engine, [...engine.text][engine.index]!, now);
+			engine = res.engine;
+			now += 220;
+			if (res.finished) break;
+		}
+		// The next line must NOT auto-start: the engine still holds the finished line.
+		expect(engine.pending).toBe("");
+		expect(engine.index).toBe([...engine.text].length);
+		// A random letter on the finished line is ignored: no new stats, engine unchanged.
+		const statKeys = Object.keys(engine.stats).length;
+		const ignored = press(course, engine, "z", now + 220);
+		expect(ignored.engine).toBe(engine);
+		expect(Object.keys(ignored.engine.stats).length).toBe(statKeys);
+		// Enter or space starts the next line only when the current line is finished.
+		const viaSpace = press(course, engine, " ", now + 440);
+		expect(viaSpace.finished).toBe(false);
+		expect(viaSpace.engine.pending).not.toBe("");
+		expect(viaSpace.engine.index).toBe(0);
+		const viaEnter = press(course, engine, "Enter", now + 440);
+		expect(viaEnter.finished).toBe(false);
+		expect(viaEnter.engine.pending).not.toBe("");
+		expect(viaEnter.engine.index).toBe(0);
+		expect(viaEnter.engine.line).toBe(engine.line + 1);
 	});
 });
