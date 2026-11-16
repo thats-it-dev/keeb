@@ -111,15 +111,16 @@ describe("character of a single binding", () => {
 });
 
 describe("6-layer Go60 (go60-36.json)", () => {
-	const { keymap, layerNames, problems } = keymapFromKeycap(big, GO60);
 
 	it("imports every layer", () => {
+		const { keymap, layerNames, problems } = keymapFromKeycap(big, GO60);
 		expect(problems).toEqual([]);
 		expect(keymap!.layers).toHaveLength(6);
 		expect(layerNames).toEqual(["Main", "Sym", "NavNum", "Fn", "mouse", "Magic"]);
 	});
 
 	it("detects layer-switch keys", () => {
+		const { keymap } = keymapFromKeycap(big, GO60);
 		const keys = keymap!.layerKeys!.filter((k) => k.toLayer > 0);
 		expect(keys).toEqual([
 			{ keyId: "L_T3", toLayer: 3, action: "tap" },
@@ -129,7 +130,14 @@ describe("6-layer Go60 (go60-36.json)", () => {
 	});
 
 	it("maps &trans back to the base layer", () => {
+		const { keymap } = keymapFromKeycap(big, GO60);
 		const trans = keymap!.layerKeys!.filter((k) => k.toLayer === 0);
 		expect(trans.length).toBeGreaterThan(0); // &trans on layers 1-5
+	});
+
+	it("pads layerNames when the fixture has fewer names than layers", () => {
+		const short = { ...big, layer_names: ["Main", "Sym"] } as KeycapFile & { layers: KeycapBinding[][] };
+		const { layerNames } = keymapFromKeycap(short, GO60);
+		expect(layerNames).toEqual(["Main", "Sym", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]);
 	});
 });

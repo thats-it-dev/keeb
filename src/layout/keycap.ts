@@ -111,10 +111,13 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 			if (!baseKey) continue;
 
 			if (binding.value === "&trans") {
-				const dk = `${baseKey.id}:0`;
-				if (!seenSwitch.has(dk)) {
-					seenSwitch.add(dk);
-					layerKeys.push({ keyId: baseKey.id, toLayer: 0, action: "tap" });
+				// &trans on layer 0 is just an empty key; only layers 1+ are switches.
+				if (li > 0) {
+					const dk = `${baseKey.id}:0`;
+					if (!seenSwitch.has(dk)) {
+						seenSwitch.add(dk);
+						layerKeys.push({ keyId: baseKey.id, toLayer: 0, action: "tap" });
+					}
 				}
 				continue;
 			}
