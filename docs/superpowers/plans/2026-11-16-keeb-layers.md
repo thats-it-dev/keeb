@@ -57,7 +57,9 @@ it("imports every layer", () => {
 
 it("detects layer-switch keys", () => {
   const { keymap } = keymapFromKeycap(big, GO60);
-  const keys = keymap!.layerKeys;
+  // &trans bindings on layers 1-5 also land in layerKeys (toLayer 0), so scope the exact-match
+  // to the non-base targets and count the &trans ones separately.
+  const keys = keymap!.layerKeys.filter((k) => k.toLayer > 0);
   expect(keys).toEqual([
     { keyId: "R_T3", toLayer: 3, action: "tap" },   // &lt 3
     { keyId: "R_T1", toLayer: 1, action: "tap" },   // &lt 1
@@ -140,7 +142,7 @@ Expected: FAIL — fields don't exist.
 
 - [ ] **Step 2: Extend `Resolved` and `resolve()`**
 
-Add the four fields to the `Resolved` type and populate them in `resolve()`. For `layerKeyByPhysical`: look up each `layerKeys` entry's key via `g.keys` index → key id → `keyLabel` (existing label, e.g. `"Alt"` → `"alt"`), store `{ keyId, toLayer, action, label }`.
+Add the four fields to the `Resolved` type and populate them in `resolve()`. For `layerKeyByPhysical`: look up each `layerKeys` entry's key via `g.keys` index → key id → the geometry's raw `label` lowercased (NOT `keyLabel` — `keyLabel` spells a space key as "space", but the browser keydown for a spacebar is `" "`). Store `{ keyId, toLayer, action, label }` keyed by that raw label.
 
 - [ ] **Step 3: Run tests**
 
@@ -173,40 +175,18 @@ In `TtKeyboard`:
 - In `#key()`: displayed char = `this.resolved.layers?.[this.layer]?.[index] || k.char` — needs the key's matrix index: build `idToIndex` map from `resolved.geometry.keys` once (e.g. a `#indexById` field built in `render()`).
 - Add style `.hint rect { fill: var(--accent); stroke: var(--accent); }` and render a solid ring on the key where `k.id === this.hintId` (separate element, like the focus ring).
 
-- [ ] **Step 2: Add an e2e test**
+- [ ] **Step 2: e2e test deferred to Task 4**
 
-```ts
-// e2e/keeb.spec.ts
-test("shows the active layer's characters and hints the layer key", async ({ page }) => {
-  await page.goto("/");
-  await ready(page);
-  // open settings, upload the 6-layer fixture
-  await page.locator("tk-header button[aria-label='Settings']").click();
-  await page.locator("dialog input[type='file']").setInputFiles("test/fixtures/go60-36.json");
-  await page.locator("dialog [aria-label='Close settings']").click();
-  await ready(page);
-  // on the base layer the board shows Main-layer chars
-  await expect(key(page, "L_C5R2")).toContainText("Q");
-  // press the layer key (Alt on this board switches to layer 3 "Fn")
-  await page.locator("tt-practice").press("Alt");
-  await expect(page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId)).resolves.toBe("R_T3");
-  await expect(key(page, "L_C5R2")).not.toContainText("Q"); // the Fn layer maps that position differently
-  // hint: target char lives on the base layer, board is on layer 3 → a &trans key gets highlighted
-  await expect(page.locator("tt-keyboard g.hint").first()).toBeVisible();
-});
-```
-
-Run: `npm run e2e:one -- e2e/keeb.spec.ts`
-Expected: FAIL (props not wired yet).
+The board-only e2e (pressing "Alt" and expecting the hint ring) needs the engine's layer-key handling, which Task 4 adds. Task 3 only proves the board renders the active layer's chars with `layer=0`; the full e2e test text lives in Task 4's Step 5b.
 
 - [ ] **Step 3: Wire the props from `app-main`**
 
-In `src/app-main.ts` render: `<tt-keyboard .resolved=${r} .layer=${...} .hintId=${...} ...>`. The `layer` value comes from the practice pane's engine (Task 4); until then wire `0`.
+In `src/app-main.ts` render: `<tt-keyboard .resolved=${r} .layer=${0} .hintId=${""} ...>`.
 
-- [ ] **Step 4: Run e2e**
+- [ ] **Step 4: Run checks**
 
-Run: `npm run e2e:one -- e2e/keeb.spec.ts`
-Expected: PASS.
+Run: `npm run typecheck && npm run e2e:one -- e2e/keeb.spec.ts`
+Expected: PASS (existing keeb tests still pass; the board renders base-layer chars).
 
 - [ ] **Step 5: Commit**
 
@@ -271,6 +251,29 @@ In `practice.ts`:
 
 Run: `npm test -- test/lesson.test.ts` then `npm run e2e:one -- e2e/keeb.spec.ts`
 Expected: PASS.
+
+- [ ] **Step 5b: Add the board e2e test**
+
+```ts
+// e2e/keeb.spec.ts
+test("shows the active layer's characters and hints the layer key", async ({ page }) => {
+  await page.goto("/");
+  await ready(page);
+  // open settings, upload the 6-layer fixture
+  await page.locator("tk-header button[aria-label='Settings']").click();
+  await page.locator("dialog input[type='file']").setInputFiles("test/fixtures/go60-36.json");
+  await page.locator("dialog [aria-label='Close settings']").click();
+  await ready(page);
+  // on the base layer the board shows Main-layer chars
+  await expect(key(page, "L_C5R2")).toContainText("Q");
+  // press the layer key (Alt on this board switches to layer 3 "Fn")
+  await page.locator("tt-practice").press("Alt");
+  await expect(page.evaluate(() => (document.querySelector("app-main") as unknown as { lastId: string }).lastId)).resolves.toBe("R_T3");
+  await expect(key(page, "L_C5R2")).not.toContainText("Q"); // the Fn layer maps that position differently
+  // hint: target char lives on the base layer, board is on layer 3 → a &trans key gets highlighted
+  await expect(page.locator("tt-keyboard g.hint").first()).toBeVisible();
+});
+```
 
 - [ ] **Step 6: Wire board props in app-main render**
 
