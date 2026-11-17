@@ -50,7 +50,8 @@ export function start(course: Course, stats: StatMap): Engine {
 // physical code says nothing about the position, but the expected character always does.
 export function press(course: Course, e: Engine, typed: string, now: number): KeyResult {
 	// Layer-switch keys: no stat, no error, just switch the active layer.
-	const layerKey = course.resolved.layerKeyByPhysical.get(typed.toLowerCase());
+	const layerKey = course.resolved.layerKeyByPhysical.get(typed.toLowerCase())
+		?? course.resolved.layerKeyByBrowser.get(typed.toLowerCase());
 	if (layerKey) {
 		const engine = { ...e, layer: layerKey.toLayer };
 		return { engine, accepted: true, targetId: "", pressedId: layerKey.keyId, elapsedMs: 0, finished: false };

@@ -121,4 +121,8 @@ test("shows the active layer's characters and hints the layer key", async ({ pag
 	// hint: the lesson target char lives on the base layer, not on Fn — a &trans key (toLayer 0)
 	// gets the accent ring
 	await expect(page.locator("tt-keyboard rect.hint")).toBeVisible();
+	// press the hinted &trans key to return to base layer
+	// The hint key is L_C6R2 (Tab) — the first &trans key transparent on layer 3.
+	await page.keyboard.press("Tab");
+	await expect(key(page, "L_C4R3")).toContainText("R"); // back on the base layer
 });

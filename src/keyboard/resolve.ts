@@ -76,14 +76,12 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 	const layerKeyByBrowser = new Map<string, LayerKey & { label: string }>();
 	if (layerKeys) {
 		for (const lk of layerKeys) {
-			if (lk.toLayer === 0) continue;
 			const gk = g.keys.find((k) => k.id === lk.keyId);
-			if (gk) {
-				layerKeyByPhysical.set(gk.label.toLowerCase(), { ...lk, label: gk.label });
-				// Map the browser key name using the data-driven helper.
-				const browserKey = labelToBrowserKey(gk.label);
-				layerKeyByBrowser.set(browserKey, { ...lk, label: gk.label });
-			}
+			if (!gk) continue;
+			// &trans (toLayer:0) keys are added to both maps so the engine can route them.
+			layerKeyByPhysical.set(gk.label.toLowerCase(), { ...lk, label: gk.label });
+			const browserKey = labelToBrowserKey(gk.label);
+			layerKeyByBrowser.set(browserKey, { ...lk, label: gk.label });
 		}
 	}
 

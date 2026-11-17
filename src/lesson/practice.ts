@@ -3,7 +3,6 @@ import { press, start } from "../lesson/engine.ts";
 import { cpmFrom, type StatMap } from "../stats/stats.ts";
 import { charForLayer } from "../keyboard/layer.ts";
 import type { Resolved } from "../keyboard/resolve.ts";
-import type { LayerKey } from "../keyboard/types.ts";
 
 // The typing pane. It owns the lesson engine and reports every keystroke back up, so the keyboard
 // view can highlight the key and the store can persist it.

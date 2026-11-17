@@ -114,7 +114,9 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 				// &trans on layer 0 is just an empty key; only layers 1+ are switches.
 				if (li > 0) {
 					const dk = `${baseKey.id}:0`;
-					if (!seenSwitch.has(dk)) {
+					// Only add &trans if no non-transparent switch exists for this key.
+					const nonTrans = layerKeys.some((k) => k.keyId === baseKey.id && k.toLayer !== 0);
+					if (!seenSwitch.has(dk) && !nonTrans) {
 						seenSwitch.add(dk);
 						layerKeys.push({ keyId: baseKey.id, toLayer: 0, action: "tap" });
 					}
