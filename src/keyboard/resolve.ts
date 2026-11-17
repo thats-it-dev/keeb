@@ -92,7 +92,7 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 
 // Map a geometry key label (lowercased) to the browser's e.key value for layer-switch keys.
 // Handles common aliases like "lctrl" → "control", "gui" → "meta", etc.
-function labelToBrowserKey(label: string): string {
+export function labelToBrowserKey(label: string): string {
 	const lower = label.toLowerCase();
 	// Modifier keys with common aliases
 	if (lower === "ctrl" || lower === "lctrl" || lower === "rctrl" || lower === "leftctrl" || lower === "rightctrl") return "control";
@@ -107,8 +107,8 @@ function labelToBrowserKey(label: string): string {
 	if (lower === "backspace") return "backspace";
 	if (lower === "delete" || lower === "del") return "delete";
 	if (lower === "escape" || lower === "esc") return "escape";
-	// For layer keys like "fn", "nav", "sym", etc., use the lowercased label as-is
-	// (the browser will send something like "f" for "fn", but we fall back to label)
+	// A letter or letter-prefixed label (e.g. "fn", "nav", "sym"): the browser reports the first character.
+	if (lower.length && /[a-z]/.test(lower[0])) return lower[0];
 	return lower;
 }
 

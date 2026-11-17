@@ -4,7 +4,7 @@ import { GEOMETRIES } from "../src/data/geometries.ts";
 import { KEYMAPS } from "../src/data/keymaps.ts";
 import { geometryById } from "../src/data/geometries.ts";
 import { keymapById } from "../src/data/keymaps.ts";
-import { charFor, resolve } from "../src/keyboard/resolve.ts";
+import { charFor, resolve, labelToBrowserKey } from "../src/keyboard/resolve.ts";
 import { roleOf } from "../src/keyboard/geometry.ts";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapFromKeycap } from "../src/layout/keycap.ts";
@@ -88,6 +88,16 @@ describe("resolve", () => {
 		expect(r.layerKeyByPhysical.get(" ")).toEqual({ keyId: "R_T2", toLayer: 1, action: "tap", label: " " });
 		expect(r.layerKeyByPhysical.get("ctrl")).toEqual({ keyId: "L_T3", toLayer: 3, action: "tap", label: "Ctrl" });
 		expect(r.layerKeyByPhysical.get("enter")).toEqual({ keyId: "R_T1", toLayer: 2, action: "hold", label: "Enter" });
+	});
+
+	it("maps letter-prefixed labels to their first character, not the full label", () => {
+		// Layer key labels like "fn", "nav", "sym" are letter-prefixed words.
+		// The browser reports only the first character (e.g. "f" for an F key).
+		expect(labelToBrowserKey("fn")).toBe("f");
+		expect(labelToBrowserKey("nav")).toBe("n");
+		expect(labelToBrowserKey("sym")).toBe("s");
+		expect(labelToBrowserKey("Ctrl")).toBe("control"); // explicit alias still works
+		expect(labelToBrowserKey("F1")).toBe("f");
 	});
 
 });
