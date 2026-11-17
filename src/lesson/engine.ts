@@ -142,13 +142,14 @@ function place(course: Course, e: Engine): Engine {
 		seed: e.line + 1,
 	});
 	// Reset to base layer for the new line; resolve pending character with its layer.
-	const first = [...text][0] ?? "";
-	const firstLk = course.resolved.layerKeys?.find((lk) => {
-		const layer = course.resolved.layers?.[lk.toLayer];
-		if (!layer || lk.toLayer === 0) return false;
-		return layer.map((c) => (c ?? "").toLowerCase()).includes(first.toLowerCase());
-	});
-	const pending = idOf(course.resolved, first, firstLk?.toLayer ?? 0);
+	// letters is index-aligned with l.unlocked (the included keys), so use l.unlocked
+	// to find the correct key, then look up its layer in l.keys — avoids the find() bug
+	// when a char exists on multiple layers.
+	const first = [...text][0]?.toLowerCase() ?? "";
+	const firstIdx = letters.indexOf(first);
+	const firstKeyId = firstIdx >= 0 ? l.unlocked[firstIdx] : undefined;
+	const firstLayer = firstKeyId ? (l.keys.find(k => k.id === firstKeyId)?.layer ?? 0) : 0;
+	const pending = idOf(course.resolved, first, firstLayer);
 	return { ...e, ladder: l, text, index: 0, line: e.line + 1, pending, stamp: 0, layer: 0 };
 }
 

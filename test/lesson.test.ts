@@ -7,7 +7,7 @@ import { resolve } from "../src/keyboard/resolve.ts";
 import { press, start, type Course, type Engine } from "../src/lesson/engine.ts";
 import { WORDS } from "../src/lesson/corpus.ts";
 import { isCleanWord } from "../src/lesson/clean.ts";
-import { teachingOrder } from "../src/lesson/ladder.ts";
+import { teachingOrder, ladder } from "../src/lesson/ladder.ts";
 import { speakable } from "../src/lesson/phonotactics.ts";
 import { emptyStat, timeToTypeMs, type StatMap } from "../src/stats/stats.ts";
 import type { Keymap } from "../src/keyboard/types.ts";
@@ -277,5 +277,101 @@ describe("lesson engine", () => {
 		const afterChar = press(layerCourse, afterSwitch.engine, expected!, 300);
 		expect(afterChar.accepted).toBe(true);
 		expect(afterChar.engine.index).toBe(before + 1);
+	});
+
+	it("resolves first-char layer from lesson keys, not from layerKeys.find", () => {
+		// A character can exist on multiple non-base layers. The old code used
+		// `layerKeys.find()` which could match a different layer than the one
+		// the lesson assigned. The fix uses `l.keys` (which carries the correct
+		// layer from `layerKeyIds`) to pick the layer for `pending`.
+		//
+		// Build a keymap where char `~` is on layer 1 and layer 2, and the
+		// lesson teaches `~` as layer 2 (layer 2 key comes first in layerKeys).
+		const multiLayerKeymap: Keymap = {
+			id: "multi-layer-test",
+			name: "Multi-layer test",
+			source: "test",
+			rows: keymapById("qwerty").rows,
+			layers: [
+				// layer 0: base
+				["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-",
+				 "Tab", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]", "\\",
+				 "Esc", "a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'",
+				 "", "", "", "", "", "",
+				 "z", "x", "c", "v", "b", "n", "m", ",", ".", "/", "`", "Del",
+				 "⌫", "LGui", "[", "]", "Fn", "Shift", "Ctrl", " ", "Enter"],
+				// layer 1: `~` at pos 0, `!` at pos 1
+				["~", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_",
+				 "Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{", "}", "|",
+				 "Esc", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":", '"',
+				 "", "", "", "", "", "",
+				 "Z", "X", "C", "V", "B", "N", "M", "<", ">", "?", "~", "Del",
+				 "⌫", "LGui", "[", "]", "Fn", "Shift", "Ctrl", " ", "Enter"],
+				// layer 2: `~` ALSO at pos 0 (same key L_C6R1), `@` at pos 1
+				["~", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_", "-",
+				 "Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{", "}", "|",
+				 "Esc", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":", '"',
+				 "", "", "", "", "", "",
+				 "Z", "X", "C", "V", "B", "N", "M", "<", ">", "?", "~", "Del",
+				 "⌫", "LGui", "[", "]", "Fn", "Shift", "Ctrl", " ", "Enter"],
+			],
+			layerKeys: [
+				// Layer 2 switch first (so layerKeyIds will assign ~ to layer 2)
+				{ keyId: "L_T3", toLayer: 2, fromLayer: 0, action: "tap" },
+				// Layer 1 switch second
+				{ keyId: "R_T3", toLayer: 1, fromLayer: 0, action: "tap" },
+			],
+		};
+		const mr = resolve(GO60, multiLayerKeymap);
+
+		// ~ is at position 0 on both layers, same key L_C6R1.
+		// layerKeyIds gives it the first layer it sees (layer 2).
+		const tildeId = mr.keys[0].id;
+		expect(tildeId).toBe("L_C6R1");
+		const l = ladder(mr, {}, TARGET);
+		const tildeKey = l.keys.find((k: typeof l.keys[number]) => k.id === tildeId);
+		expect(tildeKey).toBeDefined();
+		expect(tildeKey!.layer).toBe(2); // assigned to layer 2 (first seen layer)
+
+		// Set up stats so all starting letters + tilde are unlocked.
+		const stats: StatMap = {};
+		const order = teachingOrder(mr, false);
+		for (const tk of order.slice(0, 6)) {
+			const rk = mr.byId.get(tk.id);
+			if (rk) stats[rk.id] = { ttMs16: 16 * 10, bestMs16: 16 * 10, samples: 40, errors: 0 };
+		}
+		stats[tildeId] = { ttMs16: 16 * 10, bestMs16: 16 * 10, samples: 40, errors: 0 };
+		const mc: Course = { resolved: mr, targetCpm: TARGET };
+
+		// Start a course, advance to a line that contains `~`, and verify
+		// that `pending` resolves using the layer from l.keys (layer 2).
+		let e = start(mc, stats);
+		const tildePos = e.text.indexOf("~");
+		if (tildePos < 0) {
+			// ~ may not appear in the first line; advance until it does.
+			let idx = 0;
+			while (idx < e.text.length) {
+				const want = e.text[idx];
+				e = press(mc, e, want, 1000).engine;
+				if (e.text.indexOf("~") >= 0) break;
+				idx++;
+				if (e.index === 0) {
+					e = press(mc, e, " ", 1000).engine;
+				}
+			}
+			// Now find the first ~ in the current text and replay to it.
+			const tildeIdx2 = e.text.indexOf("~");
+			if (tildeIdx2 >= 0) {
+				for (let i = e.index; i < tildeIdx2; i++) {
+					const want = e.text[i];
+					e = press(mc, e, want, 1000).engine;
+				}
+			}
+		}
+		const currentIdx = e.index;
+		if (currentIdx < e.text.length && e.text[currentIdx] === "~") {
+			// pending should resolve to tildeId using the layer from l.keys (layer 2)
+			expect(e.pending).toBe(tildeId);
+		}
 	});
 });
