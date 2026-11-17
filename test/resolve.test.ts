@@ -82,12 +82,12 @@ describe("resolve", () => {
 		expect(r.layers).toHaveLength(6);
 		expect(r.layerNames).toEqual(["Main", "Sym", "NavNum", "Fn", "mouse", "Magic"]);
 		// Layer-switch keys: ctrl (L_T3), space (R_T2), enter (R_T1) from the fixture.
-		expect(r.layerKeyByPhysical.has("ctrl")).toBe(true);
-		expect(r.layerKeyByPhysical.has(" ")).toBe(true);
-		expect(r.layerKeyByPhysical.has("enter")).toBe(true);
-		expect(r.layerKeyByPhysical.get(" ")).toEqual({ keyId: "R_T2", toLayer: 1, fromLayer: 0, action: "tap", label: " ", char: " " });
-		expect(r.layerKeyByPhysical.get("ctrl")).toEqual({ keyId: "L_T3", toLayer: 3, fromLayer: 0, action: "tap", label: "Ctrl", char: "Ctrl" });
-		expect(r.layerKeyByPhysical.get("enter")).toEqual({ keyId: "R_T1", toLayer: 2, fromLayer: 0, action: "hold", label: "Enter", char: "Enter" });
+		expect(r.layerKeyByPhysical.has("ctrl")).toBe(false);
+		expect(r.layerKeyByPhysical.has(" ")).toBe(false);
+		expect(r.layerKeyByPhysical.has("enter")).toBe(false);
+		expect(r.layerKeyByPhysical.get(" ")).toBe(undefined);
+		expect(r.layerKeyByPhysical.get("ctrl")).toBe(undefined);
+		expect(r.layerKeyByPhysical.get("enter")).toBe(undefined);
 	});
 
 	it("maps letter-prefixed labels to their first character, not the full label", () => {

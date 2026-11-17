@@ -1,5 +1,6 @@
 // The engine: keystrokes in, progress and the next line out. What it owes the screens is a `focus` to
 // highlight and a line that only ever contains letters the ladder opened.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
@@ -11,6 +12,8 @@ import { teachingOrder, ladder } from "../src/lesson/ladder.ts";
 import { speakable } from "../src/lesson/phonotactics.ts";
 import { emptyStat, timeToTypeMs, type StatMap } from "../src/stats/stats.ts";
 import type { Keymap } from "../src/keyboard/types.ts";
+import type { KeycapFile } from "../src/layout/keycap.ts";
+import { keymapFromKeycap } from "../src/layout/keycap.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
 const TARGET = 200; // cpm, a 300ms-per-character goal
@@ -279,6 +282,53 @@ describe("lesson engine", () => {
 		expect(afterChar.engine.index).toBe(before + 1);
 	});
 
+describe("go60-36 keymap: base-layer keys type characters, not switch layers", () => {
+	const file = JSON.parse(
+		readFileSync(new URL("./fixtures/go60-36.json", import.meta.url), "utf8"),
+	) as KeycapFile & { layers: import("../src/layout/keycap").KeycapBinding[][] };
+	const imported = keymapFromKeycap(file, GO60);
+	const resolved = resolve(GO60, imported.keymap!);
+	const course: Course = { resolved, targetCpm: TARGET };
+
+	function finishLine(e: Engine): Engine {
+		let engine = e;
+		while (engine.pending !== "") {
+			const want = [...engine.text][engine.index];
+			engine = press(course, engine, want!, 1000).engine;
+		}
+		return engine;
+	}
+
+	it("space types a space and stays on the base layer", () => {
+		const e = finishLine(start(course, {}));
+		const res = press(course, e, " ", 1000);
+		expect(res.accepted).toBe(true);
+		expect(res.engine.layer).toBe(0);
+	});
+
+	it("enter advances the line and stays on the base layer", () => {
+		const e = finishLine(start(course, {}));
+		const res = press(course, e, "Enter", 1000);
+		expect(res.accepted).toBe(true);
+		expect(res.engine.layer).toBe(0);
+	});
+
+	for (const ch of ["f", "l", "1"]) {
+		it(`pressing \`${ch}\` stays on the base layer`, () => {
+			const e = start(course, {});
+			const res = press(course, e, ch, 1000);
+			expect(res.engine.layer).toBe(0);
+		});
+	}
+
+	it("space, enter and 1 are not layer keys", () => {
+		expect(resolved.layerKeyByPhysical.has(" ")).toBe(false);
+		expect(resolved.layerKeyByPhysical.has("enter")).toBe(false);
+		expect(resolved.layerKeyByPhysical.has("1")).toBe(false);
+	});
+});
+
+	describe("layer key resolution", () => {
 	it("resolves first-char layer from lesson keys, not from layerKeys.find", () => {
 		// A character can exist on multiple non-base layers. The old code used
 		// `layerKeys.find()` which could match a different layer than the one
@@ -373,5 +423,6 @@ describe("lesson engine", () => {
 			// pending should resolve to tildeId using the layer from l.keys (layer 2)
 			expect(e.pending).toBe(tildeId);
 		}
+	});
 	});
 });

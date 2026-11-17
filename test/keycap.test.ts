@@ -52,13 +52,13 @@ describe("reading characters out of a layout editor export", () => {
 
 	it("puts the upper row where the fingers are", () => {
 		// The vendor's matrix order is left outer to inner, then right inner to outer.
-		expect(keymap!.rows.upper?.l).toEqual(["", "b", "l", "d", "c", "v"]);
-		expect(keymap!.rows.upper?.r).toEqual(["", ",", "u", "o", "f", "j"]);
+		expect(keymap!.rows.upper?.l).toEqual(["Tab", "b", "l", "d", "c", "v"]);
+		expect(keymap!.rows.upper?.r).toEqual([" ", ",", "u", "o", "f", "j"]);
 	});
 
 	it("puts the home row where the fingers are", () => {
 		expect(keymap!.rows.home?.l).toEqual(["", "n", "r", "t", "s", "g"]);
-		expect(keymap!.rows.home?.r).toEqual(["", "i", "e", "a", "h", "y"]);
+		expect(keymap!.rows.home?.r).toEqual(["Enter", "i", "e", "a", "h", "y"]);
 	});
 
 	it("puts the lower row where the fingers are", () => {
@@ -98,7 +98,7 @@ describe("character of a single binding", () => {
 
 	it("understands a Custom binding's raw text", () => {
 		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp N5" }] })).toBe("5");
-		expect(charOfBinding({ value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] })).toBeUndefined();
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] })).toBe("UP"); // &lt with trailing key is a character key
 	});
 
 	it("gives up on keys that type nothing", () => {
@@ -121,12 +121,10 @@ describe("6-layer Go60 (go60-36.json)", () => {
 
 	it("detects layer-switch keys", () => {
 		const { keymap } = keymapFromKeycap(big, GO60);
+		// &lt/&mo with trailing keys are character keys, &trans is excluded.
+		// go60-36 has no pure (no-trailing-key) &lt/&mo, so no layer switches from keycap.
 		const keys = keymap!.layerKeys!.filter((k) => k.toLayer > 0);
-		expect(keys).toEqual([
-			{ keyId: "L_T3", toLayer: 3, fromLayer: 0, action: "tap" },
-			{ keyId: "R_T2", toLayer: 1, fromLayer: 0, action: "tap" },
-			{ keyId: "R_T1", toLayer: 2, fromLayer: 0, action: "hold" },
-		]);
+		expect(keys).toEqual([]);
 	});
 
 	it("detects &mo (momentary) layer keys", () => {
@@ -135,10 +133,10 @@ describe("6-layer Go60 (go60-36.json)", () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("detects &lt 1 LC(UP) layer key", () => {
+	it("detects &lt 1 LC(UP) as a character key", () => {
 		const binding = { value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] };
 		const result = charOfBinding(binding);
-		expect(result).toBeUndefined();
+		expect(result).toBe("UP");
 	});
 
 	it("builds byKey for non-taught keys from layer-0 characters", () => {
@@ -149,10 +147,11 @@ describe("6-layer Go60 (go60-36.json)", () => {
 		expect(Object.keys(keymap!.byKey!)).toContain("L_C5R1"); // first number key
 	});
 
-	it("maps &trans back to the base layer", () => {
+	it("does not register &trans as layer keys", () => {
 		const { keymap } = keymapFromKeycap(big, GO60);
+		// &trans is a pass-through, not a layer switch.
 		const trans = keymap!.layerKeys!.filter((k) => k.toLayer === 0);
-		expect(trans.length).toBeGreaterThan(0); // &trans on layers 1-5
+		expect(trans.length).toBe(0);
 	});
 
 	it("pads layerNames when the fixture has fewer names than layers", () => {
@@ -163,11 +162,10 @@ describe("6-layer Go60 (go60-36.json)", () => {
 });
 
 describe("advanced layer key patterns", () => {
-	it("detects &lt 1 LC(UP) as a layer switch", () => {
-		// This tests that &lt with parenthesized keycode is detected
-		// The charOfBinding should return undefined for layer keys
+	it("detects &lt 1 LC(UP) as a character key", () => {
+		// &lt with trailing key is a character key — the tap sends the trailing key.
 		const binding = { value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] };
-		expect(charOfBinding(binding)).toBeUndefined();
+		expect(charOfBinding(binding)).toBe("UP");
 	});
 
 	it("maps &mo 1 to correct layer key properties", () => {

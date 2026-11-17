@@ -103,7 +103,7 @@ test("remembers the choice on the next visit", async ({ page }) => {
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(58);
 });
 
-test("shows the active layer's characters and hints the layer key", async ({ page }) => {
+test("types the layer key's character on the base layer", async ({ page }) => {
 	await page.goto("/");
 	await ready(page);
 	// open settings, upload the 6-layer fixture
@@ -113,16 +113,12 @@ test("shows the active layer's characters and hints the layer key", async ({ pag
 	await ready(page);
 	// on the base layer L_C4R3 shows "R" from layer 0 bindings
 	await expect(key(page, "L_C4R3")).toContainText("R");
-	// press the layer key: L_T3 (geometry label "Ctrl") taps to layer 3 (Fn)
-	// Use page.keyboard.press() which dispatches at the page level where #onKey listens
+	// L_T3 (&lt 3 TAB) is a character key (types "Tab"), not a layer switch.
 	await page.keyboard.press("Control");
-	// L_C4R3 now shows "Q" from the Fn layer at that position
-	await expect(key(page, "L_C4R3")).toContainText("Q");
-	// hint: the lesson target char lives on the base layer, not on Fn — a &trans key (toLayer 0)
-	// gets the accent ring
-	await expect(page.locator("tt-keyboard rect.hint")).toBeVisible();
-	// press the hinted &trans key to return to base layer
-	// The hint key is L_C6R2 (Tab) — the first &trans key transparent on layer 3.
-	await page.keyboard.press("Tab");
-	await expect(key(page, "L_C4R3")).toContainText("R"); // back on the base layer
+	await expect(key(page, "L_T3")).toContainText("Tab");
+	// No hint ring: there are no layer keys in go60-36 after the fix
+	// (&lt N KEY are character keys, &trans removed from layerKeys).
+	await expect(page.locator("tt-keyboard rect.hint")).toHaveCount(0);
+	// pressing Tab types the Tab character; base layer is unchanged.
+	await expect(key(page, "L_C4R3")).toContainText("R");
 });

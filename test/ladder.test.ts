@@ -170,7 +170,7 @@ describe("teaching order", () => {
 		const order = teachingOrder(rLayers, false);
 		const baseCount = order.filter((k) => k.layer === 0).length;
 		const layerCount = order.filter((k) => k.layer > 0).length;
-		// Should have base letters (letters) and potentially layer chars
+		// Should have base letters (letters)
 		expect(baseCount).toBeGreaterThan(0);
 		// Layer chars should come after base letters (manual findLastIndex for ES2022 compat)
 		let lastBaseIndex = -1;
@@ -187,6 +187,7 @@ describe("teaching order", () => {
 		if (firstLayerIndex !== -1) {
 			expect(firstLayerIndex).toBeGreaterThan(lastBaseIndex);
 		}
-		expect(layerCount).toBeGreaterThan(0);
+		// go60-36 has no layer keys (all &lt/&mo have trailing keys, &trans excluded)
+		expect(layerCount).toBe(0);
 	});
 });
