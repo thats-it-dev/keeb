@@ -193,8 +193,8 @@ export class AppMain extends LitElement {
 		const t = e.target as HTMLElement | null;
 		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
 		// Layer keys (e.g. Alt as layer switch): pass through even when e.altKey is set.
-		const mk = e.key === "Control" ? "ctrl" : e.key === "Shift" ? "shift" : e.key;
-		if (this.#resolved.layerKeyByPhysical.has(mk.toLowerCase())) { e.preventDefault(); void this.#type(mk); return; }
+		// Use the data-driven browser-key map so any geometry key name (e.g. "L_Ctrl") works.
+		if (this.#resolved.layerKeyByBrowser.has(e.key.toLowerCase())) { e.preventDefault(); void this.#type(e.key.toLowerCase()); return; }
 		// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
 		// that passed through here charged an error to the target key and turned the letter the learner has
 		// not typed yet red. That reads as the line running ahead of the fingers.
@@ -362,6 +362,7 @@ export class AppMain extends LitElement {
 		const l = ladder(r, this.stats, this.targetCpm, { keyboardOrder: this.keyboardOrder });
 		return overview(this.stats, this.targetCpm, keys, { unlocked: l.unlocked, next: l.next, focus: l.focus });
 	}
+
 	#history() {
 		return historySection({
 			boardName: geometryById(this.geometryId).name,

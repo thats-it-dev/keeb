@@ -17,6 +17,8 @@ export type Resolved = {
 	layerKeys?: LayerKey[];
 	// Physical key label (lowercased) -> layer key info for layer-switch keys.
 	layerKeyByPhysical: Map<string, LayerKey & { label: string }>;
+	// Browser key name (lowercased, e.g. "control") -> layer key info.
+	layerKeyByBrowser: Map<string, LayerKey & { label: string }>;
 };
 
 const ALPHA = ["upper", "home", "lower"] as const;
@@ -69,23 +71,47 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 	// Build layerKeyByPhysical: physical label (geometry key.label lowercased) → layer key info.
 	// Skip toLayer:0 entries (those are &trans transitory keys, not real layer switches).
 	const layerKeyByPhysical = new Map<string, LayerKey & { label: string }>();
+	// Browser key name (lowercased, e.g. "control") → layer key info for layer-switch keys.
+	// This lets #onKey match e.key without hardcoding browser→label translations.
+	const layerKeyByBrowser = new Map<string, LayerKey & { label: string }>();
 	if (layerKeys) {
 		for (const lk of layerKeys) {
 			if (lk.toLayer === 0) continue;
 			const gk = g.keys.find((k) => k.id === lk.keyId);
 			if (gk) {
 				layerKeyByPhysical.set(gk.label.toLowerCase(), { ...lk, label: gk.label });
+				// Map the browser key name using the data-driven helper.
+				const browserKey = labelToBrowserKey(gk.label);
+				layerKeyByBrowser.set(browserKey, { ...lk, label: gk.label });
 			}
 		}
 	}
 
-	return { geometry: g, keys, byId, byChar, enterKey, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems, layers, layerNames, layerKeys, layerKeyByPhysical };
+	return { geometry: g, keys, byId, byChar, enterKey, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems, layers, layerNames, layerKeys, layerKeyByPhysical, layerKeyByBrowser };
 }
 
-// What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on
-// the board, and an invisible row label reads as a bug in the screen rather than as the space bar. A key
-// with no character at all (an unmapped pinky column) falls back to its id, which is at least something
-// to point at.
+// Map a geometry key label (lowercased) to the browser's e.key value for layer-switch keys.
+// Handles common aliases like "lctrl" → "control", "gui" → "meta", etc.
+function labelToBrowserKey(label: string): string {
+	const lower = label.toLowerCase();
+	// Modifier keys with common aliases
+	if (lower === "ctrl" || lower === "lctrl" || lower === "rctrl" || lower === "leftctrl" || lower === "rightctrl") return "control";
+	if (lower === "shift" || lower === "lshift" || lower === "rshift" || lower === "leftshift" || lower === "rightshift") return "shift";
+	if (lower === "alt" || lower === "lalt" || lower === "ralt" || lower === "leftalt" || lower === "rightalt") return "alt";
+	if (lower === "gui" || lower === "meta" || lower === "super" || lower === "cmd" || lower === "lgui" || lower === "rgui") return "meta";
+	// Enter/Return: browser sends "Enter"
+	if (lower === "enter" || lower === "return") return "enter";
+	// Space, tab, and other single-character or short keys
+	if (lower === " " || lower === "space" || lower === "␣") return " ";
+	if (lower === "tab") return "tab";
+	if (lower === "backspace") return "backspace";
+	if (lower === "delete" || lower === "del") return "delete";
+	if (lower === "escape" || lower === "esc") return "escape";
+	// For layer keys like "fn", "nav", "sym", etc., use the lowercased label as-is
+	// (the browser will send something like "f" for "fn", but we fall back to label)
+	return lower;
+}
+
 export function keyLabel(k: { id: string; char: string }): string {
 	if (k.char === " ") return "space";
 	return k.char.trim() === "" ? k.id : k.char;
