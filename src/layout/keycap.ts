@@ -1,4 +1,4 @@
-import type { Geometry, Keymap, KeymapRow } from "../keyboard/types.ts";
+import type { Geometry, Keymap, KeymapRow, LayerKey } from "../keyboard/types.ts";
 
 // A MoErgo Layout Editor (keycap) JSON export. Unlike info.json this carries no positions: the
 // "keyboard" field names a board we have to know, and "layers" is a flat array of bindings in that
@@ -39,6 +39,7 @@ const KEYCODES: Record<string, string> = {
 	MINUS: "-", EQUAL: "=", LBKT: "[", RBKT: "]", BSLH: "\\", SQT: "'", SEMI: ";", COMMA: ",", DOT: ".", FSLH: "/",
 	GRAVE: "`", LBRC: "{", RBRC: "}", SPACE: " ", EXCL: "!", AT: "@", HASH: "#", DLLR: "$", PRCT: "%", CARET: "^",
 	AMPS: "&", ASTER: "*", LPAR: "(", RPAR: ")", UNDER: "_", PLUS: "+",
+	RET: "Enter", TAB: "Tab", BSPC: " ",
 };
 
 // Wrappers that name the key underneath: LS(MINUS) is the minus key, LC(Y) is the Y key.
@@ -52,6 +53,7 @@ export function isKeycapFile(json: unknown): json is KeycapFile {
 export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-import", name = "From layout file"): KeycapImport {
 	const problems: string[] = [];
 	const names = Array.isArray(file.layer_names) ? (file.layer_names as unknown[]).map(String) : [];
+	const layers = (file.layers as unknown[][]) ?? [];
 	if (typeof file.keyboard !== "string" || !file.keyboard) return { problems: [...problems, "no `keyboard` field: cannot tell which board this is"], layerNames: names };
 	if (file.keyboard.trim().toLowerCase() !== base.id.toLowerCase()) {
 		return { problems: [...problems, `this file is for a "${file.keyboard}", not the ${base.name} selected here`], layerNames: names };
@@ -79,6 +81,66 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 		return { problems, layerNames: names };
 	}
 
+	// --- Pad layer names ---
+	const paddedNames: string[] = [];
+	for (let i = 0; i < layers.length; i++) {
+		paddedNames.push(names[i] ?? `Layer ${i}`);
+	}
+
+	// --- Build character layers ---
+	const charLayers = layers.map((layer) => {
+		const b = layer.map((b, i) => {
+			if (i >= base.keys.length) return "";
+			const binding = b as KeycapBinding;
+			if (!binding || typeof binding.value !== "string") return "";
+			return charOfBinding(binding) ?? "";
+		});
+		return b;
+	});
+
+	// --- Detect layer-switch keys (scan all layers, skip dupes by keyId+toLayer) ---
+	// Only record the first layer-switch action per key; a character binding on layer 0
+	// does not suppress an &trans or lt on a higher layer.
+	const seenSwitch = new Set<string>();
+	const layerKeys: LayerKey[] = [];
+	for (let li = 0; li < layers.length; li++) {
+		const layer = layers[li] as KeycapBinding[];
+		for (let i = 0; i < layer.length; i++) {
+			const binding = layer[i];
+			if (!binding || typeof binding.value !== "string") continue;
+			const baseKey = base.keys[i];
+			if (!baseKey) continue;
+
+			// Custom binding with ZMK devicetree text in params[0].value
+			const customVal =
+				binding.value.toLowerCase() === "custom"
+					? (binding.params?.[0]?.value as string | undefined)
+						: undefined;
+			if (!customVal) continue;
+
+			// ZMK devicetree layer actions in a Custom binding: &lt N <key> (tap), &lt_N N <key> (toggle),
+			// &mo N <key> (momentary). The trailing key (e.g. LC(UP)) is optional and may carry
+			// wrappers/parens, so it matches as a single non-space token.
+			// Only pure layer switches (no trailing key) count as layer switches.
+			const layerMatch = /^&(lt|mo)(?:_(\w+))?\s+(\d+)(\s+\S+)?$/.exec(customVal);
+			if (!layerMatch) continue;
+			// Skip bindings with a trailing key — they are character keys, not layer switches.
+			// Skip &lt bindings with a trailing key only (&mo stays a layer switch).
+			if (layerMatch[1] === "lt" && layerMatch[4]) continue;
+
+			const toLayer = parseInt(layerMatch[3], 10);
+			if (isNaN(toLayer) || toLayer < 0) continue;
+
+			const action: "tap" | "hold" =
+				layerMatch[1] === "mo" || layerMatch[2] !== undefined ? "hold" : "tap";
+			const dk = `${baseKey.id}:${toLayer}`;
+			if (!seenSwitch.has(dk)) {
+				seenSwitch.add(dk);
+				layerKeys.push({ keyId: baseKey.id, toLayer, fromLayer: li, action });
+			}
+		}
+	}
+
 	const rows: Partial<Record<"upper" | "home" | "lower", { l: string[]; r: string[] }>> = {};
 	for (const [i, key] of base.keys.entries()) {
 		const role = roleOfRow(base, key);
@@ -87,10 +149,29 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 		bucket[key.hand][key.col] = bindings[i] ?? "";
 	}
 	const done = Object.fromEntries(Object.entries(rows).map(([role, pair]) => [role, { l: tuple(pair.l), r: tuple(pair.r) }])) as Keymap["rows"];
+
+	// Keys outside the taught grid have no row slot, so the keymap records what they send in byKey;
+	// charFor then prefers the keycap character over the geometry's printed label.
+	const byKey: Record<string, string> = {};
+	for (const [i, key] of base.keys.entries()) {
+		const role = roleOfRow(base, key);
+		const taught = ["upper", "home", "lower"].includes(role) && key.col > 0;
+		if (!taught && bindings[i]) byKey[key.id] = bindings[i];
+	}
+
 	return {
-		keymap: { id, name, source: `keycap layers: ${names.join(", ") || "unnamed"}`, rows: done },
+		keymap: {
+			id,
+			name,
+			source: `keycap layers: ${names.join(", ") || "unnamed"}`,
+			rows: done,
+			byKey,
+			layers: charLayers,
+			layerNames: paddedNames,
+			layerKeys,
+		},
 		geometryId: base.id,
-		layerNames: names,
+		layerNames: paddedNames,
 		problems,
 	};
 }
@@ -106,7 +187,7 @@ export function charOfBinding(b: KeycapBinding): string | undefined {
 	// without case.
 	const head = (b.value.startsWith("&") ? b.value.slice(1) : b.value).toLowerCase();
 	if (head === "kp") return charOfParam(b.params?.[0]);
-	if (head === "mt" || head === "lt" || head === "hk") return charOfParam(b.params?.at(-1)); // hold something, tap a key
+	if (head === "mt" || head === "hk") return charOfParam(b.params?.at(-1)); // hold something, tap a key
 	if (head === "custom" || head === "macro") return charOfCustom(b.params?.[0]?.value);
 	return undefined; // &trans, &none, &mo, &magic, &bt, &mkp, a board behaviour
 }
@@ -119,12 +200,26 @@ function charOfParam(p: KeycapParam | undefined): string | undefined {
 }
 
 // A Custom binding holds raw devicetree text: "&lt 1 LC(UP)" or "&kp A".
+// Layer-switch bindings ("&lt", "&lt_N", "&mo") are not character keys — return undefined.
 function charOfCustom(raw: string | undefined): string | undefined {
 	if (!raw) return undefined;
-	const tokens = raw.trim().split(/\s+/);
+	const trimmed = raw.trim();
+	// Layer bindings with a trailing key: "&lt N KEY" — the tap sends the trailing key.
+	// Momentary bindings ("&mo N") never have a trailing key and are never character keys.
+	const ltWithTrailing = /^&lt(?:_\w+)?\s+\d+\s+\S+$/i.exec(trimmed);
+	if (ltWithTrailing) {
+		const tokens = trimmed.split(/\s+/);
+		const last = tokens.at(-1) ?? "";
+		const wrapped = /^(?:LS|RS|LC|RC|LG|RG|LE|LA)\((\w+)\)$/.exec(last);
+		const key = (wrapped ? wrapped[1] : last).toUpperCase();
+		return KEYCODES[key] ?? key;
+	}
+	// &mo is always a layer switch, never a character key.
+	if (/^&mo\s/.test(trimmed)) return undefined;
+	const tokens = trimmed.split(/\s+/);
 	const last = tokens.at(-1) ?? "";
 	const wrapped = /^(?:LS|RS|LC|RC|LG|RG|LE|LA)\((\w+)\)$/.exec(last);
-	return KEYCODES[(wrapped ? wrapped[1] : last).toUpperCase()];
+	return KEYCODES[(wrapped ? wrapped[1] : last).toUpperCase()] ?? (wrapped ? wrapped[1] : last);
 }
 
 function roleOfRow(g: Geometry, k: { row: number }): "upper" | "home" | "lower" | "number" | "extra" | "thumb" {

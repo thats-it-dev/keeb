@@ -7,6 +7,9 @@ import type { KeycapBinding, KeycapFile } from "../src/layout/keycap.ts";
 
 type Fixture = KeycapFile & { layers: KeycapBinding[][] };
 const file = JSON.parse(readFileSync(new URL("./fixtures/go60-keycap.json", import.meta.url), "utf8")) as Fixture;
+
+// 6-layer fixture from the real Go60 Gallium layout
+const big = JSON.parse(readFileSync(new URL("./fixtures/go60-36.json", import.meta.url), "utf8")) as Fixture;
 const kp = (v: string): KeycapBinding => ({ value: "&kp", params: [{ value: v }] });
 
 describe("recognising a layout editor export", () => {
@@ -49,13 +52,13 @@ describe("reading characters out of a layout editor export", () => {
 
 	it("puts the upper row where the fingers are", () => {
 		// The vendor's matrix order is left outer to inner, then right inner to outer.
-		expect(keymap!.rows.upper?.l).toEqual(["", "b", "l", "d", "c", "v"]);
-		expect(keymap!.rows.upper?.r).toEqual(["", ",", "u", "o", "f", "j"]);
+		expect(keymap!.rows.upper?.l).toEqual(["Tab", "b", "l", "d", "c", "v"]);
+		expect(keymap!.rows.upper?.r).toEqual([" ", ",", "u", "o", "f", "j"]);
 	});
 
 	it("puts the home row where the fingers are", () => {
 		expect(keymap!.rows.home?.l).toEqual(["", "n", "r", "t", "s", "g"]);
-		expect(keymap!.rows.home?.r).toEqual(["", "i", "e", "a", "h", "y"]);
+		expect(keymap!.rows.home?.r).toEqual(["Enter", "i", "e", "a", "h", "y"]);
 	});
 
 	it("puts the lower row where the fingers are", () => {
@@ -95,7 +98,7 @@ describe("character of a single binding", () => {
 
 	it("understands a Custom binding's raw text", () => {
 		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp N5" }] })).toBe("5");
-		expect(charOfBinding({ value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] })).toBeUndefined();
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] })).toBe("UP"); // &lt with trailing key is a character key
 	});
 
 	it("gives up on keys that type nothing", () => {
@@ -104,5 +107,82 @@ describe("character of a single binding", () => {
 		expect(charOfBinding({ value: "&mo", params: [{ value: "2" }] })).toBeUndefined();
 		expect(charOfBinding({ value: "&mkp", params: [{ value: "LCLK" }] })).toBeUndefined();
 		expect(charOfBinding({ value: "&workspace_left" })).toBeUndefined(); // a macro, referred to by name
+	});
+});
+
+describe("6-layer Go60 (go60-36.json)", () => {
+
+	it("imports every layer", () => {
+		const { keymap, layerNames, problems } = keymapFromKeycap(big, GO60);
+		expect(problems).toEqual([]);
+		expect(keymap!.layers).toHaveLength(6);
+		expect(layerNames).toEqual(["Main", "Sym", "NavNum", "Fn", "mouse", "Magic"]);
+	});
+
+	it("detects layer-switch keys", () => {
+		const { keymap } = keymapFromKeycap(big, GO60);
+		// &lt/&mo with trailing keys are character keys, &trans is excluded.
+		// go60-36 has no pure (no-trailing-key) &lt/&mo, so no layer switches from keycap.
+		const keys = keymap!.layerKeys!.filter((k) => k.toLayer > 0);
+		expect(keys).toEqual([]);
+	});
+
+	it("detects &mo (momentary) layer keys", () => {
+		const binding = { value: "Custom", params: [{ value: "&mo 1 X" }] };
+		const result = charOfBinding(binding);
+		expect(result).toBeUndefined();
+	});
+
+	it("detects &lt 1 LC(UP) as a character key", () => {
+		const binding = { value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] };
+		const result = charOfBinding(binding);
+		expect(result).toBe("UP");
+	});
+
+	it("builds byKey for non-taught keys from layer-0 characters", () => {
+		const { keymap, problems } = keymapFromKeycap(big, GO60);
+		expect(problems).toEqual([]);
+		expect(keymap!.byKey).toBeDefined();
+		// Number row keys should be in byKey
+		expect(Object.keys(keymap!.byKey!)).toContain("L_C5R1"); // first number key
+	});
+
+	it("does not register &trans as layer keys", () => {
+		const { keymap } = keymapFromKeycap(big, GO60);
+		// &trans is a pass-through, not a layer switch.
+		const trans = keymap!.layerKeys!.filter((k) => k.toLayer === 0);
+		expect(trans.length).toBe(0);
+	});
+
+	it("pads layerNames when the fixture has fewer names than layers", () => {
+		const short = { ...big, layer_names: ["Main", "Sym"] } as KeycapFile & { layers: KeycapBinding[][] };
+		const { layerNames } = keymapFromKeycap(short, GO60);
+		expect(layerNames).toEqual(["Main", "Sym", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]);
+	});
+});
+
+describe("advanced layer key patterns", () => {
+	it("detects &lt 1 LC(UP) as a character key", () => {
+		// &lt with trailing key is a character key — the tap sends the trailing key.
+		const binding = { value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] };
+		expect(charOfBinding(binding)).toBe("UP");
+	});
+
+	it("maps &mo 1 to correct layer key properties", () => {
+		// Create a temporary fixture with &mo
+		const moFixture = {
+			...big,
+			layers: [
+				[...big.layers[0]],
+				[...big.layers[1]],
+			],
+		} as KeycapFile & { layers: KeycapBinding[][] };
+		// Replace the first key in layer 0 with &mo 1
+		moFixture.layers[0][0] = { value: "Custom", params: [{ value: "&mo 1 X" }] };
+		const { keymap } = keymapFromKeycap(moFixture, GO60);
+		// Filter by action + keyId to distinguish from &lt entries to the same layer.
+		const moKeys = keymap!.layerKeys!.filter((k) => k.action === "hold" && k.keyId === "L_C6R1");
+		expect(moKeys).toHaveLength(1);
+		expect(moKeys[0].toLayer).toBe(1);
 	});
 });

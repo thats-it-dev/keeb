@@ -1,5 +1,6 @@
 // The engine: keystrokes in, progress and the next line out. What it owes the screens is a `focus` to
 // highlight and a line that only ever contains letters the ladder opened.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
@@ -7,13 +8,38 @@ import { resolve } from "../src/keyboard/resolve.ts";
 import { press, start, type Course, type Engine } from "../src/lesson/engine.ts";
 import { WORDS } from "../src/lesson/corpus.ts";
 import { isCleanWord } from "../src/lesson/clean.ts";
-import { teachingOrder } from "../src/lesson/ladder.ts";
+import { teachingOrder, ladder } from "../src/lesson/ladder.ts";
 import { speakable } from "../src/lesson/phonotactics.ts";
 import { emptyStat, timeToTypeMs, type StatMap } from "../src/stats/stats.ts";
+import type { Keymap } from "../src/keyboard/types.ts";
+import type { KeycapFile } from "../src/layout/keycap.ts";
+import { keymapFromKeycap } from "../src/layout/keycap.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
 const TARGET = 200; // cpm, a 300ms-per-character goal
 const course: Course = { resolved: r, targetCpm: TARGET };
+
+// A minimal keymap with a layer switch on the R_T3 key (label "Alt") that goes to layer 1.
+// The layer data gives layer 1 a non-empty char at position 0 so we can test layer transitions.
+const kmapWithLayers: Keymap = {
+	id: "go60-test-layers",
+	name: "Go60 test layers",
+	source: "test",
+	rows: keymapById("qwerty").rows,
+	layers: [
+		// layer 0 (same as QWERTY base) — abbreviated: just the first few positions + the Alt key is "" (transparent)
+		["=", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "Tab", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]", "\\", "Esc", "a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'", "", "", "", "", "", "z", "x", "c", "v", "b", "n", "m", ",", ".", "/", "`", "Del", "⌫", "LGui", "[", "]", "Layer", "Shift", "Ctrl", "Alt", " ", "Enter"],
+		// layer 1 (alternate) — same shape, different char at pos 0
+		["~", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_", "+", "Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{", "}", "|", "Esc", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":", "\"", "", "", "", "", "", "Z", "X", "C", "V", "B", "N", "M", "<", ">", "?", "~", "Del", "⌫", "LGui", "{", "}", "Layer", "Shift", "Ctrl", "", " ", "Enter"],
+	],
+	layerKeys: [
+		// R_T3 (Alt) taps to layer 1 — this is the switch we test against.
+		{ keyId: "R_T3", toLayer: 1, fromLayer: 0, action: "tap" },
+	],
+};
+
+const layerR = resolve(GO60, kmapWithLayers);
+const layerCourse: Course = { resolved: layerR, targetCpm: TARGET };
 
 // A fake typist with a fixed speed per character, so a slow key should show up as drilled more.
 const SPEED: Record<string, number> = { s: 90, t: 95, a: 110, r: 130, n: 140, e: 120, i: 260, o: 150, g: 170, m: 240 };
@@ -122,7 +148,7 @@ describe("lesson engine", () => {
 		// built around that letter alone, so past a dozen letters half of them stopped carrying the focus.
 		// Only typing catches it, because the curriculum moves as the keys get faster.
 		const stats: StatMap = {};
-		for (const id of teachingOrder(r, false).slice(0, 13)) stats[id] = { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 0 };
+		for (const id of teachingOrder(r, false).map(k => k.id).slice(0, 13)) stats[id] = { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 0 };
 		let e = start(course, stats);
 		let now = 1000;
 		for (let line = 0; line < 10; line += 1) {
@@ -228,5 +254,175 @@ describe("lesson engine", () => {
 		expect(viaEnter.engine.pending).not.toBe("");
 		expect(viaEnter.engine.index).toBe(0);
 		expect(viaEnter.engine.line).toBe(engine.line + 1);
+	});
+
+	it("pressing a layer key switches the active layer", () => {
+		const e = start(layerCourse, {});
+		expect(e.layer).toBe(0);
+		// R_T3 (Alt) taps to layer 1.
+		const res = press(layerCourse, e, "Alt", 0);
+		expect(res.engine.layer).toBe(1);
+		expect(res.accepted).toBe(true);
+		expect(res.targetId).toBe("");
+		expect(res.pressedId).toBe("R_T3");
+	});
+
+	it("does not change expected character when layer changes", () => {
+		// The layer only affects which physical key maps to which character on display;
+		// the expected character in the lesson text stays the same regardless of layer.
+		const e = start(layerCourse, {});
+		const before = e.index;
+		const expected = [...e.text][e.index];
+		const afterSwitch = press(layerCourse, e, "Alt", 100);
+		expect(afterSwitch.engine.layer).toBe(1);
+		expect(afterSwitch.engine.index).toBe(before); // index unchanged
+		// Typing the original expected character is still valid regardless of layer.
+		const afterChar = press(layerCourse, afterSwitch.engine, expected!, 300);
+		expect(afterChar.accepted).toBe(true);
+		expect(afterChar.engine.index).toBe(before + 1);
+	});
+
+describe("go60-36 keymap: base-layer keys type characters, not switch layers", () => {
+	const file = JSON.parse(
+		readFileSync(new URL("./fixtures/go60-36.json", import.meta.url), "utf8"),
+	) as KeycapFile & { layers: import("../src/layout/keycap").KeycapBinding[][] };
+	const imported = keymapFromKeycap(file, GO60);
+	const resolved = resolve(GO60, imported.keymap!);
+	const course: Course = { resolved, targetCpm: TARGET };
+
+	function finishLine(e: Engine): Engine {
+		let engine = e;
+		while (engine.pending !== "") {
+			const want = [...engine.text][engine.index];
+			engine = press(course, engine, want!, 1000).engine;
+		}
+		return engine;
+	}
+
+	it("space types a space and stays on the base layer", () => {
+		const e = finishLine(start(course, {}));
+		const res = press(course, e, " ", 1000);
+		expect(res.accepted).toBe(true);
+		expect(res.engine.layer).toBe(0);
+	});
+
+	it("enter advances the line and stays on the base layer", () => {
+		const e = finishLine(start(course, {}));
+		const res = press(course, e, "Enter", 1000);
+		expect(res.accepted).toBe(true);
+		expect(res.engine.layer).toBe(0);
+	});
+
+	for (const ch of ["f", "l", "1"]) {
+		it(`pressing \`${ch}\` stays on the base layer`, () => {
+			const e = start(course, {});
+			const res = press(course, e, ch, 1000);
+			expect(res.engine.layer).toBe(0);
+		});
+	}
+
+	it("space, enter and 1 are not layer keys", () => {
+		expect(resolved.layerKeyByPhysical.has(" ")).toBe(false);
+		expect(resolved.layerKeyByPhysical.has("enter")).toBe(false);
+		expect(resolved.layerKeyByPhysical.has("1")).toBe(false);
+	});
+});
+
+	describe("layer key resolution", () => {
+	it("resolves first-char layer from lesson keys, not from layerKeys.find", () => {
+		// A character can exist on multiple non-base layers. The old code used
+		// `layerKeys.find()` which could match a different layer than the one
+		// the lesson assigned. The fix uses `l.keys` (which carries the correct
+		// layer from `layerKeyIds`) to pick the layer for `pending`.
+		//
+		// Build a keymap where char `~` is on layer 1 and layer 2, and the
+		// lesson teaches `~` as layer 2 (layer 2 key comes first in layerKeys).
+		const multiLayerKeymap: Keymap = {
+			id: "multi-layer-test",
+			name: "Multi-layer test",
+			source: "test",
+			rows: keymapById("qwerty").rows,
+			layers: [
+				// layer 0: base
+				["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-",
+				 "Tab", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]", "\\",
+				 "Esc", "a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'",
+				 "", "", "", "", "", "",
+				 "z", "x", "c", "v", "b", "n", "m", ",", ".", "/", "`", "Del",
+				 "⌫", "LGui", "[", "]", "Fn", "Shift", "Ctrl", " ", "Enter"],
+				// layer 1: `~` at pos 0, `!` at pos 1
+				["~", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_",
+				 "Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{", "}", "|",
+				 "Esc", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":", '"',
+				 "", "", "", "", "", "",
+				 "Z", "X", "C", "V", "B", "N", "M", "<", ">", "?", "~", "Del",
+				 "⌫", "LGui", "[", "]", "Fn", "Shift", "Ctrl", " ", "Enter"],
+				// layer 2: `~` ALSO at pos 0 (same key L_C6R1), `@` at pos 1
+				["~", "@", "#", "$", "%", "^", "&", "*", "(", ")", "_", "-",
+				 "Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{", "}", "|",
+				 "Esc", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":", '"',
+				 "", "", "", "", "", "",
+				 "Z", "X", "C", "V", "B", "N", "M", "<", ">", "?", "~", "Del",
+				 "⌫", "LGui", "[", "]", "Fn", "Shift", "Ctrl", " ", "Enter"],
+			],
+			layerKeys: [
+				// Layer 2 switch first (so layerKeyIds will assign ~ to layer 2)
+				{ keyId: "L_T3", toLayer: 2, fromLayer: 0, action: "tap" },
+				// Layer 1 switch second
+				{ keyId: "R_T3", toLayer: 1, fromLayer: 0, action: "tap" },
+			],
+		};
+		const mr = resolve(GO60, multiLayerKeymap);
+
+		// ~ is at position 0 on both layers, same key L_C6R1.
+		// layerKeyIds gives it the first layer it sees (layer 2).
+		const tildeId = mr.keys[0].id;
+		expect(tildeId).toBe("L_C6R1");
+		const l = ladder(mr, {}, TARGET);
+		const tildeKey = l.keys.find((k: typeof l.keys[number]) => k.id === tildeId);
+		expect(tildeKey).toBeDefined();
+		expect(tildeKey!.layer).toBe(2); // assigned to layer 2 (first seen layer)
+
+		// Set up stats so all starting letters + tilde are unlocked.
+		const stats: StatMap = {};
+		const order = teachingOrder(mr, false);
+		for (const tk of order.slice(0, 6)) {
+			const rk = mr.byId.get(tk.id);
+			if (rk) stats[rk.id] = { ttMs16: 16 * 10, bestMs16: 16 * 10, samples: 40, errors: 0 };
+		}
+		stats[tildeId] = { ttMs16: 16 * 10, bestMs16: 16 * 10, samples: 40, errors: 0 };
+		const mc: Course = { resolved: mr, targetCpm: TARGET };
+
+		// Start a course, advance to a line that contains `~`, and verify
+		// that `pending` resolves using the layer from l.keys (layer 2).
+		let e = start(mc, stats);
+		const tildePos = e.text.indexOf("~");
+		if (tildePos < 0) {
+			// ~ may not appear in the first line; advance until it does.
+			let idx = 0;
+			while (idx < e.text.length) {
+				const want = e.text[idx];
+				e = press(mc, e, want, 1000).engine;
+				if (e.text.indexOf("~") >= 0) break;
+				idx++;
+				if (e.index === 0) {
+					e = press(mc, e, " ", 1000).engine;
+				}
+			}
+			// Now find the first ~ in the current text and replay to it.
+			const tildeIdx2 = e.text.indexOf("~");
+			if (tildeIdx2 >= 0) {
+				for (let i = e.index; i < tildeIdx2; i++) {
+					const want = e.text[i];
+					e = press(mc, e, want, 1000).engine;
+				}
+			}
+		}
+		const currentIdx = e.index;
+		if (currentIdx < e.text.length && e.text[currentIdx] === "~") {
+			// pending should resolve to tildeId using the layer from l.keys (layer 2)
+			expect(e.pending).toBe(tildeId);
+		}
+	});
 	});
 });

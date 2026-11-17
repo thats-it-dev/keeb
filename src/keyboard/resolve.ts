@@ -1,5 +1,5 @@
 import { bounds, fingerOf, geometryProblems, roleOf } from "../keyboard/geometry.ts";
-import type { Geometry, Key, Keymap, RenderKey } from "../keyboard/types.ts";
+import type { Geometry, Key, Keymap, LayerKey, RenderKey } from "../keyboard/types.ts";
 
 export type Resolved = {
 	geometry: Geometry;
@@ -11,6 +11,14 @@ export type Resolved = {
 	enterKey: string | undefined;
 	viewBox: { x: number; y: number; width: number; height: number };
 	problems: string[];
+	// Layer data from the keymap, if present.
+	layers?: string[][];
+	layerNames?: string[];
+	layerKeys?: LayerKey[];
+	// Keymap-sent character (lowercased) -> layer key info for layer-switch keys.
+	layerKeyByPhysical: Map<string, LayerKey & { label: string; char: string }>;
+	// Browser key name (lowercased, e.g. "control") -> layer key info.
+	layerKeyByBrowser: Map<string, LayerKey & { label: string; char: string }>;
 };
 
 const ALPHA = ["upper", "home", "lower"] as const;
@@ -54,13 +62,63 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 	}
 	const { width, height } = bounds(keys);
 	const enterKey = keys.find((k) => k.label === "Enter" || k.char === "Enter")?.id;
-	return { geometry: g, keys, byId, byChar, enterKey, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems };
+
+	// Layer data from the keymap.
+	const layers = kmap.layers;
+	const layerNames = kmap.layerNames;
+	const layerKeys = kmap.layerKeys;
+
+	// Build layerKeyByPhysical: physical label (geometry key.label lowercased) → layer key info.
+	// Includes &trans (toLayer:0) keys so the engine can route them back to base layer.
+	const layerKeyByPhysical = new Map<string, LayerKey & { label: string; char: string }>();
+	// Browser key name (lowercased, e.g. "control") → layer key info for layer-switch keys.
+	// This lets #onKey match e.key without hardcoding browser→label translations.
+	const layerKeyByBrowser = new Map<string, LayerKey & { label: string; char: string }>();
+	if (layerKeys) {
+		for (const lk of layerKeys) {
+			const rk = byId.get(lk.keyId);
+			if (!rk) continue;
+			// The engine-side map is keyed by the character the keymap says the key sends (label fallback),
+			// so a remapped board routes its layer keys by what the key actually sends, not the printed label.
+			const sent = rk.char.toLowerCase();
+			const entry = { ...lk, label: rk.label, char: rk.char };
+			// The first entry wins: a base-layer switch (e.g. &lt 1 on the space bar) takes
+			// priority over a &trans fallback on the same physical key in a higher layer.
+			if (!layerKeyByPhysical.has(sent)) {
+						layerKeyByPhysical.set(sent, entry);
+			}
+			const browserKey = labelToBrowserKey(rk.label);
+			if (!layerKeyByBrowser.has(browserKey)) {
+						layerKeyByBrowser.set(browserKey, entry);
+			}
+		}
+	}
+
+	return { geometry: g, keys, byId, byChar, enterKey, viewBox: { x: -20, y: -20, width: width + 40, height: height + 40 }, problems, layers, layerNames, layerKeys, layerKeyByPhysical, layerKeyByBrowser };
 }
 
-// What a key should be called on screen. A space has to be spelled out -- it is the most-struck key on
-// the board, and an invisible row label reads as a bug in the screen rather than as the space bar. A key
-// with no character at all (an unmapped pinky column) falls back to its id, which is at least something
-// to point at.
+// Map a geometry key label (lowercased) to the browser's e.key value for layer-switch keys.
+// Handles common aliases like "lctrl" → "control", "gui" → "meta", etc.
+export function labelToBrowserKey(label: string): string {
+	const lower = label.toLowerCase();
+	// Modifier keys with common aliases
+	if (lower === "ctrl" || lower === "lctrl" || lower === "rctrl" || lower === "leftctrl" || lower === "rightctrl") return "control";
+	if (lower === "shift" || lower === "lshift" || lower === "rshift" || lower === "leftshift" || lower === "rightshift") return "shift";
+	if (lower === "alt" || lower === "lalt" || lower === "ralt" || lower === "leftalt" || lower === "rightalt") return "alt";
+	if (lower === "gui" || lower === "meta" || lower === "super" || lower === "cmd" || lower === "lgui" || lower === "rgui") return "meta";
+	// Enter/Return: browser sends "Enter"
+	if (lower === "enter" || lower === "return") return "enter";
+	// Space, tab, and other single-character or short keys
+	if (lower === " " || lower === "space" || lower === "␣") return " ";
+	if (lower === "tab") return "tab";
+	if (lower === "backspace") return "backspace";
+	if (lower === "delete" || lower === "del") return "delete";
+	if (lower === "escape" || lower === "esc") return "escape";
+	// A letter or letter-prefixed label (e.g. "fn", "nav", "sym"): the browser reports the first character.
+	if (lower.length && /[a-z]/.test(lower[0])) return lower[0];
+	return lower;
+}
+
 export function keyLabel(k: { id: string; char: string }): string {
 	if (k.char === " ") return "space";
 	return k.char.trim() === "" ? k.id : k.char;

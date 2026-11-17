@@ -102,3 +102,23 @@ test("remembers the choice on the next visit", async ({ page }) => {
 	await ready(page);
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(58);
 });
+
+test("types the layer key's character on the base layer", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	// open settings, upload the 6-layer fixture
+	await page.locator("tk-header button[aria-label='Settings']").click();
+	await page.locator("dialog input[type='file']").setInputFiles("test/fixtures/go60-36.json");
+	await page.locator("dialog [aria-label='Close settings']").click();
+	await ready(page);
+	// on the base layer L_C4R3 shows "R" from layer 0 bindings
+	await expect(key(page, "L_C4R3")).toContainText("R");
+	// L_T3 (&lt 3 TAB) is a character key (types "Tab"), not a layer switch.
+	await page.keyboard.press("Control");
+	await expect(key(page, "L_T3")).toContainText("Tab");
+	// No hint ring: there are no layer keys in go60-36 after the fix
+	// (&lt N KEY are character keys, &trans removed from layerKeys).
+	await expect(page.locator("tt-keyboard rect.hint")).toHaveCount(0);
+	// pressing Tab types the Tab character; base layer is unchanged.
+	await expect(key(page, "L_C4R3")).toContainText("R");
+});

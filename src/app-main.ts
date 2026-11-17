@@ -28,6 +28,7 @@ import { SessionRecorder } from "./app/session.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
+import { handleKey } from "./app/keyboard-events.ts";
 
 export class AppMain extends LitElement {
 	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true } } as const;
@@ -189,15 +190,7 @@ export class AppMain extends LitElement {
 	}
 
 	#onKey = (e: KeyboardEvent): void => {
-		if (this.settingsOpen) return; // the modal owns the keyboard while it is up
-		const t = e.target as HTMLElement | null;
-		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-		// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
-		// that passed through here charged an error to the target key and turned the letter the learner has
-		// not typed yet red. That reads as the line running ahead of the fingers.
-		if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || (e.key.length !== 1 && e.key !== "Enter")) return;
-		e.preventDefault();
-		void this.#type(e.key);
+		handleKey(this.#resolved, this.settingsOpen, (ch) => this.#type(ch), e);
 	};
 
 	async #type(ch: string): Promise<void> {
@@ -333,7 +326,7 @@ export class AppMain extends LitElement {
 							${this.ready
 								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords}></tt-practice>`
 								: nothing}
-							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""}></tt-keyboard>
+							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .layer=${this.#practice?.layer ?? 0} .hintId=${this.#practice?.hintId ?? ""}></tt-keyboard>
 							<div class="row">
 								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 								${lastKey(r, this.lastId)}
@@ -370,7 +363,6 @@ export class AppMain extends LitElement {
 			onDemo: (on) => this.#demo(on),
 		});
 	}
-
 
 	// The cards live with the pane, not with the section they describe, so both have to pick the same rows the
 	// chart draws -- demo or real, this layout only.

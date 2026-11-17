@@ -52,11 +52,16 @@ const REPEATS = 3;
 
 export function lesson(input: LessonInput): Lesson {
 	const { letters, focus, stats, targetCpm, ids } = input;
+
+	// Separate letters into word-letters (a-z) and symbol/digit chars.
+	const wordLetters = letters.filter((ch) => /^[a-z]$/.test(ch));
+	const symbolChars = letters.filter((ch) => !/^[a-z]$/.test(ch));
+
 	const words = input.words ?? WORDS_PER_LINE;
-	const allowed = new Set([...letters, " "]); // the space separates words, so it is always on the menu
+	const allowed = new Set([...wordLetters, " "]); // the space separates words, so it is always on the menu
 	const rng = makeRng(input.seed);
 	const need = focus === undefined ? [] : [focus];
-	const real = input.realWords ? realCandidates(letters, focus) : [];
+	const real = input.realWords ? realCandidates(wordLetters, focus) : [];
 	const nextWord = () =>
 		real.length >= MIN_CANDIDATES || (real.length > 0 && rng() < 0.8) ? realPick(real, stats, targetCpm, ids, rng) : modelWord(allowed, need, stats, targetCpm, ids, rng);
 	const line: string[] = [];
@@ -70,11 +75,18 @@ export function lesson(input: LessonInput): Lesson {
 	// An unlocked letter that never appears is a letter nobody is asked to type, one nobody types never gets
 	// faster, and one that never gets faster holds the next letter locked. Every missing unlocked letter
 	// is forced into its own word so the learner meets all keys.
-	const gaps = letters.filter((ch) => !line.some((w) => w.includes(ch)));
+	// Only consider word-letters for gaps (symbol gaps are handled by standalone insertion).
+	const gaps = wordLetters.filter((ch) => !line.some((w) => w.includes(ch)));
 	const first = gaps.length === 0 ? 0 : input.seed % gaps.length;
 	for (let i = 0; i < Math.min(gaps.length, line.length); i += 1) {
 		line[i] = modelWord(allowed, [...need, gaps[(first + i) % gaps.length]!], stats, targetCpm, ids, rng);
 	}
+
+	// Unlocked symbol/digit chars join the line as standalone tokens, not inside words.
+	symbolChars.forEach((ch, s) => {
+		const pos = Math.floor(((s + 1) * line.length) / (symbolChars.length + 1));
+		line.splice(Math.min(pos, line.length), 0, ch);
+	});
 
 	return { letters: [...allowed], text: line.filter((w) => w !== "").join(" ") || need[0] || "", focus };
 }
