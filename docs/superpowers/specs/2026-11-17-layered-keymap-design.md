@@ -15,18 +15,22 @@ layout. He wants to practise the layout he actually uses, on the board he actual
 - Draw one static visualization in which every key shows the characters of every layer it carries,
   colour-coded by layer ("the keycap legend" model, chosen over a layer-switching view).
 - When the lesson targets a character, highlight the key **and** the specific legend glyph, tinted with
-  the target's layer colour, so the colour itself hints which layer to activate.
+  the target's layer colour, and ring the physical **layer key** in that same colour so the screen shows
+  the whole route: hold this, press that. The hint names the layer key (`hold Sym · Enter`).
 - Route each character to exactly one key+layer using a "closest to home" rule, so layer characters
   (home-row numbers via NavNum) get taught instead of the reach-row duplicates.
+- Teach the layer characters: unlocked digits/symbols enter the lesson lines through their routes.
 
 ## Non-goals
 
 - Verifying that the learner physically used the right layer: the browser only reports the produced
   character, never which layer key was held. Accepted; the visual hint is the teaching mechanism.
-- Modelling hold-taps, combos and conditional layers in the visualization. Their tap characters render
-  as if plainly bound on that layer.
+- Modelling combos and conditional layers as hint routes. Hold-taps are parsed (they *are* the layer keys);
+  a layer's tri-layer conditional (`if-layers <1 2>` → Fn) is recorded in the model but never hinted or used
+  as the route. Tap characters of hold-taps render as if plainly bound on that layer.
 - Sharing layered keymaps through atproto records (a schema change; file import stands alone).
-- Changing the lesson algorithm (`docs/spec.md` ladder/lesson generation) beyond character→key routing.
+- Rebuilding the lesson algorithm. The ladder, unlock-on-best-confidence rule and word generator stay as
+  `docs/spec.md` describes; the curriculum simply accepts more characters and can place them as tokens.
 
 ## Anti-goals
 
@@ -37,6 +41,10 @@ layout. He wants to practise the layout he actually uses, on the board he actual
 ## Constraints found in the code
 
 - `src/layout/keycap.ts` already parses this exact format but keeps `layers[0]` only.
+- Layer keys are not a separate JSON section, they are bindings inside the layers. In `go60-36.json`
+  all three live on layer 0's thumb positions: `&lt 3 TAB` (Fn), `&lt 1 RET` (Sym), `&lt_bspc 2 BSPC`
+  (NavNum, a custom hold-tap defined in `custom_defined_behaviors` with `bindings = <&mo>, <&kp>`).
+  The file's top-level `holdTaps`/`combos` arrays are empty; parsing must not rely on them.
 - `resolve()` (`src/keyboard/resolve.ts`) builds `byChar: Map<char, keyId>` — single route per char.
 - `view.ts` draws one `<text>` per key; stats/engine attribute timing to the expected physical key.
 - Kit tokens only: `--primary` marks the one thing to look at; series colours are `--chart-1…4`;
@@ -69,11 +77,43 @@ route is B's choice.
 
 ## Data model (my call)
 
-`Keymap` gains optional `layers?: { name: string; byKeyId: Record<string, string> }[]`. Absent = today's
-behaviour; built-in and stored keymaps need no migration. `resolve()` gains `routes: Map<char, {keyId, layer}>`
-computed by: candidates = all (key, layer) pairs producing the char; pick by (taught-row first, then
-distance from key centre to its hand's home-row centre, then lower layer index, then lower matrix position).
-`byChar` stays as the key id for each route so the engine is untouched. Stats stay per physical key.
+`Keymap` gains optional `layers?: { name: string; byKeyId: Record<string, string> }[]` and
+`layerKeys?: { layer: number; keyId: string; activation: "momentary" | "hold-tap" | "toggle";
+tapChar?: string }[]`. The parser recognises `&mo N`, `&df N`, `&lt N K`, and custom behaviours whose
+`custom_defined_behaviors` definition resolves `&mo`/`&kp` (regex over that block, then follow the
+binding's params). Absent = today's behaviour; built-in and stored keymaps need no migration.
+`resolve()` gains `routes: Map<char, {keyId, layer}>` computed by: candidates = all (key, layer) pairs
+producing the char; pick by (taught-row first, then distance from key centre to its hand's home-row
+centre, then lower layer index, then lower matrix position). `byChar` stays as the route's key id.
+
+## The layer key in the UI (Michael's finding 1)
+
+One layer may have several keys (this file has one each). The hint/light picks the binding found on the
+base layer; if several, the outermost-column (thumb) one. While the target is on a non-base layer:
+the route key fills solid in the layer colour (the one thing to look at), and the layer key gets a
+**dashed ring in that layer's colour** — same language as today's focus ring — so the pair reads as one
+route without a second solid key competing. The hint line names the physical key: `hold Sym · Enter,
+press J`. Hold-tap keys keep their tap character displayed (`Enter` is still Enter when tapped).
+
+## The ladder teaches layer characters (Michael's finding 2)
+
+Resolved: layer characters are taught. Curriculum candidates become: characters whose route sits on a
+taught key (today's letters — unchanged) **plus** characters whose chosen route is on a **non-base
+layer**. Built-in one-layer keymaps therefore change not at all (a base number row is untaught and stays
+out), and in the layered file `1` routes to NavNum-at-home, which is both taught and in the candidate
+set. Order and unlocking follow the existing rules: corpus frequency, one at a time, on best confidence.
+Generation: words stay spelled from unlocked letters; an unlocked layer character enters the line as its
+own single-character token between words — at least twice per line when focused, once otherwise.
+`docs/spec.md` gains the section; §12's contract list grows with it.
+
+## Stats identity is key+layer (Michael's finding 3)
+
+`StatMap` keys become route ids `"L<layer>:<keyId>"`; base-layer strokes record `L0:<keyId>`. Route ids
+stay opaque strings through `stats.ts` (`observe`, `mergeAll`, `confidence` are untouched). Migration on
+load: an id with no `L:` prefix is read as `L0:` + id, so existing IndexedDB history lands on the base
+routes. The engine charges the expected character's **route**, not the bare key, so `t` on Main and `7`
+on NavNum at the same physical key keep separate confidences and the ladder sees them apart. Insight
+rows display `7 · NavNum` style labels (layer name for non-base, plain for base).
 
 ## What the builder still owns
 
