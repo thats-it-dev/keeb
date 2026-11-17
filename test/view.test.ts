@@ -45,4 +45,13 @@ describe("charForLayer", () => {
 		expect(charForLayer(resolved, 2, 0)).toBe("z");
 		expect(charForLayer(resolved, 2, 1)).toBe("");
 	});
+
+	it("falls back to base char when layer array is shorter than keys array", () => {
+		const resolved = makeResolved([["x", "y"]]);
+		// layer 0 has only 2 elements; keys has 4
+		expect(charForLayer(resolved, 0, 0)).toBe("x");
+		expect(charForLayer(resolved, 1, 0)).toBe("y");
+		expect(charForLayer(resolved, 2, 0)).toBe(""); // base char is ""
+		expect(charForLayer(resolved, 3, 0)).toBe("d"); // key index out of layer bounds
+	});
 });

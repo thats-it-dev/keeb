@@ -1,6 +1,7 @@
 import { LitElement, html, css } from "https://kit.thatsit.app/lit.js";
 import { press, start } from "../lesson/engine.ts";
 import { cpmFrom, type StatMap } from "../stats/stats.ts";
+import { charForLayer } from "../keyboard/layer.ts";
 import type { Resolved } from "../keyboard/resolve.ts";
 import type { LayerKey } from "../keyboard/types.ts";
 
@@ -80,9 +81,8 @@ export class TtPractice extends LitElement {
 			const layerChars = r.layers[e.layer].map((c) => c.toLowerCase());
 			if (layerChars.includes(targetLower)) return "";
 		}
-		// Find a &trans key on the active layer (toLayer:0) — it must actually exist on the active layer.
-		// &trans keys are transparent (fall back to layer 0), so they have no character on the active
-		// layer. We only check that the key exists in the geometry.
+		// Find a &trans key on the active layer (toLayer:0) — must actually be transparent:
+		// the active layer must NOT override the base char at that position.
 		const layerKeys = r.layerKeys ?? [];
 		for (const lk of layerKeys) {
 			if (lk.toLayer !== 0) continue;
@@ -90,6 +90,7 @@ export class TtPractice extends LitElement {
 			if (!gk) continue;
 			const idx = r.keys.findIndex((k) => k.id === lk.keyId);
 			if (idx < 0) continue;
+			if (charForLayer(r, idx, e.layer) !== r.keys[idx].char) continue;
 			return gk.id;
 		}
 		// Fallback: scan layerKeys for any switch pointing to a layer that has the char.

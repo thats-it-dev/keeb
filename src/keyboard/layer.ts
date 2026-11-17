@@ -7,7 +7,7 @@ export function charForLayer(resolved: Resolved, keyIndex: number, layer: number
 	const layers = resolved.layers;
 	if (layers?.[layer]) {
 		const c = layers[layer][keyIndex];
-		if (c !== "") return c;
+		if (c != null && c !== "") return c;
 	}
 	return resolved.keys[keyIndex].char;
 }
