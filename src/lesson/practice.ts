@@ -81,6 +81,8 @@ export class TtPractice extends LitElement {
 			if (layerChars.includes(targetLower)) return "";
 		}
 		// Find a &trans key on the active layer (toLayer:0) — it must actually exist on the active layer.
+		// &trans keys are transparent (fall back to layer 0), so they have no character on the active
+		// layer. We only check that the key exists in the geometry.
 		const layerKeys = r.layerKeys ?? [];
 		for (const lk of layerKeys) {
 			if (lk.toLayer !== 0) continue;
@@ -88,7 +90,7 @@ export class TtPractice extends LitElement {
 			if (!gk) continue;
 			const idx = r.keys.findIndex((k) => k.id === lk.keyId);
 			if (idx < 0) continue;
-			if (r.layers?.[e.layer]?.[idx]) return gk.id;
+			return gk.id;
 		}
 		// Fallback: scan layerKeys for any switch pointing to a layer that has the char.
 		for (const lk of layerKeys) {

@@ -192,9 +192,8 @@ export class AppMain extends LitElement {
 		if (this.settingsOpen) return; // the modal owns the keyboard while it is up
 		const t = e.target as HTMLElement | null;
 		if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
-		// Layer keys (e.g. Alt as layer switch): pass through even when e.altKey is set.
-		// Use the data-driven browser-key map so any geometry key name (e.g. "L_Ctrl") works.
-		if (this.#resolved.layerKeyByBrowser.has(e.key.toLowerCase())) { e.preventDefault(); void this.#type(e.key.toLowerCase()); return; }
+		// Layer keys: pass through even when e.altKey is set; use browser-key map.
+		if (this.#resolved.layerKeyByBrowser.has(e.key.toLowerCase())) { e.preventDefault(); void this.#type(this.#resolved.layerKeyByBrowser.get(e.key.toLowerCase())!.label.toLowerCase()); return; }
 		// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
 		// that passed through here charged an error to the target key and turned the letter the learner has
 		// not typed yet red. That reads as the line running ahead of the fingers.
