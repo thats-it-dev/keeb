@@ -69,7 +69,7 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 	const layerKeys = kmap.layerKeys;
 
 	// Build layerKeyByPhysical: physical label (geometry key.label lowercased) → layer key info.
-	// Skip toLayer:0 entries (those are &trans transitory keys, not real layer switches).
+	// Includes &trans (toLayer:0) keys so the engine can route them back to base layer.
 	const layerKeyByPhysical = new Map<string, LayerKey & { label: string }>();
 	// Browser key name (lowercased, e.g. "control") → layer key info for layer-switch keys.
 	// This lets #onKey match e.key without hardcoding browser→label translations.

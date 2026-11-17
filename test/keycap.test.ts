@@ -123,9 +123,9 @@ describe("6-layer Go60 (go60-36.json)", () => {
 		const { keymap } = keymapFromKeycap(big, GO60);
 		const keys = keymap!.layerKeys!.filter((k) => k.toLayer > 0);
 		expect(keys).toEqual([
-			{ keyId: "L_T3", toLayer: 3, action: "tap" },
-			{ keyId: "R_T2", toLayer: 1, action: "tap" },
-			{ keyId: "R_T1", toLayer: 2, action: "hold" },
+			{ keyId: "L_T3", toLayer: 3, fromLayer: 0, action: "tap" },
+			{ keyId: "R_T2", toLayer: 1, fromLayer: 0, action: "tap" },
+			{ keyId: "R_T1", toLayer: 2, fromLayer: 0, action: "hold" },
 		]);
 	});
 

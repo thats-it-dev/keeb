@@ -31,7 +31,7 @@ const kmapWithLayers: Keymap = {
 	],
 	layerKeys: [
 		// R_T3 (Alt) taps to layer 1 — this is the switch we test against.
-		{ keyId: "R_T3", toLayer: 1, action: "tap" },
+		{ keyId: "R_T3", toLayer: 1, fromLayer: 0, action: "tap" },
 	],
 };
 

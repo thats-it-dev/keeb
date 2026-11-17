@@ -11,9 +11,9 @@ export function handleKey(
 	const t = e.target as HTMLElement | null;
 	if (t && /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
 	// Layer keys: pass through even when e.altKey is set; use browser-key map.
-	// Only multi-char keys (Control, Tab, Enter) enter this path; single-char letters type normally.
+	// Both multi-char (Control, Tab) and single-char (letter-prefixed layer keys) route here.
 	const bk = e.key.toLowerCase();
-	if (e.key.length > 1 && resolved.layerKeyByBrowser.has(bk)) {
+	if (resolved.layerKeyByBrowser.has(bk)) {
 		e.preventDefault();
 		onKey(resolved.layerKeyByBrowser.get(bk)!.label.toLowerCase());
 		return;

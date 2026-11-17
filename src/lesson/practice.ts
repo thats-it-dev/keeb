@@ -95,6 +95,7 @@ export class TtPractice extends LitElement {
 		// Fallback: scan layerKeys for any switch pointing to a layer that has the char.
 		for (const lk of layerKeys) {
 			if (lk.toLayer === 0) continue; // &trans handled above
+			if (lk.fromLayer !== e.layer) continue; // key must exist on the active layer
 			if (r.layers?.[lk.toLayer]) {
 				const layerChars = r.layers[lk.toLayer].map((c) => c.toLowerCase());
 				if (layerChars.includes(targetLower)) {

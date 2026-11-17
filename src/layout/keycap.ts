@@ -118,7 +118,7 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 					const nonTrans = layerKeys.some((k) => k.keyId === baseKey.id && k.toLayer !== 0);
 					if (!seenSwitch.has(dk) && !nonTrans) {
 						seenSwitch.add(dk);
-						layerKeys.push({ keyId: baseKey.id, toLayer: 0, action: "tap" });
+						layerKeys.push({ keyId: baseKey.id, toLayer: 0, fromLayer: li, action: "tap" });
 					}
 				}
 				continue;
@@ -142,7 +142,7 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 			const dk = `${baseKey.id}:${toLayer}`;
 			if (!seenSwitch.has(dk)) {
 				seenSwitch.add(dk);
-				layerKeys.push({ keyId: baseKey.id, toLayer, action });
+				layerKeys.push({ keyId: baseKey.id, toLayer, fromLayer: li, action });
 			}
 		}
 	}

@@ -53,7 +53,7 @@ export type Geometry = {
 // Six columns, index 0 = the outer (far pinky) column; "" means "use the geometry's own label".
 export type KeymapRow = readonly [string, string, string, string, string, string];
 
-export type LayerKey = { keyId: string; toLayer: number; action: "tap" | "hold" };
+export type LayerKey = { keyId: string; toLayer: number; fromLayer: number; action: "tap" | "hold" };
 
 export type Keymap = {
 	id: string;
