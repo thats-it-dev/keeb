@@ -2,15 +2,21 @@
 // which one comes next. Two rules have to hold at once — never hand out a letter the learner cannot type,
 // and never hand out more than one letter at a time.
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
+import { keymapFromKeycap } from "../src/layout/keycap.ts";
 import { press, start } from "../src/lesson/engine.ts";
 import { ladder, START_SIZE, teachingOrder } from "../src/lesson/ladder.ts";
 import { roleOf } from "../src/keyboard/geometry.ts";
 import { emptyStat, type KeyStat, type StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
+const bigFixture = JSON.parse(
+	readFileSync(new URL("./fixtures/go60-36.json", import.meta.url), "utf8"),
+) as import("../src/layout/keycap").KeycapFile & { layers: unknown[][] };
+const rLayers = resolve(GO60, keymapFromKeycap(bigFixture, GO60).keymap!);
 const TARGET = 200; // cpm -> 300 ms per character
 const GOAL_MS16 = 16 * Math.round(60_000 / TARGET);
 const SLOW_MS16 = GOAL_MS16 * 3;
@@ -96,7 +102,7 @@ describe("the curriculum", () => {
 	});
 
 	it("has no focus to fix once the whole board is at goal", () => {
-		const all = teachingOrder(r, false);
+		const all = teachingOrder(r, false).map((k) => k.id);
 		expect(ladder(r, atGoal(all), TARGET).focus).toBeUndefined();
 		expect(ladder(r, {}, TARGET).focus).toBe(ladder(r, {}, TARGET).unlocked[0]); // nothing typed: first letter
 	});
@@ -147,16 +153,40 @@ describe("the curriculum", () => {
 
 describe("teaching order", () => {
 	it("is the corpus's own letter frequency by default", () => {
-		const order = chars(teachingOrder(r, false));
+		const order = teachingOrder(r, false).map((k) => r.byId.get(k.id)!.char.toLowerCase());
 		// The first six of English. If this drifts, the words the generator can build with them drift with it.
 		expect(order.slice(0, 6).join("")).toBe("easrtn");
 	});
 
 	it("walks the keyboard rows first when the setting says so", () => {
-		const order = chars(teachingOrder(r, true));
+		const order = teachingOrder(r, true).map((k) => r.byId.get(k.id)!.char.toLowerCase());
 		const home = r.keys.filter((k) => roleOf(r.geometry, k.row) === "home").map((k) => k.char.toLowerCase());
 		// Cheapest row first: the six letters a keyboard-order learner starts on are all home-row letters.
 		expect(home.length).toBeGreaterThan(6);
 		expect(order.slice(0, 6).every((ch) => home.includes(ch))).toBe(true);
+	});
+
+	it("includes layer characters after all base letters", () => {
+		const order = teachingOrder(rLayers, false);
+		const baseCount = order.filter((k) => k.layer === 0).length;
+		const layerCount = order.filter((k) => k.layer > 0).length;
+		// Should have base letters (letters) and potentially layer chars
+		expect(baseCount).toBeGreaterThan(0);
+		// Layer chars should come after base letters (manual findLastIndex for ES2022 compat)
+		let lastBaseIndex = -1;
+		for (let i = 0; i < order.length; i++) {
+			if ((order[i] as import("../src/lesson/ladder.ts").TeachingKey).layer === 0) lastBaseIndex = i;
+		}
+		let firstLayerIndex = -1;
+		for (let i = 0; i < order.length; i++) {
+			if ((order[i] as import("../src/lesson/ladder.ts").TeachingKey).layer > 0) {
+				firstLayerIndex = i;
+				break;
+			}
+		}
+		if (firstLayerIndex !== -1) {
+			expect(firstLayerIndex).toBeGreaterThan(lastBaseIndex);
+		}
+		expect(layerCount).toBeGreaterThan(0);
 	});
 });

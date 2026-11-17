@@ -129,6 +129,26 @@ describe("6-layer Go60 (go60-36.json)", () => {
 		]);
 	});
 
+	it("detects &mo (momentary) layer keys", () => {
+		const binding = { value: "Custom", params: [{ value: "&mo 1 X" }] };
+		const result = charOfBinding(binding);
+		expect(result).toBeUndefined();
+	});
+
+	it("detects &lt 1 LC(UP) layer key", () => {
+		const binding = { value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] };
+		const result = charOfBinding(binding);
+		expect(result).toBeUndefined();
+	});
+
+	it("builds byKey for non-taught keys from layer-0 characters", () => {
+		const { keymap, problems } = keymapFromKeycap(big, GO60);
+		expect(problems).toEqual([]);
+		expect(keymap!.byKey).toBeDefined();
+		// Number row keys should be in byKey
+		expect(Object.keys(keymap!.byKey!)).toContain("L_C5R1"); // first number key
+	});
+
 	it("maps &trans back to the base layer", () => {
 		const { keymap } = keymapFromKeycap(big, GO60);
 		const trans = keymap!.layerKeys!.filter((k) => k.toLayer === 0);
@@ -139,5 +159,32 @@ describe("6-layer Go60 (go60-36.json)", () => {
 		const short = { ...big, layer_names: ["Main", "Sym"] } as KeycapFile & { layers: KeycapBinding[][] };
 		const { layerNames } = keymapFromKeycap(short, GO60);
 		expect(layerNames).toEqual(["Main", "Sym", "Layer 2", "Layer 3", "Layer 4", "Layer 5"]);
+	});
+});
+
+describe("advanced layer key patterns", () => {
+	it("detects &lt 1 LC(UP) as a layer switch", () => {
+		// This tests that &lt with parenthesized keycode is detected
+		// The charOfBinding should return undefined for layer keys
+		const binding = { value: "Custom", params: [{ value: "&lt 1 LC(UP)" }] };
+		expect(charOfBinding(binding)).toBeUndefined();
+	});
+
+	it("maps &mo 1 to correct layer key properties", () => {
+		// Create a temporary fixture with &mo
+		const moFixture = {
+			...big,
+			layers: [
+				[...big.layers[0]],
+				[...big.layers[1]],
+			],
+		} as KeycapFile & { layers: KeycapBinding[][] };
+		// Replace the first key in layer 0 with &mo 1
+		moFixture.layers[0][0] = { value: "Custom", params: [{ value: "&mo 1 X" }] };
+		const { keymap } = keymapFromKeycap(moFixture, GO60);
+		// Filter by action + keyId to distinguish from &lt entries to the same layer.
+		const moKeys = keymap!.layerKeys!.filter((k) => k.action === "hold" && k.keyId === "L_C6R1");
+		expect(moKeys).toHaveLength(1);
+		expect(moKeys[0].toLayer).toBe(1);
 	});
 });

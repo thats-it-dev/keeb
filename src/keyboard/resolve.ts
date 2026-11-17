@@ -15,10 +15,10 @@ export type Resolved = {
 	layers?: string[][];
 	layerNames?: string[];
 	layerKeys?: LayerKey[];
-	// Physical key label (lowercased) -> layer key info for layer-switch keys.
-	layerKeyByPhysical: Map<string, LayerKey & { label: string }>;
+	// Keymap-sent character (lowercased) -> layer key info for layer-switch keys.
+	layerKeyByPhysical: Map<string, LayerKey & { label: string; char: string }>;
 	// Browser key name (lowercased, e.g. "control") -> layer key info.
-	layerKeyByBrowser: Map<string, LayerKey & { label: string }>;
+	layerKeyByBrowser: Map<string, LayerKey & { label: string; char: string }>;
 };
 
 const ALPHA = ["upper", "home", "lower"] as const;
@@ -70,18 +70,27 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 
 	// Build layerKeyByPhysical: physical label (geometry key.label lowercased) → layer key info.
 	// Includes &trans (toLayer:0) keys so the engine can route them back to base layer.
-	const layerKeyByPhysical = new Map<string, LayerKey & { label: string }>();
+	const layerKeyByPhysical = new Map<string, LayerKey & { label: string; char: string }>();
 	// Browser key name (lowercased, e.g. "control") → layer key info for layer-switch keys.
 	// This lets #onKey match e.key without hardcoding browser→label translations.
-	const layerKeyByBrowser = new Map<string, LayerKey & { label: string }>();
+	const layerKeyByBrowser = new Map<string, LayerKey & { label: string; char: string }>();
 	if (layerKeys) {
 		for (const lk of layerKeys) {
-			const gk = g.keys.find((k) => k.id === lk.keyId);
-			if (!gk) continue;
-			// &trans (toLayer:0) keys are added to both maps so the engine can route them.
-			layerKeyByPhysical.set(gk.label.toLowerCase(), { ...lk, label: gk.label });
-			const browserKey = labelToBrowserKey(gk.label);
-			layerKeyByBrowser.set(browserKey, { ...lk, label: gk.label });
+			const rk = byId.get(lk.keyId);
+			if (!rk) continue;
+			// The engine-side map is keyed by the character the keymap says the key sends (label fallback),
+			// so a remapped board routes its layer keys by what the key actually sends, not the printed label.
+			const sent = rk.char.toLowerCase();
+			const entry = { ...lk, label: rk.label, char: rk.char };
+			// The first entry wins: a base-layer switch (e.g. &lt 1 on the space bar) takes
+			// priority over a &trans fallback on the same physical key in a higher layer.
+			if (!layerKeyByPhysical.has(sent)) {
+						layerKeyByPhysical.set(sent, entry);
+			}
+			const browserKey = labelToBrowserKey(rk.label);
+			if (!layerKeyByBrowser.has(browserKey)) {
+						layerKeyByBrowser.set(browserKey, entry);
+			}
 		}
 	}
 

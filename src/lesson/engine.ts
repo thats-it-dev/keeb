@@ -2,6 +2,7 @@ import { lesson } from "./generator.ts";
 import { ladder, type Ladder, type LadderOptions } from "./ladder.ts";
 import type { Resolved } from "../keyboard/resolve.ts";
 import { emptyStat, observe, type KeyStat, type StatMap } from "../stats/stats.ts";
+import { charForLayer } from "../keyboard/layer.ts";
 
 /** Everything about the learner that a line depends on, in one object, so no keystroke has to carry five
  *  positional arguments and agree with the line that started before them. */
@@ -63,12 +64,12 @@ export function press(course: Course, e: Engine, typed: string, now: number): Ke
 	// Enter or space starts the next line only when the current line is finished; other keys are ignored.
 	if (e.pending === "" && (typed === " " || typed === "Enter")) {
 		const engine = place(course, e);
-		const pressedId = typed === "Enter" ? (course.resolved.enterKey ?? "") : idOf(course.resolved, " ");
+		const pressedId = typed === "Enter" ? (course.resolved.enterKey ?? "") : idOf(course.resolved, " ", 0);
 		return { engine, accepted: true, targetId: "", pressedId, elapsedMs: 0, finished: false };
 	}
 	// A finished line (pending === "") ignores all other keys.
 	if (e.pending === "") {
-		return { engine: e, accepted: false, targetId: "", pressedId: idOf(course.resolved, typed) || "", elapsedMs: 0, finished: false };
+		return { engine: e, accepted: false, targetId: "", pressedId: idOf(course.resolved, typed, e.layer) || "", elapsedMs: 0, finished: false };
 	}
 	const targetId = e.pending;
 	const elapsedMs = e.stamp === 0 ? 0 : Math.max(0, now - e.stamp);
@@ -79,20 +80,25 @@ export function press(course: Course, e: Engine, typed: string, now: number): Ke
 	const stats = { ...e.stats, [id]: stat };
 	const index = correct ? e.index + 1 : e.index;
 	// Highlighting follows the fingers, not the lesson: the key that was struck is the one that glows.
-	const pressedId = idOf(course.resolved, typed) || targetId;
+	const pressedId = idOf(course.resolved, typed, e.layer) || targetId;
 	const advanced: Engine = { ...e, stats, index };
 	if (index >= [...e.text].length) {
 		// Hold the finished line; learner presses space or enter to start the next line.
 		return { engine: { ...advanced, pending: "", stamp: 0 }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: true };
 	}
-	return { engine: { ...advanced, pending: idOf(course.resolved, [...e.text][index] ?? ""), stamp: now }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: false };
+	return { engine: { ...advanced, pending: idOf(course.resolved, [...e.text][index] ?? "", e.layer), stamp: now }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: false };
 }
 
 function want(e: Engine): string {
 	return [...e.text][e.index] ?? "";
 }
 
-function idOf(r: Resolved, char: string): string {
+function idOf(r: Resolved, char: string, layer: number = 0): string {
+	if (layer > 0 && r.layers?.[layer]) {
+		const layerChars = r.layers[layer];
+		const idx = layerChars.map((c) => (c ?? "").toLowerCase()).indexOf(char.toLowerCase());
+		if (idx >= 0 && r.keys[idx]) return r.keys[idx].id;
+	}
 	return r.byChar.get(char.toLowerCase()) ?? "";
 }
 
@@ -107,8 +113,25 @@ function recordStroke(stat: KeyStat, correct: boolean, elapsedMs: number): KeySt
 // the key we are waiting for.
 function place(course: Course, e: Engine): Engine {
 	const l = ladder(course.resolved, e.stats, course.targetCpm, course);
-	const letters = l.unlocked.map((id) => course.resolved.byId.get(id)?.char.toLowerCase() ?? "").filter(Boolean);
-	const focus = l.focus === undefined ? undefined : course.resolved.byId.get(l.focus)?.char.toLowerCase();
+	// Resolve each unlocked key's character on its own layer (layer 0 = base).
+	const letters = l.unlocked.map((id) => {
+		const rk = course.resolved.byId.get(id);
+		if (!rk) return "";
+		const lk = l.keys.find((k) => k.id === id);
+		const layer = lk?.layer ?? 0;
+		if (layer === 0) return rk.char.toLowerCase();
+		const idx = course.resolved.keys.findIndex((k) => k.id === id);
+		return idx >= 0 ? charForLayer(course.resolved, idx, layer).toLowerCase() : "";
+	}).filter(Boolean);
+	const focus = l.focus === undefined ? undefined : (() => {
+		const rk = course.resolved.byId.get(l.focus);
+		if (!rk) return undefined;
+		const lk = l.keys.find((k) => k.id === l.focus);
+		const layer = lk?.layer ?? 0;
+		if (layer === 0) return rk.char.toLowerCase();
+		const idx = course.resolved.keys.findIndex((k) => k.id === l.focus);
+		return idx >= 0 ? charForLayer(course.resolved, idx, layer).toLowerCase() : undefined;
+	})();
 	const { text } = lesson({
 		letters,
 		focus,
@@ -118,7 +141,15 @@ function place(course: Course, e: Engine): Engine {
 		realWords: course.realWords ?? false,
 		seed: e.line + 1,
 	});
-	return { ...e, ladder: l, text, index: 0, line: e.line + 1, pending: idOf(course.resolved, [...text][0] ?? ""), stamp: 0, layer: e.layer };
+	// Reset to base layer for the new line; resolve pending character with its layer.
+	const first = [...text][0] ?? "";
+	const firstLk = course.resolved.layerKeys?.find((lk) => {
+		const layer = course.resolved.layers?.[lk.toLayer];
+		if (!layer || lk.toLayer === 0) return false;
+		return layer.map((c) => (c ?? "").toLowerCase()).includes(first.toLowerCase());
+	});
+	const pending = idOf(course.resolved, first, firstLk?.toLayer ?? 0);
+	return { ...e, ladder: l, text, index: 0, line: e.line + 1, pending, stamp: 0, layer: 0 };
 }
 
 export type { Engine as LessonEngine };

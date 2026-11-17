@@ -131,14 +131,17 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 						: undefined;
 			if (!customVal) continue;
 
-			const ltMatch = /^&lt(_\w+)?\s+(\d+)\s+\w+$/.exec(customVal);
-			if (!ltMatch) continue;
+			// ZMK devicetree layer actions in a Custom binding: &lt N <key> (tap), &lt_N N <key> (toggle),
+			// &mo N <key> (momentary). The trailing key (e.g. LC(UP)) is optional and may carry
+			// wrappers/parens, so it matches as a single non-space token.
+			const layerMatch = /^&(lt|mo)(?:_(\w+))?\s+(\d+)(?:\s+\S+)?$/.exec(customVal);
+			if (!layerMatch) continue;
 
-			const toLayer = parseInt(ltMatch[2], 10);
+			const toLayer = parseInt(layerMatch[3], 10);
 			if (isNaN(toLayer) || toLayer < 0) continue;
 
 			const action: "tap" | "hold" =
-				ltMatch[1] !== undefined ? "hold" : "tap";
+				layerMatch[1] === "mo" || layerMatch[2] !== undefined ? "hold" : "tap";
 			const dk = `${baseKey.id}:${toLayer}`;
 			if (!seenSwitch.has(dk)) {
 				seenSwitch.add(dk);
@@ -155,12 +158,23 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 		bucket[key.hand][key.col] = bindings[i] ?? "";
 	}
 	const done = Object.fromEntries(Object.entries(rows).map(([role, pair]) => [role, { l: tuple(pair.l), r: tuple(pair.r) }])) as Keymap["rows"];
+
+	// Keys outside the taught grid have no row slot, so the keymap records what they send in byKey;
+	// charFor then prefers the keycap character over the geometry's printed label.
+	const byKey: Record<string, string> = {};
+	for (const [i, key] of base.keys.entries()) {
+		const role = roleOfRow(base, key);
+		const taught = ["upper", "home", "lower"].includes(role) && key.col > 0;
+		if (!taught && bindings[i]) byKey[key.id] = bindings[i];
+	}
+
 	return {
 		keymap: {
 			id,
 			name,
 			source: `keycap layers: ${names.join(", ") || "unnamed"}`,
 			rows: done,
+			byKey,
 			layers: charLayers,
 			layerNames: paddedNames,
 			layerKeys,
@@ -195,9 +209,13 @@ function charOfParam(p: KeycapParam | undefined): string | undefined {
 }
 
 // A Custom binding holds raw devicetree text: "&lt 1 LC(UP)" or "&kp A".
+// Layer-switch bindings ("&lt", "&lt_N", "&mo") are not character keys — return undefined.
 function charOfCustom(raw: string | undefined): string | undefined {
 	if (!raw) return undefined;
-	const tokens = raw.trim().split(/\s+/);
+	// Layer keys start with &lt or &mo; these are not character bindings.
+	const trimmed = raw.trim();
+	if (/^&lt(?:_\w+)?\s/.test(trimmed) || /^&mo\s/.test(trimmed)) return undefined;
+	const tokens = trimmed.split(/\s+/);
 	const last = tokens.at(-1) ?? "";
 	const wrapped = /^(?:LS|RS|LC|RC|LG|RG|LE|LA)\((\w+)\)$/.exec(last);
 	return KEYCODES[(wrapped ? wrapped[1] : last).toUpperCase()];

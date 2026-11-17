@@ -95,12 +95,12 @@ describe("real words", () => {
  * contain, and it is what the rules have to hold at, not only at the start.
  */
 function stage(n: number, keyboardOrder = false) {
-	const order = teachingOrder(r, keyboardOrder);
+	const order = teachingOrder(r, keyboardOrder).map((k) => k.id);
 	const stats = practised(200, order.slice(0, n - 1));
 	const l = ladder(r, stats, TARGET, { keyboardOrder });
 	return {
-		letters: l.unlocked.map((id) => r.byId.get(id)!.char.toLowerCase()),
-		focus: l.focus === undefined ? undefined : r.byId.get(l.focus)!.char.toLowerCase(),
+		letters: l.keys.filter((k) => l.unlocked.includes(k.id)).map((k) => k.char.toLowerCase()),
+		focus: l.focus === undefined ? undefined : l.keys.find((k) => k.id === l.focus)?.char.toLowerCase(),
 		stats,
 	};
 }
@@ -186,5 +186,23 @@ describe("weighting", () => {
 		const letters = "easrtnioldch".split("");
 		const text = lesson(input({ letters, stats: practised(200, letters.map(idOf)), focus: "e", seed: 2 })).text;
 		for (const ch of letters) expect(chars(text), ch).toContain(ch);
+	});
+});
+
+describe("symbol/digit characters", () => {
+	it("places symbol chars as standalone tokens, not inside words", () => {
+		const letters = "easrtn@#".split("");
+		const text = lesson(input({ letters, focus: "e", seed: 1 })).text;
+		const tokens = text.split(" ");
+		// @ and # should appear as standalone tokens, not embedded in words.
+		expect(tokens).toContain("@");
+		expect(tokens).toContain("#");
+		// No word should contain @ or #.
+		for (const w of tokens) {
+			if (w === "@") continue;
+			if (w === "#") continue;
+			expect(w, `${w} should not contain symbol chars`).not.toContain("@");
+			expect(w, `${w} should not contain symbol chars`).not.toContain("#");
+		}
 	});
 });

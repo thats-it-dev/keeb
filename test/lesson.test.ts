@@ -145,7 +145,7 @@ describe("lesson engine", () => {
 		// built around that letter alone, so past a dozen letters half of them stopped carrying the focus.
 		// Only typing catches it, because the curriculum moves as the keys get faster.
 		const stats: StatMap = {};
-		for (const id of teachingOrder(r, false).slice(0, 13)) stats[id] = { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 0 };
+		for (const id of teachingOrder(r, false).map(k => k.id).slice(0, 13)) stats[id] = { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 0 };
 		let e = start(course, stats);
 		let now = 1000;
 		for (let line = 0; line < 10; line += 1) {

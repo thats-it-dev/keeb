@@ -85,9 +85,9 @@ describe("resolve", () => {
 		expect(r.layerKeyByPhysical.has("ctrl")).toBe(true);
 		expect(r.layerKeyByPhysical.has(" ")).toBe(true);
 		expect(r.layerKeyByPhysical.has("enter")).toBe(true);
-		expect(r.layerKeyByPhysical.get(" ")).toEqual({ keyId: "R_T2", toLayer: 1, fromLayer: 0, action: "tap", label: " " });
-		expect(r.layerKeyByPhysical.get("ctrl")).toEqual({ keyId: "L_T3", toLayer: 3, fromLayer: 0, action: "tap", label: "Ctrl" });
-		expect(r.layerKeyByPhysical.get("enter")).toEqual({ keyId: "R_T1", toLayer: 2, fromLayer: 0, action: "hold", label: "Enter" });
+		expect(r.layerKeyByPhysical.get(" ")).toEqual({ keyId: "R_T2", toLayer: 1, fromLayer: 0, action: "tap", label: " ", char: " " });
+		expect(r.layerKeyByPhysical.get("ctrl")).toEqual({ keyId: "L_T3", toLayer: 3, fromLayer: 0, action: "tap", label: "Ctrl", char: "Ctrl" });
+		expect(r.layerKeyByPhysical.get("enter")).toEqual({ keyId: "R_T1", toLayer: 2, fromLayer: 0, action: "hold", label: "Enter", char: "Enter" });
 	});
 
 	it("maps letter-prefixed labels to their first character, not the full label", () => {

@@ -15,7 +15,7 @@ export function handleKey(
 	const bk = e.key.toLowerCase();
 	if (resolved.layerKeyByBrowser.has(bk)) {
 		e.preventDefault();
-		onKey(resolved.layerKeyByBrowser.get(bk)!.label.toLowerCase());
+		onKey(resolved.layerKeyByBrowser.get(bk)!.char.toLowerCase());
 		return;
 	}
 	// A held key is one intention, not twenty: the OS sends repeat:true keydowns at ~30/sec, and each one
