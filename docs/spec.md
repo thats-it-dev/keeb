@@ -247,7 +247,36 @@ put a second, storable answer next to the one `ladder()` derives from stats that
 | `Lesson` object held across a session, `update()` on each result | `ladder()` recomputed at each run boundary | unchanged in spirit; a line is the unit that exists in keeb                                  |
 | focused letter drawn in the lesson header              | focus shown on the line, the keyboard and the progress list | one of our rules is "never convey state by colour alone", so focus needs a shape as well                     |
 
-## 12. Behaviour this spec must be testable against
+## 12. Layer keys and layer-char lessons
+
+keeb imports multi-layer ZMK keymaps and teaches characters that live on layers the learner cannot reach
+from the base layer without a hold.
+
+### Import
+- `&lt N <key>` (tap), `&lt_N N <key>` (toggle) and `&mo N <key>` (momentary) in a keycap's Custom binding
+  are detected as layer keys. The engine records `keyId`, `toLayer`, `fromLayer` and whether the switch
+  is tap or hold.
+- Non-taught keys — number row, thumb cluster, outer column — get their character from the keycap file's
+  `byKey` map on import, so the renderer and `charFor()` prefer the keycap character over the geometry's
+  printed label.
+
+### Routing
+- The engine routes layer keys by the character the keymap says the key sends (`rk.char`, label fallback),
+  not by the printed label on the keycap. A remapped board routes correctly by what the key actually sends,
+  not by what the keycap says it should be.
+
+### Layer-char lessons
+- After all base-layer letters are taught, the ladder walks non-base layers. For each layer, it collects
+  every single-character entry across the full layer (not just the switch key's own position), dedupes by
+  character, and appends them to the teaching order.
+- The lesson generator separates letters into word-letters (a–z) and symbol/digit chars. Words are built
+  from word-letters only. Symbol and digit chars join the lesson line as standalone tokens, placed at
+  seed-determined positions among the words.
+- The hint rings the layer key whose hold reaches the target's layer. The keyboard view shows the active
+  layer's characters. The engine accepts the character when typed, matching the layer to the target's
+  position in the line.
+
+## 13. Behaviour this spec must be testable against
 
 1. A learner with no practice at all gets exactly the 6 most frequent letters of the corpus, and the same
    6 again after a reload.
