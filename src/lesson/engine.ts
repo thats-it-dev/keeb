@@ -99,14 +99,18 @@ function recordStroke(stat: KeyStat, correct: boolean, elapsedMs: number): KeySt
 // the key we are waiting for.
 function place(course: Course, e: Engine): Engine {
 	const l = ladder(course.resolved, e.stats, course.targetCpm, course);
-	const letters = l.unlocked.map((id) => course.resolved.byId.get(id)?.char.toLowerCase() ?? "").filter(Boolean);
-	const focus = l.focus === undefined ? undefined : course.resolved.byId.get(l.focus)?.char.toLowerCase();
+	const unlocked = l.unlocked.map((id) => course.resolved.byStat.get(id)!);
+	// Letters get spelled into words; anything a layer produces gets struck as its own one-character word.
+	const letters = unlocked.filter((x) => /^[a-z]$/.test(x.char)).map((x) => x.char);
+	const tokens = unlocked.filter((x) => !/^[a-z]$/.test(x.char)).map((x) => x.char);
+	const focus = l.focus === undefined ? undefined : course.resolved.byStat.get(l.focus)?.char.toLowerCase();
 	const { text } = lesson({
 		letters,
+		tokens,
 		focus,
 		stats: e.stats,
 		targetCpm: course.targetCpm,
-		ids: course.resolved.byChar,
+		ids: new Map(course.resolved.routes.map((x) => [x.char, x.statId])), // a route, not the plastic, is what was practised
 		realWords: course.realWords ?? false,
 		seed: e.line + 1,
 	});

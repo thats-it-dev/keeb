@@ -1,8 +1,10 @@
 // The line the learner sees. Two rules hold no matter which word source is switched on: nothing but the
 // letters the ladder has opened, and the focused letter inside the line.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
+import { keymapFromKeycap, type KeycapBinding, type KeycapFile } from "../src/layout/keycap.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { lesson, type LessonInput } from "../src/lesson/generator.ts";
 import { isCleanWord } from "../src/lesson/clean.ts";
@@ -186,5 +188,34 @@ describe("weighting", () => {
 		const letters = "easrtnioldch".split("");
 		const text = lesson(input({ letters, stats: practised(200, letters.map(idOf)), focus: "e", seed: 2 })).text;
 		for (const ch of letters) expect(chars(text), ch).toContain(ch);
+	});
+});
+
+const layeredFile = JSON.parse(readFileSync(new URL("./fixtures/go60-layers.json", import.meta.url), "utf8")) as KeycapFile & { layers: KeycapBinding[][] };
+const lr = resolve(GO60, keymapFromKeycap(layeredFile, GO60).keymap!);
+const routeIds = new Map(lr.routes.map((x) => [x.char, x.statId]));
+
+describe("layered tokens in the line", () => {
+	it("places every token, the focused one at least twice", () => {
+		const one = input({ ids: routeIds, tokens: ["1", "7"], focus: "7", seed: 4 });
+		const l1 = lesson(one);
+		const ws = l1.text.split(" ");
+		expect(ws).toContain("1");
+		expect(ws.filter((w) => w === "7").length).toBeGreaterThanOrEqual(2);
+		for (const w of ws) expect(/^[a-z]+$/.test(w) || w === "1" || w === "7", w).toBe(true);
+		for (const ch of START) expect(chars(l1.text), ch).toContain(ch); // tokens may not starve the letters
+		expect(lesson(input({ ids: routeIds, tokens: ["1", "7"], focus: "7", seed: 4 })).text).toBe(l1.text);
+	});
+
+	it("counts a token's own route when deciding how much drill it needs", () => {
+		const statRoute = routeIds.get("2")!;
+		expect(statRoute).not.toBe("2"); // it is a key+layer id, not a character and not bare plastic
+		const plastic = statRoute.replace(/\.\d+$/, "");
+		const slow = (id: string) => practised(900, [id])[id];
+		const fast = (id: string) => practised(120, [id])[id];
+		const count = (stats: LessonInput["stats"]) => lesson(input({ stats, ids: routeIds, tokens: ["2"], seed: 9 })).text.split(" ").filter((w) => w === "2").length;
+		const onRoute = count({ ...practised(200, START.map(idOf)), [statRoute]: slow(statRoute), [plastic]: fast(plastic) });
+		const onPlastic = count({ ...practised(200, START.map(idOf)), [statRoute]: fast(statRoute), [plastic]: slow(plastic) });
+		expect(onRoute).toBeGreaterThan(onPlastic);
 	});
 });

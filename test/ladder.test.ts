@@ -1,9 +1,11 @@
 // The ladder is the curriculum: which letters are in the lesson, which one the lesson is built around, and
 // which one comes next. Two rules have to hold at once — never hand out a letter the learner cannot type,
 // and never hand out more than one letter at a time.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
+import { keymapFromKeycap, type KeycapBinding, type KeycapFile } from "../src/layout/keycap.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { press, start } from "../src/lesson/engine.ts";
 import { ladder, START_SIZE, teachingOrder } from "../src/lesson/ladder.ts";
@@ -158,5 +160,37 @@ describe("teaching order", () => {
 		// Cheapest row first: the six letters a keyboard-order learner starts on are all home-row letters.
 		expect(home.length).toBeGreaterThan(6);
 		expect(order.slice(0, 6).every((ch) => home.includes(ch))).toBe(true);
+	});
+});
+
+const layeredFile = JSON.parse(readFileSync(new URL("./fixtures/go60-layers.json", import.meta.url), "utf8")) as KeycapFile & { layers: KeycapBinding[][] };
+const lr = resolve(GO60, keymapFromKeycap(layeredFile, GO60).keymap!);
+const lrLetterRoutes = lr.routes.filter((x) => /^[a-z]$/.test(x.char));
+const lrLayerRoutes = lr.routes.filter((x) => x.layer > 0 && !/^[a-z]$/.test(x.char));
+
+describe("the layered ladder", () => {
+	it("orders routes by frequency with every layer character after the letters", () => {
+		const order = teachingOrder(lr, false);
+		const base = teachingOrder(r, false);
+		const charOf = (id: string) => lr.routes.find((x) => x.statId === id)?.char ?? "?";
+		// Same six a bare board hands out -- the curriculum is language-first, not layer-aware by accident.
+		expect(order.slice(0, START_SIZE).map(charOf)).toEqual(base.slice(0, START_SIZE).map((id) => r.byId.get(id)!.char.toLowerCase()));
+		const lastLetter = Math.max(...lrLetterRoutes.map((x) => order.indexOf(x.statId)));
+		for (const x of lrLayerRoutes) expect(order.indexOf(x.statId), x.char).toBeGreaterThan(lastLetter);
+		const first = order.slice(lastLetter + 1);
+		expect(first).toEqual([...first].sort((x, y) => (charOf(x) < charOf(y) ? -1 : charOf(x) > charOf(y) ? 1 : 0))); // untouched ties: character code point
+	});
+
+	it("opens a layer character when every letter route is at goal", () => {
+		const order = teachingOrder(lr, false);
+		const stats = atGoal(lrLetterRoutes.map((x) => x.statId));
+		const l = ladder(lr, stats, TARGET);
+		expect(l.unlocked).toEqual(order.slice(0, lrLetterRoutes.length + 1)); // all letters, then exactly one layer character
+		expect(l.next).toBe(order[lrLetterRoutes.length + 1]);
+	});
+
+	it("can focus a layer route", () => {
+		const stats = atGoal(lrLetterRoutes.map((x) => x.statId));
+		expect(ladder(lr, stats, TARGET).focus).toBe(teachingOrder(lr, false)[lrLetterRoutes.length]);
 	});
 });

@@ -50,7 +50,7 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number, options: 
 		const stat = stats[id] ?? emptyStat();
 		return {
 			id,
-			char: r.byId.get(id)!.char.toLowerCase(),
+			char: r.byStat.get(id)!.char,
 			confidence: confidence(stat, targetCpm),
 			best: bestConfidence(stat, targetCpm),
 			included: false,
@@ -80,23 +80,24 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number, options: 
 	};
 }
 
-/** The letters of this layout, in the order the lesson hands them out.
+/** The typable characters of this layout, in the order the lesson hands them out, as stat ids.
  *
  * `keyboardOrder` is a cost ranking, not a finger path: home row, then upper row, then the rest — and
  * inside a row, most frequent letter first. That is the same weighting keybr gives its keyboard layout,
  * and it keeps the two orders honest about the thing they have in common, which is that both start with
- * letters that make words possible.
+ * letters that make words possible. Letters come from the taught keys; layer characters join after the
+ * alphabet is dealt, because a layer is a poor fit for a brand-new typist.
  */
 export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[] {
-	const letters = r.keys.filter((k) => k.taught && /^[a-z]$/.test(k.char.toLowerCase()));
+	const routes = r.routes.filter((x) => x.layer > 0 || (/^[a-z]$/.test(x.char) && r.byId.get(x.keyId)!.taught));
 	const freq = frequencyOrder();
 	const rank = new Map(freq.map((ch, i) => [ch, i]));
-	const cost = (k: (typeof letters)[number]) => {
-		const role = roleOf(r.geometry, k.row);
-		return role === "home" ? 1 : role === "upper" ? 2 : 3;
+	const cost = (x: (typeof routes)[number]) => {
+		const role = roleOf(r.geometry, r.byId.get(x.keyId)!.row);
+		return role === "home" ? 1 : role === "upper" ? 2 : r.byId.get(x.keyId)!.taught ? 3 : 4;
 	};
-	const byFrequency = (a: (typeof letters)[number], b: (typeof letters)[number]) =>
-		(rank.get(a.char.toLowerCase()) ?? freq.length) - (rank.get(b.char.toLowerCase()) ?? freq.length) || (a.char < b.char ? -1 : 1);
-	const sorted = [...letters].sort((a, b) => (keyboardOrder ? cost(a) - cost(b) || byFrequency(a, b) : byFrequency(a, b)));
-	return sorted.map((k) => k.id);
+	const byFrequency = (a: (typeof routes)[number], b: (typeof routes)[number]) =>
+		(rank.get(a.char) ?? freq.length) - (rank.get(b.char) ?? freq.length) || (a.char < b.char ? -1 : 1);
+	const sorted = [...routes].sort((a, b) => (keyboardOrder ? cost(a) - cost(b) || byFrequency(a, b) : byFrequency(a, b)));
+	return sorted.map((x) => x.statId);
 }

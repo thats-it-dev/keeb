@@ -31,6 +31,8 @@ export type LessonInput = {
 	ids: CharIds;
 	/** Take words from the corpus instead of inventing them. */
 	realWords: boolean;
+	/** Characters that appear as their own word: layer routes cannot be spelled inside a letter model. */
+	tokens?: string[];
 	/** Which line this is. It seeds the random source, so the same state yields the same lesson. */
 	seed: number;
 	words?: number;
@@ -55,7 +57,9 @@ export function lesson(input: LessonInput): Lesson {
 	const words = input.words ?? WORDS_PER_LINE;
 	const allowed = new Set([...letters, " "]); // the space separates words, so it is always on the menu
 	const rng = makeRng(input.seed);
-	const need = focus === undefined ? [] : [focus];
+	const tokens = (input.tokens ?? []).filter((t) => t !== "" && t !== " ");
+	const used = new Set(tokens); // a token's only safe slot is its own: never a word
+	const need = focus === undefined || tokens.includes(focus) ? [] : [focus]; // a token is drilled as a word, not inside one
 	const real = input.realWords ? realCandidates(letters, focus) : [];
 	const nextWord = () =>
 		real.length >= MIN_CANDIDATES || (real.length > 0 && rng() < 0.8) ? realPick(real, stats, targetCpm, ids, rng) : modelWord(allowed, need, stats, targetCpm, ids, rng);
@@ -67,13 +71,27 @@ export function lesson(input: LessonInput): Lesson {
 		line.push(w);
 	}
 
+	// A layer character is not spelled; it is struck. Each token takes at least one word slot per line, the
+	// focused one two, and one more while its own route is slow -- looked up by stat id, because the plastic
+	// under a layer key is not what the learner is practising. With no tokens this loop draws no numbers at
+	// all, so a letter-only board generates byte-for-byte what it generated before layers existed.
+	for (const t of tokens) {
+		const times = (t === focus ? 2 : 1) + (weakness(t, stats, targetCpm, ids) > 0 ? 1 : 0);
+		for (let k = line.filter((w) => w === t).length; k < times; k += 1) {
+			let slot = Math.floor(rng() * line.length);
+			for (let tries = 0; tries < 8 && used.has(line[slot]!); tries += 1) slot = Math.floor(rng() * line.length);
+			line[slot] = t;
+		}
+	}
+
 	// An unlocked letter that never appears is a letter nobody is asked to type, one nobody types never gets
 	// faster, and one that never gets faster holds the next letter locked. Every missing unlocked letter
-	// is forced into its own word so the learner meets all keys.
+	// is forced into its own word so the learner meets all keys -- into a slot no token is standing in.
 	const gaps = letters.filter((ch) => !line.some((w) => w.includes(ch)));
 	const first = gaps.length === 0 ? 0 : input.seed % gaps.length;
-	for (let i = 0; i < Math.min(gaps.length, line.length); i += 1) {
-		line[i] = modelWord(allowed, [...need, gaps[(first + i) % gaps.length]!], stats, targetCpm, ids, rng);
+	const free = line.map((w, i) => (used.has(w) ? -1 : i)).filter((i) => i >= 0);
+	for (let i = 0; i < Math.min(gaps.length, free.length); i += 1) {
+		line[free[i]!] = modelWord(allowed, [...need, gaps[(first + i) % gaps.length]!], stats, targetCpm, ids, rng);
 	}
 
 	return { letters: [...allowed], text: line.filter((w) => w !== "").join(" ") || need[0] || "", focus };
