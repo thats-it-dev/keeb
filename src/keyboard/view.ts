@@ -5,6 +5,9 @@ import type { RenderKey } from "./types.ts";
 import { ly } from "./routes.ts";
 import { routeKey } from "../stats/stats.ts";
 
+// Keycap gutter, in board units (a key is 100): 4 per side leaves an 8-unit channel between neighbours.
+const PAD = 4;
+
 // Draws a resolved layout. Coordinates are already in 1/100 key units, so the SVG user unit is a hundredth.
 export class TtKeyboard extends LitElement {
 	static properties = { resolved: { type: Object }, active: { state: true }, missed: { state: true }, focusId: { state: true }, route: { type: Object } };
@@ -103,10 +106,12 @@ export class TtKeyboard extends LitElement {
 			.join(" ");
 		const cx = k.x + k.w / 2;
 		const cy = k.y + k.h / 2;
+		// A gutter between neighbours: the face is inset, so keycaps read as separate plastic rather than
+		// one grid with lines. Rings live further in (PAD + 4) so they sit inside the face, not on it.
 		const t = k.rot ? `rotate(${k.rot / 10} ${cx} ${cy})` : nothing; // an empty transform attribute makes the group unmeasurable
-		const ring = k.id === routeKey(this.focusId) ? svg`<rect class="ring" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
+		const ring = k.id === routeKey(this.focusId) ? svg`<rect class="ring" x=${k.x + 8} y=${k.y + 8} width=${Math.max(0, k.w - 16)} height=${Math.max(0, k.h - 16)} rx="12"></rect>` : nothing;
 		const route = this.route;
-		const wayThere = route && route.layer > 0 && route.ringId === k.id && k.id !== routeKey(this.focusId) ? svg`<rect class="routering ly${ly(route.layer)}" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
+		const wayThere = route && route.layer > 0 && route.ringId === k.id && k.id !== routeKey(this.focusId) ? svg`<rect class="routering ly${ly(route.layer)}" x=${k.x + 8} y=${k.y + 8} width=${Math.max(0, k.w - 16)} height=${Math.max(0, k.h - 16)} rx="12"></rect>` : nothing;
 		// A key whose only character is its base one -- every key on a built-in board, and most keys on a
 		// layered one -- renders exactly the markup it rendered before layers existed. The corner-slot
 		// renderer only wakes up for keycaps that earned a second face.
@@ -114,7 +119,7 @@ export class TtKeyboard extends LitElement {
 		// Nested templates must use the svg tag: parsed on their own, <g>/<rect>/<text> land in the HTML
 		// namespace and render nothing at all.
 		return svg`<g class=${cls} data-id=${k.id} transform=${t}>
-			<rect x=${k.x} y=${k.y} width=${k.w} height=${k.h}></rect>
+			<rect x=${k.x + PAD} y=${k.y + PAD} width=${Math.max(0, k.w - 2 * PAD)} height=${Math.max(0, k.h - 2 * PAD)}></rect>
 			${ring}
 			${wayThere}
 			${multi ? this.#glyphs(k, cx, cy) : svg`<text x=${cx} y=${cy}>${k.char === "" ? k.label : display(k.char)}</text>`}

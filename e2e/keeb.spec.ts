@@ -47,7 +47,7 @@ test("marks the keys a keymap does not claim", async ({ page }) => {
 	await expect(key(page, "L_C6R2")).toHaveClass(/\bunt\b/); // the Tab column: on the board, not in the lesson
 	await expect(key(page, "L_C5R3")).not.toHaveClass(/\bunt\b/); // "a"
 	const box = await key(page, "L_C5R3").boundingBox();
-	expect(box && box.width).toBeGreaterThan(20); // and it actually occupies pixels
+	expect(box && box.width).toBeGreaterThan(15); // and it actually occupies pixels (the face is inset by the keycap gutter, §14.4)
 });
 
 test("highlights the physical key of the character you typed", async ({ page }) => {

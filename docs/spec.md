@@ -344,5 +344,7 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
    fill win when both would apply). Control names shrink to keycap symbols on the face -- Enter draws
    "⏎" and Backspace "⌫" -- while the hint line and the stats keep spelling them out.
    The route light is an outline, never a fill: the fill lane stays reserved for the key that was just
-   struck (§12.16), so the struck-key contract from §12 is unchanged. A space is the space bar on every
+   struck (§12.16), so the struck-key contract from §12 is unchanged. Keycaps draw with a gutter: every
+   face is inset 4 units from its cell, so neighbours never touch, and the focus and way-there rings sit
+   8 units in -- inside the face, not across the channel. A space is the space bar on every
    layer: layer `SPACE` bindings route nowhere and draw nothing.

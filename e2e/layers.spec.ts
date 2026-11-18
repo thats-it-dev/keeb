@@ -71,6 +71,25 @@ test("a plain board renders exactly what it rendered before layers", async ({ pa
 	await expect(page.locator("tt-keyboard g.k text")).toHaveCount(60); // one text per key: no glyph classes at all
 	await expect(page.locator("tt-keyboard text.g")).toHaveCount(0);
 	await expect(page.locator(".hint")).toHaveCount(0); // a base route needs no instruction
+	// Keys do not touch: two upper-row neighbours have a visible gutter between their faces, and a ring
+	// (when there is one) sits inside its own key's face. One evaluate, not boundingBox() element-waits.
+	const geom = await page.evaluate(() => {
+		const kb = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-keyboard")!;
+		const root = ((kb as unknown as { renderRoot?: ShadowRoot }).renderRoot ?? kb) as unknown as Element;
+		const box = (sel: string) => {
+			const el = root.querySelector(sel);
+			if (!el) return null;
+			const b = (el as SVGGraphicsElement).getBBox();
+			const g = el.closest("g[data-id]") as SVGGElement;
+			return { gx: Number(g.getAttribute("data-id")), x: b.x, w: b.width };
+		};
+		const q = box('g[data-id="L_C5R2"] > rect:not([class])');
+		const w = box('g[data-id="L_C4R2"] > rect:not([class])');
+		const ring = box("g[data-id=\"L_C5R2\"] rect.ring") ?? box("g[data-id=\"L_C5R2\"] rect.routering");
+		return { q, w, ring };
+	});
+	expect(geom.q && geom.w && geom.q.x + geom.q.w < geom.w.x).toBe(true); // the gutter: q's face ends before w's begins
+	if (geom.ring && geom.q) expect(geom.ring.x >= geom.q.x && geom.ring.x + geom.ring.w <= geom.q.x + geom.q.w).toBe(true);
 	// The symbol amendment (§12.16) rides every board: the built-in's Enter thumb draws "⏎", not the word.
 	await expect(key(page, "R_T1")).toContainText("\u23CE");
 });
