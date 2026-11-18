@@ -8,11 +8,11 @@ import { DailyTally, savedDailyGoalMin, setDailyGoalMin } from "./app/daily.ts";
 import { dailyBar } from "./ui/daily-bar.ts";
 import { cpmToWpm, targetTimeMs, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { ladder } from "./lesson/ladder.ts";
-import { overview, type KeyInfo } from "./stats/overview.ts";
+import { overview, routeRows } from "./stats/overview.ts";
 import { historySection } from "./stats/history-section.ts";
 import { insightPanel, type PanelCard } from "./stats/panel.ts";
 import { isPreviewHost, paneSessions } from "./stats/demo.ts";
-import { resolve, keyLabel, type Resolved } from "./keyboard/resolve.ts";
+import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { routeOf } from "./keyboard/routes.ts";
 import type { Geometry, Keymap } from "./keyboard/types.ts";
 import { iconSettings } from "./ui/icons.ts";
@@ -20,7 +20,8 @@ import { countItems, insightCards } from "./ui/insight-cards.ts";
 import { appStyles } from "./ui/app-styles.ts";
 import { settingsDialog, syncDialog } from "./ui/settings-dialog.ts";
 import { progressSection } from "./stats/progress-section.ts";
-import { boardNotice, lastKey, readout } from "./ui/practice-line.ts";
+import { boardNotice, lastKey, readout, routeHint } from "./ui/practice-line.ts";
+import { describeRoute } from "./stats/format.ts";
 import { Account } from "./app/account.ts";
 import { importLayout, loadLayouts, removeBoard, removeMap, type LayoutChange } from "./app/boards.ts";
 import { rememberSelection, savedSelection } from "./app/selection.ts";
@@ -98,8 +99,7 @@ export class AppMain extends LitElement {
 	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
 	ready = false;
 	lastId = "";
-	// What the lesson asks for now, and the speed of the last keystroke. Parent state both: reading them off
-	// the practice node mid-render would query a child this same pass is creating.
+	// Render input for the route light: reading it off the practice node mid-render would query a child this pass is creating.
 	routeChar = "";
 	nowCpm = 0;
 	targetCpm = DEFAULT_SETTINGS.targetCpm;
@@ -335,6 +335,7 @@ export class AppMain extends LitElement {
 								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords} @tt-line=${() => (this.routeChar = this.#practice?.pendingChar ?? "")}></tt-practice>`
 								: nothing}
 							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .route=${routeOf(r, this.routeChar)}></tt-keyboard>
+							${routeHint(r, this.routeChar)}
 							<div class="row">
 								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 								${lastKey(r, this.lastId)}
@@ -356,9 +357,8 @@ export class AppMain extends LitElement {
 	// the engine cannot mean different things. One call per render; the model behind it is memoised.
 	#overview() {
 		const r = this.#resolved;
-		const keys: KeyInfo[] = r.keys.map((k) => ({ id: k.id, label: keyLabel(k), hand: k.hand === "l" ? "left" : "right" }));
 		const l = ladder(r, this.stats, this.targetCpm, { keyboardOrder: this.keyboardOrder });
-		return overview(this.stats, this.targetCpm, keys, { unlocked: l.unlocked, next: l.next, focus: l.focus });
+		return overview(this.stats, this.targetCpm, routeRows(r), { unlocked: l.unlocked, next: l.next, focus: l.focus });
 	}
 
 	#history() {
@@ -376,7 +376,7 @@ export class AppMain extends LitElement {
 	// The cards live with the pane, not with the section they describe, so both have to pick the same rows the
 	// chart draws -- demo or real, this layout only.
 	#cards(): PanelCard[] {
-		return insightPanel(paneSessions(this.demo, layoutKey(this.geometryId, this.keymapId), this.sessions), this.targetCpm);
+		return insightPanel(paneSessions(this.demo, layoutKey(this.geometryId, this.keymapId), this.sessions), this.targetCpm, (id) => describeRoute(id, (s) => this.#resolved.routes.find((x) => x.statId === s)?.char ?? s, (l) => this.#resolved.layerNames[l] ?? ""));
 	}
 
 	// Escape hides the docked column; the shell closes its own drawer on Escape, and the settings modal takes

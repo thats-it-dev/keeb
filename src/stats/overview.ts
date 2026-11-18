@@ -2,8 +2,10 @@
 // samples that exist for it. A key never struck has no speed, which is not the same as a speed of zero,
 // and counting it as one is how a stats screen starts lying.
 
-import { emptyStat, errorRate, bestTimeMs, timeToTypeMs, type StatMap } from "./stats.ts";
+import { emptyStat, errorRate, bestTimeMs, routeKey, timeToTypeMs, type StatMap } from "./stats.ts";
 import { CHARS_PER_WORD } from "./stats.ts";
+import { describeRoute } from "./format.ts";
+import { keyLabel } from "../keyboard/resolve.ts";
 
 export type KeyRow = {
 	id: string;
@@ -60,6 +62,27 @@ export type Overview = {
 };
 
 export type KeyInfo = { id: string; label: string; hand: "left" | "right" | "none" };
+
+/** The stats table's rows for a resolved board: one per physical key -- exactly what a built-in layout
+ *  always listed -- plus one row per LAYER route, so a digit learned on NavNum gets its own line and its
+ *  own "at goal" count instead of hiding inside the plastic it shares with a letter. */
+export type RouteRowSource = {
+	keys: readonly { id: string; char: string; label: string; hand: string }[];
+	routes: readonly { char: string; keyId: string; layer: number; statId: string }[];
+	layerNames: readonly string[];
+	byId: { get(id: string): { hand: string } | undefined };
+};
+
+export function routeRows(r: RouteRowSource): KeyInfo[] {
+	const rows: KeyInfo[] = r.keys.map((k) => ({ id: k.id, label: keyLabel(k), hand: k.hand === "l" ? "left" : "right" }));
+	const charOf = (s: string) => r.routes.find((x) => x.statId === s)?.char ?? s;
+	const layerName = (l: number) => r.layerNames[l] ?? "";
+	for (const x of r.routes) {
+		if (x.layer === 0) continue;
+		rows.push({ id: x.statId, label: describeRoute(x.statId, charOf, layerName), hand: r.byId.get(routeKey(x.statId))?.hand === "l" ? "left" : "right" });
+	}
+	return rows;
+}
 
 /** What the curriculum says about this layout right now. The screen reads the same `Ladder` the lesson
  *  engine builds its lines from, so "at goal" here and "unlocks next" there cannot mean different things. */

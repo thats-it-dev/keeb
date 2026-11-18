@@ -1,3 +1,18 @@
+import { routeLayer } from "./stats.ts";
+
+/** What a stat id means to a human: "T" on the base layer, "1 · NavNum" on a layer, the raw id when the
+ *  caller's layout knows nothing about it. The two lookups arrive as functions so this stays honest when
+ *  the row comes from an OLD session whose keymap is gone from this browser. */
+export function describeRoute(statId: string, charOf: (s: string) => string, layerName: (l: number) => string): string {
+	const c = charOf(statId);
+	if (c === statId) return statId;
+	const label = c === " " ? "space" : c.toUpperCase();
+	const layer = routeLayer(statId);
+	if (layer === 0) return label;
+	const name = layerName(layer);
+	return `${label} · ${name === "" ? `layer ${layer}` : name}`;
+}
+
 /** Format total practised minutes as a human-readable string. */
 export function formatPractised(minutes: number): string {
 	if (minutes < 60) {

@@ -50,6 +50,12 @@ export const appStyles = [
 		.daily { display: flex; gap: 10px; align-items: center; width: 100%; max-width: 30rem; }
 		.hit { color: var(--primary); font-weight: 600; }
 		.warn { color: var(--text-muted); }
+		/* The hold-and-press instruction under the board. Its words carry the whole state; the colour just
+		 * matches it to the layer legend. */
+		.hint { margin: 4px 0 0; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+		.hint.ly1 { color: var(--chart-2); }
+		.hint.ly2 { color: var(--chart-3); }
+		.hint.ly3 { color: var(--chart-4); }
 		.full { grid-column: 1 / -1; }
 		.board { display: flex; align-items: center; gap: 10px; }
 		.problems { margin: 0; padding-left: 1.1em; color: var(--accent); font-size: 0.85rem; }

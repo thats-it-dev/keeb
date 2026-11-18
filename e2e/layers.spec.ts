@@ -70,6 +70,7 @@ test("a plain board renders exactly what it rendered before layers", async ({ pa
 	await expect(page.locator("tt-keyboard g.k")).toHaveCount(60);
 	await expect(page.locator("tt-keyboard g.k text")).toHaveCount(60); // one text per key: no glyph classes at all
 	await expect(page.locator("tt-keyboard text.g")).toHaveCount(0);
+	await expect(page.locator(".hint")).toHaveCount(0); // a base route needs no instruction
 });
 
 test("the route lights the key, its layer colour, and the ring on the way there", async ({ page }) => {
@@ -90,6 +91,8 @@ test("the route lights the key, its layer colour, and the ring on the way there"
 	await expect(key(page, route!.keyId).locator("text.gok")).toHaveCount(1);
 	await expect(page.locator("rect.routering")).toHaveCount(1);
 	if (route!.ringId) await expect(key(page, route!.ringId).locator("rect.routering")).toBeVisible();
+	await expect(page.locator(".hint")).toBeVisible();
+	await expect(page.locator(".hint")).toHaveText(new RegExp(`hold ${route!.layer === 1 ? "Sym" : route!.layer === 2 ? "NavNum" : "(Fn|layer \\d)"} · .+, press ${ch === ch.toUpperCase() ? ch : ch.toUpperCase()}`));
 });
 
 test("the first character of every fresh line already has its route lit", async ({ page }) => {
