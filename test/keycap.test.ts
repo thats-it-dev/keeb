@@ -106,3 +106,59 @@ describe("character of a single binding", () => {
 		expect(charOfBinding({ value: "&workspace_left" })).toBeUndefined(); // a macro, referred to by name
 	});
 });
+
+// A real Go60 layered keymap (redacted): 6 layers, custom hold-taps declared in
+// custom_defined_behaviors, &trans inheritance, and modifier calls nested inside one Custom string.
+const layered = JSON.parse(readFileSync(new URL("./fixtures/go60-layers.json", import.meta.url), "utf8")) as Fixture;
+
+describe("importing a layered keymap", () => {
+	const { keymap, geometryId, problems } = keymapFromKeycap(layered, GO60);
+
+	it("keeps every character-bearing layer under its file index", () => {
+		expect(problems).toEqual([]);
+		expect(geometryId).toBe("go60");
+		expect(keymap!.layers!.map((l) => l.index)).toEqual([0, 1, 2, 3]); // mouse and Magic bind no character
+		expect(keymap!.layers!.map((l) => l.name)).toEqual(["Main", "Sym", "NavNum", "Fn"]);
+		expect(keymap!.layers![3].byKeyId["L_C4R3"]).toBe("q"); // the Fn layer types things too, under its real index
+		expect(Object.keys(keymap!.layers![3].byKeyId).length).toBeGreaterThan(0);
+		expect(keymap!.layers![2].byKeyId["L_C4R4"]).toBe("1"); // a NavNum digit, on the row below home
+		expect(keymap!.layers![2].byKeyId["L_C6R1"]).toBeUndefined(); // &trans inherits; it adds no character
+		expect(keymap!.rows.home?.l[1]).toBe("n"); // the base layer still lands in the rows grid
+	});
+
+	it("reads the layer keys out of hold-tap bindings, custom ones included", () => {
+		expect(keymap!.layerKeys).toEqual([
+			{ layer: 3, keyId: "L_T3", activation: "hold-tap" }, // "&lt 3 TAB"
+			{ layer: 1, keyId: "R_T2", activation: "hold-tap" }, // "&lt 1 RET"
+			{ layer: 2, keyId: "R_T1", activation: "hold-tap" }, // "&lt_bspc 2 BSPC", declared custom
+		]);
+	});
+
+	it("takes a momentary binding as a layer key", () => {
+		const edited = structuredClone(layered) as Fixture;
+		edited.layers[0][56] = { value: "Custom", params: [{ value: "&mo 1" }] };
+		const { keymap: km } = keymapFromKeycap(edited, GO60);
+		expect(km!.layerKeys).toContainEqual({ layer: 1, keyId: "L_T3", activation: "momentary" });
+	});
+
+	it("refuses a later layer that runs short of the board's keys", () => {
+		const edited = structuredClone(layered) as Fixture;
+		edited.layers[1] = edited.layers[1].slice(0, 20);
+		const { keymap: km, problems: p } = keymapFromKeycap(edited, GO60);
+		expect(km).toBeUndefined();
+		expect(p.join()).toMatch(/layer 1/);
+	});
+
+	it("folds a nested modifier string to the key underneath", () => {
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp LG(LS(N5))" }] })).toBe("5");
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&hmr RGUI A" }] })).toBe("a");
+	});
+
+	it("yields no character and no layer key for an undeclared custom behaviour", () => {
+		const edited = structuredClone(layered) as Fixture;
+		edited.layers[0][56] = { value: "Custom", params: [{ value: "&nope 4 RET" }] };
+		const { keymap: km } = keymapFromKeycap(edited, GO60);
+		expect(km!.layers![0].byKeyId["L_T3"]).toBeUndefined();
+		expect(km!.layerKeys!.some((k) => k.keyId === "L_T3")).toBe(false);
+	});
+});
