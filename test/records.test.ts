@@ -49,11 +49,11 @@ describe("records", () => {
 		// The field was renamed before publishing because goat flags `id` as reserved across language
 		// code generators, and a published field name is permanent. Records written under the old name are
 		// still in repos, so reading accepts both and writing emits only the new one.
-		expect(statsFrom([{ keyId: "a", ttMs16: 3200, samples: 10, errors: 1 }, { keyId: "s", ttMs16: 900, samples: 2, errors: 0 }])).toEqual({
+		expect(statsFrom([{ keyId: "a", ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 }, { keyId: "s", ttMs16: 900, bestMs16: 900, samples: 2, errors: 0 }])).toEqual({
 			a: stat(3200, 10, 1),
 			s: stat(900, 2),
 		});
-		expect(statsFrom([{ id: "a", ttMs16: 3200, samples: 10, errors: 1 } as never])).toEqual({ a: stat(3200, 10, 1) });
+		expect(statsFrom([{ id: "a", ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 } as never])).toEqual({ a: stat(3200, 10, 1) });
 		// the new name wins when a row somehow carries both
 		expect(Object.keys(statsFrom([{ keyId: "d", id: "f", ttMs16: 1, samples: 1, errors: 0 }]))).toEqual(["d"]);
 		expect(geometryFromRecord({ split: false, keys: [{ id: "L_C5R3", hand: "l", row: 2, col: 5, x: 0, y: 0, w: 100, h: 100, rot: 0 } as never] }).keys[0]!.id).toBe("L_C5R3");
@@ -76,13 +76,14 @@ describe("records", () => {
 	});
 
 	it("merges two devices by summing samples and weighting the means", () => {
-		const local: StatMap = { a: stat(3200, 10, 1) }; // 200ms per key
-		const remote: StatMap = { a: stat(4800, 30, 2), b: stat(1600, 4) };
+		const local: StatMap = { a: stat(3200, 40, 4) }; // 200ms per key
+		const remote: StatMap = { a: stat(4800, 60, 6), b: stat(1600, 4) };
 		const m = mergeProgress(local, remote);
-		expect(m.a).toEqual({ ttMs16: 4400, bestMs16: 3200, samples: 40, errors: 3 });
+		expect(m.a).toEqual({ ttMs16: 4160, bestMs16: 3200, samples: 100, errors: 10 });
 		expect(m.b).toEqual(stat(1600, 4));
-		// 4400/16 = 275ms: the slow device's 30 samples dominate, which is the point of weighting.
-		expect(Math.round(m.a!.ttMs16 / 16)).toBe(275);
+		// 4160/16 = 260ms: the slow device's 60 samples dominate, which is the point of weighting. The
+		// sub-floor remote b rides along untouched — a lone record is copied, not re-earned.
+		expect(Math.round(m.a!.ttMs16 / 16)).toBe(260);
 	});
 
 	it("finds nothing new in a record it has already folded in", () => {
@@ -100,7 +101,9 @@ describe("records", () => {
 		// weights it by the ten strokes that are actually new.
 		const seen = { a: stat(3200, 10, 2) };
 		const remote = { a: stat(4000, 20, 3) };
-		expect(progressGrowth(seen, remote)).toEqual({ a: stat(4000, 10, 1) });
+		// The growth record is below the trust floor on its own account (10 new strokes), so it carries no
+		// best claim — §12-11b. Folding it in still cannot unlock anything it has not believed.
+		expect(progressGrowth(seen, remote)).toEqual({ a: { ttMs16: 4000, bestMs16: 0, samples: 10, errors: 1 } });
 		// Folded into a local copy of the record, the counts land where the repo says they are and the mean
 		// lands between the two devices rather than on an invented number.
 		const merged = foldProgress({ a: stat(3200, 10, 2) }, seen, remote);
@@ -128,9 +131,9 @@ describe("records", () => {
 	});
 
 	it("reads progress back into the shape the ladder wants", () => {
-		const rec = progressRecord("go60+qwerty", { a: stat(3000, 12, 1) }, 1_700_000_000_000);
+		const rec = progressRecord("go60+qwerty", { a: stat(3000, 40, 1) }, 1_700_000_000_000);
 		expect(rec.$type).toBe(PROGRESS);
-		expect(fromProgressRecord(rec as unknown as Record<string, unknown>)).toEqual({ layout: "go60+qwerty", stats: { a: stat(3000, 12, 1) } });
+		expect(fromProgressRecord(rec as unknown as Record<string, unknown>)).toEqual({ layout: "go60+qwerty", stats: { a: stat(3000, 40, 1) } });
 		expect(fromProgressRecord({ $type: SETTINGS, layout: "x" })).toBeUndefined();
 	});
 
@@ -198,9 +201,9 @@ describe("session rows", () => {
 		// This field used to be dropped on read. Everything in stats/insights.ts -- per-key trends, hesitation,
 		// goal crossings -- is built from it, and the app looks identical without it except that four cards
 		// quietly fall back to "not enough data". A round trip through the writer is the assertion that holds.
-		const written = sessionRecord("go60+qwerty", { chars: 40, errors: 2, ms: 30_000, stats: { a: { ttMs16: 2400, bestMs16: 2400, samples: 12, errors: 2 } } });
+		const written = sessionRecord("go60+qwerty", { chars: 40, errors: 2, ms: 30_000, stats: { a: { ttMs16: 2400, bestMs16: 2400, samples: 40, errors: 2 } } });
 		const row = fromSessionRecord(written as unknown as Record<string, unknown>, newKey());
-		expect(row?.stats).toEqual({ a: { ttMs16: 2400, bestMs16: 2400, samples: 12, errors: 2 } });
+		expect(row?.stats).toEqual({ a: { ttMs16: 2400, bestMs16: 2400, samples: 40, errors: 2 } });
 	});
 
 	it("reads an older record that carries no stats as an empty snapshot, not a crash", () => {

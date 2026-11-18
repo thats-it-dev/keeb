@@ -5,7 +5,7 @@
 // all the decisions live here.
 import { TID } from "@atproto/common-web";
 import { LAYOUT, PROGRESS, SETTINGS, SESSION } from "./lexicons.ts";
-import { bestMs, mergeAll, progressGrowth, type KeyStat, type StatMap } from "../stats/stats.ts";
+import { bestMs, mergeAll, progressGrowth, TRUST_SAMPLES, type KeyStat, type StatMap } from "../stats/stats.ts";
 import { ROW_ROLE_VALUES, type Geometry, type Key, type Keymap, type KeymapLayer, type LayerKey, type RowRole } from "../keyboard/types.ts";
 import { rolesForRows } from "../layout/parse.ts";
 import type { Settings } from "../data/store.ts";
@@ -195,10 +195,13 @@ export function statsFrom(list: ({ ttMs16: number; bestMs16?: number; samples: n
 		const id = wireKeyId(s ?? { ttMs16: 0, samples: 0, errors: 0 });
 		if (!id) continue;
 		// A record from before `bestMs16` carries no `bestMs16` at all, so the mean it does carry is the best it
-		// can honestly claim. Where both are present the best wins, and `min` normalises a record whose mean
-		// somehow reads faster than the fastest mean it claims to have held.
+		// can honestly claim — once that mean is believable (a key still under the trust floor has claimed
+		// nothing, which is why `keyStats` writes 0 for one). Where both are present the best wins, and `min`
+		// normalises a record whose mean somehow reads faster than the fastest mean it claims to have held.
 		const claim = n(s.bestMs16);
-		out[id] = { ttMs16: n(s.ttMs16), bestMs16: claim > 0 ? Math.min(claim, n(s.ttMs16)) : n(s.ttMs16), samples: n(s.samples), errors: n(s.errors) };
+		const mean = n(s.ttMs16);
+		const trusted = n(s.samples) >= TRUST_SAMPLES;
+		out[id] = { ttMs16: mean, ...(claim > 0 ? { bestMs16: Math.min(claim, mean) } : trusted ? { bestMs16: mean } : {}), samples: n(s.samples), errors: n(s.errors) };
 	}
 	return out;
 }

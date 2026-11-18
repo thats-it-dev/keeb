@@ -142,12 +142,12 @@ describe("sync", () => {
 		// Nothing rewrites a learner's existing records, so a pull has to understand the older row shape
 		// or their practice history would come back empty without saying so.
 		const { session } = fake({
-			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/4444legacy`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ id: "a", ttMs16: 2000, samples: 7, errors: 0 }], updatedAt: Math.round(Date.now() / 1000) } }],
+			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/4444legacy`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ id: "a", ttMs16: 2000, samples: 40, errors: 0 }], updatedAt: Math.round(Date.now() / 1000) } }],
 			[SETTINGS]: [],
 			[SESSION]: [],
 		});
 		const res = await new Sync(session, memStore()).pull();
-		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 2000, bestMs16: 2000, samples: 7, errors: 0 } });
+		expect(res.progress["go60+qwerty"]).toEqual({ a: { ttMs16: 2000, bestMs16: 2000, samples: 40, errors: 0 } }); // a believable mean is its claim
 	});
 
 	it("writes a session and its progress with validate:false, the only way a hosted PDS accepts these", async () => {
@@ -242,11 +242,11 @@ describe("sync", () => {
 			uri: `at://${DID}/${PROGRESS}/2222other`,
 			value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "a", ttMs16, samples, errors }], updatedAt: now },
 		});
-		const rows = { [SESSION]: [], [PROGRESS]: [rec(10, 4000, 1)], [SETTINGS]: [], [LAYOUT]: [] };
+		const rows = { [SESSION]: [], [PROGRESS]: [rec(40, 4000, 4)], [SETTINGS]: [], [LAYOUT]: [] };
 		const { session } = fake(rows);
 		const store = memStore();
 		const sync = new Sync(session, store);
-		let local: StatMap = { a: { ttMs16: 1600, samples: 10, errors: 0 } }; // this device: 10 strokes at 100ms
+		let local: StatMap = { a: { ttMs16: 1600, samples: 40, errors: 0 } }; // this device: 40 strokes at 100ms
 		const round = async () => {
 			const { progress } = await sync.pull();
 			const remote = progress["go60+qwerty"]!;
@@ -254,17 +254,17 @@ describe("sync", () => {
 			await store.save({ ...store.state, progressSeen: { ...store.state.progressSeen, "go60+qwerty": remote } });
 		};
 		await round();
-		expect(local.a).toEqual({ ttMs16: 2800, bestMs16: 1600, samples: 20, errors: 1 }); // 100ms and 250ms, evenly weighted
-		rows[PROGRESS] = [rec(30, 3840, 3)]; // the other device practises: 20 more strokes
+		expect(local.a).toEqual({ ttMs16: 2800, bestMs16: 1600, samples: 80, errors: 4 }); // 100ms and 250ms, evenly weighted
+		rows[PROGRESS] = [rec(60, 3840, 6)]; // the other device practises: 20 more strokes
 		await round();
 		await round(); // and says nothing the second time
-		expect(local.a!.samples).toBe(40); // 10 here + 10 + 20 there, not 70
-		expect(local.a!.errors).toBe(3);
-		// 208 ms: the 20 new strokes arrive at the record's current mean (240 ms), weighted against the 20
-		// samples already accounted for (175 ms). Not the 183 ms an exact per-stroke ledger would print, and
-		// deliberately not a number subtracted out of two exponentially weighted means — that arithmetic gave
-		// 205 here, 0 ms when the other device sped up, and 1875 ms when it slowed down.
-		expect(Math.round(local.a!.ttMs16 / 16)).toBe(208);
+		expect(local.a!.samples).toBe(100); // 40 here + 40 + 20 there, not 140
+		expect(local.a!.errors).toBe(6);
+		// 188 ms: the 20 new strokes arrive at the record's current mean (240 ms), weighted against the 80
+		// samples already accounted for (175 ms). The record cannot say what speed the strokes in between
+		// ran at, so the fold estimates — and the estimate stays inside the range that was actually typed,
+		// which the subtraction arithmetic (0 ms one way, 1875 ms the other) could not promise.
+		expect(Math.round(local.a!.ttMs16 / 16)).toBe(188);
 		expect(Math.round(local.a!.ttMs16 / 16)).toBeLessThanOrEqual(250); // nothing slower than the slowest evidence
 		expect(Math.round(local.a!.ttMs16 / 16)).toBeGreaterThanOrEqual(100); // nothing faster than the fastest
 	});

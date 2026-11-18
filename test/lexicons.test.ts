@@ -48,15 +48,18 @@ describe("lexicons", () => {
 	});
 
 	it("accept a progress record and read it back unchanged", () => {
-		const stats = { a: { ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 }, f: { ttMs16: 900, bestMs16: 600, samples: 3, errors: 0 } };
+		const stats = { a: { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 1 }, f: { ttMs16: 900, bestMs16: 600, samples: 33, errors: 0 } };
 		const rec = progressRecord("go60+qwerty", stats, Date.now());
 		expect(check(rec as unknown as Record<string, unknown>)).toEqual([]);
 		expect(statsFrom(rec.stats)).toEqual(stats);
 		// `bestMs16` is optional on the wire, so a record from a device that predates it still validates, and
-		// reads back claiming the only figure it has: its own mean.
-		const legacy = { a: { ttMs16: 3200, samples: 10, errors: 1 } };
+		// reads back claiming the only figure it has: its own mean — once that mean is believable. A record
+		// still under the trust floor claims nothing, so a lucky cold stroke cannot come back from sync as
+		// an earned best.
+		const legacy = { a: { ttMs16: 3200, samples: 40, errors: 1 } };
 		expect(check(progressRecord("go60+qwerty", legacy, Date.now()) as unknown as Record<string, unknown>)).toEqual([]);
-		expect(statsFrom([{ keyId: "a", ttMs16: 3200, samples: 10, errors: 1 } as never])).toEqual({ a: { ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 } });
+		expect(statsFrom([{ keyId: "a", ttMs16: 3200, samples: 40, errors: 1 } as never])).toEqual({ a: { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 1 } });
+		expect(statsFrom([{ keyId: "b", ttMs16: 3200, samples: 1, errors: 0 } as never])).toEqual({ b: { ttMs16: 3200, samples: 1, errors: 0 } });
 	});
 
 	it("accept a session record", () => {
