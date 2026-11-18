@@ -1,8 +1,10 @@
 // The engine: keystrokes in, progress and the next line out. What it owes the screens is a `focus` to
 // highlight and a line that only ever contains letters the ladder opened.
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
+import { keymapFromKeycap, type KeycapBinding, type KeycapFile } from "../src/layout/keycap.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { press, start, type Course, type Engine } from "../src/lesson/engine.ts";
 import { WORDS } from "../src/lesson/corpus.ts";
@@ -228,5 +230,37 @@ describe("lesson engine", () => {
 		expect(viaEnter.engine.pending).not.toBe("");
 		expect(viaEnter.engine.index).toBe(0);
 		expect(viaEnter.engine.line).toBe(engine.line + 1);
+	});
+});
+
+const layeredFile = JSON.parse(readFileSync(new URL("./fixtures/go60-layers.json", import.meta.url), "utf8")) as KeycapFile & { layers: KeycapBinding[][] };
+const layeredResolved = resolve(GO60, keymapFromKeycap(layeredFile, GO60).keymap!);
+const layeredCourse: Course = { resolved: layeredResolved, targetCpm: TARGET };
+
+// Put one character on the line by hand: the layered ladder only opens layer characters in a later task.
+function atLayered(text: string): Engine {
+	const e = start(layeredCourse, {});
+	return { ...e, text, index: 0, pending: layeredResolved.byChar.get([...text][0] ?? "") ?? "", stamp: 1000 };
+}
+
+describe("recording a layered route", () => {
+	it("charges the layer route, not the letter sharing the key", () => {
+		const res = press(layeredCourse, atLayered("1"), "1", 1200);
+		expect(res.accepted).toBe(true);
+		expect(res.targetId).toBe("L_C4R4"); // the highlight stays a physical key
+		expect(res.engine.stats["L_C4R4.2"]?.samples).toBe(1);
+		expect(res.engine.stats["L_C4R4"]).toBeUndefined(); // the q that lives there has its own number
+	});
+
+	it("charges a wrong key to the character that was asked for", () => {
+		const res = press(layeredCourse, atLayered("1"), "q", 1200);
+		expect(res.accepted).toBe(false);
+		expect(res.engine.stats["L_C4R4.2"]?.errors).toBe(1);
+		expect(res.engine.stats["L_C4R4"]?.errors ?? 0).toBe(0);
+	});
+
+	it("keeps base-layer strokes on the bare key id", () => {
+		const res = press(layeredCourse, atLayered("f"), "f", 1200);
+		expect(res.engine.stats["R_C2R2"]?.samples).toBe(1);
 	});
 });

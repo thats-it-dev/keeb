@@ -64,19 +64,20 @@ export function press(course: Course, e: Engine, typed: string, now: number): Ke
 	const targetId = e.pending;
 	const elapsedMs = e.stamp === 0 ? 0 : Math.max(0, now - e.stamp);
 	const correct = typed === want(e) && targetId !== "";
-	// A wrong key is charged to the key that was asked for, not to whatever finger slipped.
-	const id = targetId;
-	const stat = recordStroke(e.stats[id] ?? emptyStat(), correct, elapsedMs);
-	const stats = { ...e.stats, [id]: stat };
+	// A wrong key is charged to the key that was asked for, not to whatever finger slipped -- and to that
+	// key's route, which since layers may name a layer instead of the bare plastic.
+	const statKey = course.resolved.routeChars.get(want(e))?.statId ?? targetId;
+	const stat = recordStroke(e.stats[statKey] ?? emptyStat(), correct, elapsedMs);
+	const stats = { ...e.stats, [statKey]: stat };
 	const index = correct ? e.index + 1 : e.index;
 	// Highlighting follows the fingers, not the lesson: the key that was struck is the one that glows.
 	const pressedId = idOf(course.resolved, typed) || targetId;
 	const advanced: Engine = { ...e, stats, index };
 	if (index >= [...e.text].length) {
 		// Hold the finished line; learner presses space or enter to start the next line.
-		return { engine: { ...advanced, pending: "", stamp: 0 }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: true };
+		return { engine: { ...advanced, pending: "", stamp: 0 }, accepted: correct, targetId, pressedId, elapsedMs, finished: true };
 	}
-	return { engine: { ...advanced, pending: idOf(course.resolved, [...e.text][index] ?? ""), stamp: now }, accepted: correct, targetId: id, pressedId, elapsedMs, finished: false };
+	return { engine: { ...advanced, pending: idOf(course.resolved, [...e.text][index] ?? ""), stamp: now }, accepted: correct, targetId, pressedId, elapsedMs, finished: false };
 }
 
 function want(e: Engine): string {

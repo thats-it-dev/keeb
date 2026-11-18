@@ -1,7 +1,7 @@
 // The per-key mean is the number every other screen reads: the keycap, the goal bar, the ladder, the
 // headline wpm. These are the tests for what goes INTO it.
 import { describe, expect, it } from "vitest";
-import { bestTimeMs, emptyStat, hasTiming, merge, observe, observeError, progressGrowth, timeToTypeMs, type KeyStat } from "../src/stats/stats.ts";
+import { bestTimeMs, emptyStat, hasTiming, merge, observe, observeError, progressGrowth, routeId, routeKey, routeLayer, timeToTypeMs, type KeyStat } from "../src/stats/stats.ts";
 
 const stroke = (ms: number) => Math.round(ms) * 16;
 
@@ -119,5 +119,26 @@ describe("growth between two snapshots of one record", () => {
 		expect(growth.samples).toBe(12);
 		expect(merge(established, growth).samples).toBe(42);
 		expect(progressGrowth({ a: established }, { a: established })).toEqual({});
+	});
+});
+
+describe("route ids", () => {
+	it("keeps the base layer on the bare key id", () => {
+		expect(routeId(0, "L_C5R3")).toBe("L_C5R3");
+		expect(routeLayer("L_C5R3")).toBe(0);
+		expect(routeKey("L_C5R3")).toBe("L_C5R3");
+	});
+
+	it("round-trips a suffixed id", () => {
+		const id = routeId(2, "L_C4R4");
+		expect(id).toBe("L_C4R4.2");
+		expect(routeLayer(id)).toBe(2);
+		expect(routeKey(id)).toBe("L_C4R4");
+	});
+
+	it("parses ids that never had a layer", () => {
+		expect(routeLayer(routeId(0, "R_T2"))).toBe(0);
+		expect(routeKey(routeId(12, "a"))).toBe("a"); // key ids are dot-free, so the suffix is unambiguous
+		expect(routeId(12, "a")).toBe("a.12");
 	});
 });

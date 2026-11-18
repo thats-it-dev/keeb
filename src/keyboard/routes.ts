@@ -1,4 +1,5 @@
 // The route model: one route per typable character, saying which (key, layer) the lesson teaches it on.
+import { routeId } from "../stats/stats.ts";
 
 export type Route = { char: string; keyId: string; layer: number; statId: string };
 
@@ -17,13 +18,10 @@ export function pickRoutes(candidates: Candidate[]): Route[] {
 	}
 	return [...best.values()]
 		.sort((a, b) => (a.char < b.char ? -1 : a.char > b.char ? 1 : 0))
-		.map((c) => ({ char: c.char, keyId: c.keyId, layer: c.layer, statId: statId(c.layer, c.keyId) }));
+		.map((c) => ({ char: c.char, keyId: c.keyId, layer: c.layer, statId: routeId(c.layer, c.keyId) }));
 }
 
-// The canonical stat key: layer zero keeps the bare key id, so no stored numbers move.
-export function statId(layer: number, keyId: string): string {
-	return layer === 0 ? keyId : `${keyId}.${layer}`;
-}
+// The canonical stat key lives in stats.ts (routeId); this module only decides which candidate earns it.
 
 // Negative when `a` is the better route. Infinity distances only ever lose to finite ones, and two
 // Infinities tie on the later terms, so no arithmetic on Infinity happens.
