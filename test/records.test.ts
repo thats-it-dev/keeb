@@ -7,6 +7,7 @@ import { resolve } from "../src/keyboard/resolve.ts";
 import { LAYOUT, PROGRESS, SETTINGS, SESSION, defs, layout, progress, session, settings } from "../src/atproto/lexicons.ts";
 import { boardFromLayout, charMap, foldProgress, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, layoutFromRecord, layoutRecord, mergeProgress, newKey, progressGrowth, keyChars, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
 import { sharedLayout } from "../src/app/boards.ts";
+import type { Keymap } from "../src/keyboard/types.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
@@ -276,7 +277,7 @@ describe("session rows", () => {
 
 });
 
-const layeredMap = {
+const layeredMap: Keymap = {
 	id: "import:go60-layers",
 	name: "Layered",
 	source: "test",
