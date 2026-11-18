@@ -337,8 +337,8 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
    every figure stored before layers keeps meaning the same thing.
 3. The ladder teaches layer characters after the alphabet: candidates are the taught base letters (as
    always) plus every character whose route is on a layer. Inside that band the order is measured, not
-   code-point: `SYMBOL_ORDER` (`scripts/make-symbols.ts`, character counts over public-domain-quality
-   plain English text, generated not hand-edited) ranks what written English actually prints — comma and
+   code-point: `SYMBOL_ORDER` (`scripts/make-symbols.ts`, character counts over CC BY-SA Wikipedia
+   extracts, generated not hand-edited) ranks what written English actually prints — comma and
    period first — and characters the sample never saw (control tokens, exotic code points) keep the
    code-point order at the very tail. Inside a line they appear as their own
    one-character words, the focused one at least twice, and a weak route earns an extra appearance.
