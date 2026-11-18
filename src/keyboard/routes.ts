@@ -34,3 +34,13 @@ function compare(a: Candidate, b: Candidate): number {
 		(a.keyId < b.keyId ? -1 : a.keyId > b.keyId ? 1 : 0)
 	);
 }
+
+// What the board needs to draw one lit route: the key, the layer colour, and the physical key whose
+// picture says how the layer gets opened. Purely derived from parent state -- never read off the DOM.
+export type RouteView = { keyId: string; layer: number; ringId: string; char: string };
+
+export function routeOf(r: { routeChars: Map<string, Route>; layerKeyOf: Map<number, string> }, char: string): RouteView | undefined {
+	const x = char === "" ? undefined : r.routeChars.get(char.toLowerCase());
+	if (!x) return undefined;
+	return { keyId: x.keyId, layer: x.layer, ringId: x.layer === 0 ? "" : (r.layerKeyOf.get(x.layer) ?? ""), char: x.char };
+}

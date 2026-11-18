@@ -13,6 +13,7 @@ import { historySection } from "./stats/history-section.ts";
 import { insightPanel, type PanelCard } from "./stats/panel.ts";
 import { isPreviewHost, paneSessions } from "./stats/demo.ts";
 import { resolve, keyLabel, type Resolved } from "./keyboard/resolve.ts";
+import { routeOf } from "./keyboard/routes.ts";
 import type { Geometry, Keymap } from "./keyboard/types.ts";
 import { iconSettings } from "./ui/icons.ts";
 import { countItems, insightCards } from "./ui/insight-cards.ts";
@@ -30,7 +31,7 @@ import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true } } as const;
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, routeChar: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true } } as const;
 	static styles = appStyles;
 
 	geometryId = savedSelection().g;
@@ -97,9 +98,9 @@ export class AppMain extends LitElement {
 	// False until IndexedDB has answered; the lesson needs past stats to choose its keys.
 	ready = false;
 	lastId = "";
-	// Speed of the last keystroke. The practice pane knows it first, but the numbers above the line have
-	// to render from parent state: reading them off the child element means asking the DOM for a node that
-	// this very render pass is what creates, and after a reload the row would sit on "loading" forever.
+	// What the lesson asks for now, and the speed of the last keystroke. Parent state both: reading them off
+	// the practice node mid-render would query a child this same pass is creating.
+	routeChar = "";
 	nowCpm = 0;
 	targetCpm = DEFAULT_SETTINGS.targetCpm;
 	stats: StatMap = {};
@@ -331,9 +332,9 @@ export class AppMain extends LitElement {
 							${o ? readout({ nowWpm: cpmToWpm(this.nowCpm), avgWpm: o.avgWpm, goalWpm: cpmToWpm(this.targetCpm), focusLabel: o.focusLabel, acc: this.#session.sessionAccuracy() ?? undefined }) : html`<div class="read"><span class="label">loading your progress…</span></div>`}
 							${dailyBar(dailyGoal(this.#tally.rows, Date.now(), this.#session.elapsed(), this.dailyGoalMin))}
 							${this.ready
-								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords}></tt-practice>`
+								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords} @tt-line=${() => (this.routeChar = this.#practice?.pendingChar ?? "")}></tt-practice>`
 								: nothing}
-							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""}></tt-keyboard>
+							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .route=${routeOf(r, this.routeChar)}></tt-keyboard>
 							<div class="row">
 								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 								${lastKey(r, this.lastId)}

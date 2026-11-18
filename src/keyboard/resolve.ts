@@ -64,7 +64,7 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 		if (layer.index === 0) continue; // its characters already came off the geometry
 		for (const [keyId, char] of Object.entries(layer.byKeyId)) {
 			const k = byId.get(keyId);
-			if (!k || [...char].length !== 1) continue;
+			if (!k || [...char].length !== 1 || char === " ") continue; // the space bar is one key on every board; a layer's SPACE changes no route
 			const c = char.toLowerCase();
 			if (!k.glyphs.some((x) => x.char === c)) k.glyphs.push({ char: c, layer: layer.index });
 			candidates.push({ char: c, keyId, layer: layer.index, taught: isTaught(g, k), distanceToHome: distance(k), matrixIndex: g.keys.indexOf(k) });
