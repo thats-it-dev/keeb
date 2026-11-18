@@ -81,7 +81,9 @@ export function resolve(g: Geometry, kmap: Keymap): Resolved {
 		byChar.set(c, k.id);
 	}
 	const { width, height } = bounds(keys);
-	const enterKey = keys.find((k) => k.label === "Enter" || k.char === "Enter")?.id;
+	// The key that types Enter, named-first: the file's own character wins over a geometry label, so a
+	// thumb wired "&lt 1 RET" is the highlight even where another key is labelled "Enter".
+	const enterKey = keys.find((k) => k.char === "Enter")?.id ?? keys.find((k) => k.label === "Enter")?.id;
 	const routes = pickRoutes(candidates);
 	const routeChars = new Map(routes.map((x) => [x.char, x]));
 	const byStat = new Map(routes.map((x) => [x.statId, x]));

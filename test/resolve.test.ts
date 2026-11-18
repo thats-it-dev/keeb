@@ -110,6 +110,7 @@ describe("resolving a layered keymap", () => {
 	});
 
 	it("routes the shifted symbols the file types", () => {
+		expect(r.enterKey).toBe("R_T2"); // the "&lt 1 RET" thumb -- not R_T1, which the shipped geometry labels "Enter" but which taps Backspace here
 		expect(r.routeChars.get("(")!.layer).toBe(1); // Sym's LS(N3) key -- "(" is now teachable
 		expect(r.routeChars.get("(")!.char).toBe("(");
 		expect(r.routeChars.get("\"")!.layer).toBe(1); // LS(SINGLE_QUOTE): the long alias is the same key

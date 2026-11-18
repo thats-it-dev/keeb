@@ -2,18 +2,25 @@
 // claims below are about THAT file, so a divergence between the two shows up here first. CI has no such
 // file, so the whole block skips there.
 import { existsSync, readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { GO60 } from "../src/data/go60.ts";
 import { keymapFromKeycap, type KeycapFile } from "../src/layout/keycap.ts";
-import { resolve } from "../src/keyboard/resolve.ts";
+import { resolve, type Resolved } from "../src/keyboard/resolve.ts";
+import type { Keymap } from "../src/keyboard/types.ts";
 import { layoutFromRecord, layoutRecord, boardFromLayout } from "../src/atproto/records.ts";
 
 const REAL = `${process.env.HOME}/workspace/keymaps/go60-36.json`;
 
+// A skipped suite's body still runs at collection, so nothing here may touch the disk outside beforeAll.
+
 describe.skipIf(!existsSync(REAL))("the real go60-36.json", () => {
-	const file = JSON.parse(readFileSync(REAL, "utf8")) as KeycapFile;
-	const { keymap } = keymapFromKeycap(file, GO60);
-	const r = resolve(GO60, keymap!);
+	let r: Resolved;
+	let keymap: Keymap;
+	beforeAll(() => {
+		const file = JSON.parse(readFileSync(REAL, "utf8")) as KeycapFile;
+		keymap = keymapFromKeycap(file, GO60).keymap!;
+		r = resolve(GO60, keymap);
+	});
 
 	it("never routes a character through a control chord", () => {
 		expect(r.routeChars.get("q")!.layer).toBe(0); // LG(Q) on the Fn layer quits apps; it is not the Q key
@@ -34,6 +41,9 @@ describe.skipIf(!existsSync(REAL))("the real go60-36.json", () => {
 		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
 		expect(back.byKey["R_T2"]).toBe("Enter"); // "Ente" was the truncation bug
 		const { keymap: roundKeymap } = boardFromLayout("rk", back);
-		expect(resolve(GO60, roundKeymap).byId.get("R_T2")!.char).toBe("Enter");
+		const pulled = resolve(GO60, roundKeymap);
+		expect(pulled.byId.get("R_T2")!.char).toBe("Enter");
+		expect(pulled.enterKey).toBe("R_T2"); // the Enter highlight lands on this thumb, not the one the geometry merely labels "Enter"
+		expect(pulled.layerNames).toContain("Fn"); // the all-chord Fn layer survives the pull too
 	});
 });

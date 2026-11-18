@@ -344,4 +344,16 @@ describe("control names on the wire", () => {
 		expect(back.byKey["R_T2"]).toBe("Enter");
 		expect(back.byKey["L_T3"]).toBe("Backspace");
 	});
+
+	it("pulls the same legend and the same Enter as the pushed board", () => {
+		const rec = layoutRecord("Go60", "keycap", GO60, [{ id: "R_T2", char: "Enter" }, { id: "L_C3R2", char: "d" }], {
+			layerNames: ["Main", "Sym", "NavNum", "Fn"],
+			layerKeys: [{ keyId: "L_T3", layer: 3, activation: "hold-tap" }], // Fn itself types nothing
+		});
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		const { keymap } = boardFromLayout("pulled", back);
+		const pulled = resolve(GO60, keymap);
+		expect(pulled.layerNames).toContain("Fn"); // a layer opened by a key keeps its name across the wire
+		expect(pulled.enterKey).toBe("R_T2"); // not the key the shipped geometry merely labels "Enter"
+	});
 });

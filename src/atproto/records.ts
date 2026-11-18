@@ -167,12 +167,18 @@ export function layoutFromRecord(rec: Record<string, unknown> | undefined): Shar
 				.filter((x) => wireKeyId(x) && n(x.layer) > 0 && ["momentary", "hold-tap", "toggle"].includes(String(x.activation)))
 				.map((x) => ({ keyId: wireKeyId(x), layer: n(x.layer), activation: String(x.activation) as LayerKey["activation"] }))
 		: undefined;
-	const layers = upper.size
-		? [...upper.entries()]
-				.sort((a, b) => a[0] - b[0])
-				.map(([index, byKeyId]) => ({ index, name: str(layerNames?.[index] ?? ""), byKeyId }))
-		: undefined;
-	return { name: str(rec.name), source: str(rec.source, 300), geometry: geo, byKey, ...(layers ? { layers } : {}), ...(layerNames ? { layerNames } : {}), ...(layerKeys ? { layerKeys } : {}) };
+	const layers = [...upper.entries()]
+		.sort((a, b) => a[0] - b[0])
+		.map(([index, byKeyId]) => ({ index, name: str(layerNames?.[index] ?? ""), byKeyId }));
+	// A layer that types nothing but opens under a key (an all-chord Fn) still arrives, named: the pulled
+	// board must draw the same legend the pushed one did.
+	if (layerKeys?.length) {
+		const held = new Set(layers.map((l) => l.index));
+		for (const index of [...new Set(layerKeys.map((k) => k.layer))].sort((a, b) => a - b)) {
+			if (!held.has(index) && index > 0) layers.push({ index, name: str(layerNames?.[index] ?? ""), byKeyId: {} });
+		}
+	}
+	return { name: str(rec.name), source: str(rec.source, 300), geometry: geo, byKey, ...(layers.length ? { layers } : {}), ...(layerNames ? { layerNames } : {}), ...(layerKeys ? { layerKeys } : {}) };
 }
 
 // The wire form of a StatMap. Sorted by key id so two devices that never met still produce byte-equal
