@@ -46,6 +46,9 @@ export class TtPractice extends LitElement {
 		this.cursor = 0;
 		this.wrong = new Set();
 		this.requestUpdate();
+		// Tell the parent the line changed: its route light reads pendingChar from state, and a restart
+		// happens without any keystroke to carry it there.
+		this.dispatchEvent(new CustomEvent("tt-line"));
 	}
 
 	// The engine and the screens above it read the curriculum through this one object, so a line can never
@@ -58,6 +61,13 @@ export class TtPractice extends LitElement {
 	 *  owns that name for moving the DOM focus. */
 	get focusId(): string | undefined {
 		return this.engine?.ladder.focus;
+	}
+
+	/** The character the learner is asked to type next. The parent keeps it in state so the board can
+	 *  light a route before the first keystroke of a line -- reading it off this element mid-render
+	 *  would ask the DOM for a node the same render pass is still creating. */
+	get pendingChar(): string {
+		return this.engine ? ([...this.engine.text][this.engine.index] ?? "") : "";
 	}
 
 	// Returns the key id to highlight, so the parent can drive the keyboard view from one event.
@@ -78,6 +88,7 @@ export class TtPractice extends LitElement {
 		}
 		if (!res.finished) this.cursor = this.engine.index;
 		this.requestUpdate();
+		this.dispatchEvent(new CustomEvent("tt-line"));
 		return res.pressedId || undefined;
 	}
 

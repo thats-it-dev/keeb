@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { overview, wpm, type KeyInfo } from "../src/stats/overview.ts";
-import { emptyStat } from "../src/stats/stats.ts";
+import { overview, routeRows, wpm, type KeyInfo } from "../src/stats/overview.ts";
+import { emptyStat, type StatMap } from "../src/stats/stats.ts";
+import { GO60 } from "../src/data/go60.ts";
+import { keymapById } from "../src/data/keymaps.ts";
+import { keymapFromKeycap, type KeycapBinding, type KeycapFile } from "../src/layout/keycap.ts";
+import { resolve } from "../src/keyboard/resolve.ts";
 
 const goalCpm = 240; // 250 ms per key
 const key = (id: string, hand: KeyInfo["hand"] = "left"): KeyInfo => ({ id, label: id.toUpperCase(), hand });
@@ -112,5 +117,29 @@ describe("overview", () => {
 	it("converts ms per key to wpm at five characters to the word", () => {
 		expect(wpm(250)).toBe(48);
 		expect(wpm(0)).toBe(0);
+	});
+});
+
+describe("route rows", () => {
+	const layeredFile = JSON.parse(readFileSync(new URL("./fixtures/go60-layers.json", import.meta.url), "utf8")) as KeycapFile & { layers: KeycapBinding[][] };
+	const lr = resolve(GO60, keymapFromKeycap(layeredFile, GO60).keymap!);
+	const base = resolve(GO60, keymapById("qwerty"));
+
+	it("keeps a plain board's rows exactly the rows the keys had", () => {
+		expect(routeRows(base)).toEqual(base.keys.map((k) => ({ id: k.id, label: k.char === " " ? "space" : k.char.trim() === "" ? k.id : k.char, hand: k.hand === "l" ? "left" : "right" })));
+	});
+
+	it("adds one row per layer route, labelled by character and layer", () => {
+		const rows = routeRows(lr);
+		expect(rows.length).toBe(lr.keys.length + lr.routes.filter((x) => x.layer > 0).length);
+		const seven = rows.find((x) => x.id === "R_C2R2.1");
+		expect(seven?.label).toBe("& · Sym"); // the Sym F key types shift-7, not 7
+	});
+
+	it("counts layer routes in the numbers the screen leads with", () => {
+		const stats: StatMap = { "R_C2R2.1": { ttMs16: 200 * 16, samples: 40, errors: 0 } };
+		const o = overview(stats, 200, routeRows(lr), { unlocked: [], next: undefined, focus: undefined });
+		expect(o.measured.map((x) => x.id)).toContain("R_C2R2.1");
+		expect(o.covered).toBe(1);
 	});
 });

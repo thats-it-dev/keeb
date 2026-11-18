@@ -6,7 +6,7 @@
 import { TID } from "@atproto/common-web";
 import { LAYOUT, PROGRESS, SETTINGS, SESSION } from "./lexicons.ts";
 import { bestMs, mergeAll, progressGrowth, type KeyStat, type StatMap } from "../stats/stats.ts";
-import { ROW_ROLE_VALUES, type Geometry, type Key, type Keymap, type RowRole } from "../keyboard/types.ts";
+import { ROW_ROLE_VALUES, type Geometry, type Key, type Keymap, type KeymapLayer, type LayerKey, type RowRole } from "../keyboard/types.ts";
 import { rolesForRows } from "../layout/parse.ts";
 import type { Settings } from "../data/store.ts";
 
@@ -31,7 +31,34 @@ export const newKey = (): string => TID.nextStr();
  */
 export const tidAt = (ms: number): string => TID.fromTime(Math.round(ms) * 1000, 0).toString();
 
-export type KeyChar = { id: string; char: string };
+export type KeyChar = { id: string; char: string; layer?: number };
+
+/**
+ * The wire's char list for a board: the resolved layer-0 chars, then every upper-layer char that the same
+ * key does not already type on a lower layer. A layered board goes over 200 entries, which is why the
+ * lexicon cap is 1000.
+ */
+export function keyChars(keymap: Keymap, resolvedKeys: { id: string; char: string }[]): KeyChar[] {
+	const out: KeyChar[] = resolvedKeys.map((k) => ({ id: k.id, char: k.char }));
+	const below = new Map(resolvedKeys.map((k) => [k.id, new Set([k.char])]));
+	for (const l of [...(keymap.layers ?? [])].sort((a, b) => a.index - b.index)) {
+		if (l.index <= 0) continue;
+		for (const [keyId, char] of Object.entries(l.byKeyId)) {
+			const seen = below.get(keyId) ?? new Set<string>();
+			if (seen.has(char)) continue;
+			seen.add(char);
+			below.set(keyId, seen);
+			out.push({ id: keyId, char, layer: l.index });
+		}
+	}
+	return out;
+}
+
+/** Layer index -> name, holes filled with "" so the wire never carries null. */
+export const layerNamesOf = (keymap: Keymap): string[] => {
+	const max = Math.max(0, ...(keymap.layers ?? []).map((l) => l.index));
+	return Array.from({ length: max + 1 }, (_, i) => keymap.layers?.find((l) => l.index === i)?.name ?? "");
+};
 
 // On the wire the identifier is `keyId`. Reads also accept the old `id`: records written before the
 // rename are still sitting in people's repos, and a schema that cannot read them would silently drop
@@ -75,17 +102,23 @@ export function geometryFromRecord(rec: KeyGeometryRecord): Pick<Geometry, "spli
 	};
 }
 
-export const charMap = (keys: KeyChar[]) => ({ chars: keys.map((k) => ({ keyId: str(k.id), char: [...k.char].slice(0, 4).join("") })) });
+// Layered fields ride inside charMap and are optional: `layer` only when > 0, so a reader from before
+// layers sees the same array it always saw. The two arrays name the layers and their opening keys.
+export const charMap = (keys: KeyChar[], extra?: { layerNames?: string[]; layerKeys?: LayerKey[] }) => ({
+	chars: keys.map((k) => ({ keyId: str(k.id), char: [...k.char].slice(0, 16).join(""), ...((k.layer ?? 0) > 0 ? { layer: n(k.layer) } : {}) })), // 16, not 4: "Backspace" must arrive whole
+	...(extra?.layerNames?.length ? { layerNames: extra.layerNames.map((s) => str(s)) } : {}),
+	...(extra?.layerKeys?.length ? { layerKeys: extra.layerKeys.map((x) => ({ keyId: str(x.keyId), layer: n(x.layer), activation: x.activation })) } : {}),
+});
 
-export type LayoutRecord = { $type: string; name: string; source: string; geometry: KeyGeometryRecord; charMap: { chars: { keyId: string; char: string }[] } };
+export type LayoutRecord = { $type: string; name: string; source: string; geometry: KeyGeometryRecord; charMap: { chars: { keyId: string; char: string; layer?: number }[]; layerNames?: string[]; layerKeys?: { keyId: string; layer: number; activation: string }[] } };
 
 /**
  * The board on screen as one record: where the keys are, what each row is for, and what each key produces.
  * Characters are resolved from geometry x keymap rather than copied from a keymap, which is what lets an
  * imported board and a shipped one share a format.
  */
-export function layoutRecord(name: string, source: string, g: Geometry, chars: KeyChar[]): LayoutRecord {
-	return { $type: LAYOUT, name: str(name), source: str(source, 300), geometry: keyGeometry(g), charMap: charMap(chars) };
+export function layoutRecord(name: string, source: string, g: Geometry, chars: KeyChar[], extra?: { layerNames?: string[]; layerKeys?: LayerKey[] }): LayoutRecord {
+	return { $type: LAYOUT, name: str(name), source: str(source, 300), geometry: keyGeometry(g), charMap: charMap(chars, extra) };
 }
 
 // The id a shared layout carries on every device: the record's rkey, which is the one thing two browsers
@@ -103,11 +136,11 @@ export function boardFromLayout(rkey: string, s: SharedLayout): { geometry: Geom
 	const source = s.source || "a shared atproto record";
 	return {
 		geometry: { id, name, source, verified: false, split: s.geometry.split, rowRoles: s.geometry.rowRoles, keys: s.geometry.keys },
-		keymap: { id, name, source, rows: {}, byKey: s.byKey },
+		keymap: { id, name, source, rows: {}, byKey: s.byKey, ...(s.layers ? { layers: [{ index: 0, name: s.layerNames?.[0] || "Main", byKeyId: { ...s.byKey } }, ...s.layers] } : {}), ...(s.layerKeys ? { layerKeys: s.layerKeys } : {}) },
 	};
 }
 
-export type SharedLayout = { name: string; source: string; geometry: Pick<Geometry, "split" | "rowRoles" | "keys">; byKey: Record<string, string> };
+export type SharedLayout = { name: string; source: string; geometry: Pick<Geometry, "split" | "rowRoles" | "keys">; byKey: Record<string, string>; layers?: KeymapLayer[]; layerNames?: string[]; layerKeys?: LayerKey[] };
 
 /** A layout record, or nothing usable. A record with no keys is not a board, so it is dropped rather than
  *  registered as an empty one. */
@@ -116,12 +149,37 @@ export function layoutFromRecord(rec: Record<string, unknown> | undefined): Shar
 	const geo = geometryFromRecord(rec.geometry as KeyGeometryRecord);
 	if (!geo.keys.length) return undefined;
 	const byKey: Record<string, string> = {};
-	for (const c of (rec.charMap as { chars?: ({ char?: unknown } & WireKeyId)[] } | undefined)?.chars ?? []) {
+	const upper = new Map<number, Record<string, string>>();
+	const cm = (rec.charMap ?? {}) as { chars?: ({ char?: unknown; layer?: unknown } & WireKeyId)[]; layerNames?: unknown; layerKeys?: unknown };
+	for (const c of cm.chars ?? []) {
 		const id = wireKeyId(c ?? {});
 		const ch = typeof c?.char === "string" ? c.char : "";
-		if (id && ch) byKey[id] = ch;
+		if (!id || !ch) continue;
+		const layer = n(c.layer);
+		if (layer > 0) upper.set(layer, { ...(upper.get(layer) ?? {}), [id]: ch });
+		else byKey[id] = ch;
 	}
-	return { name: str(rec.name), source: str(rec.source, 300), geometry: geo, byKey };
+	// Absent on every record written before layers, and on flat records: undefined, never empty arrays.
+	const layerNames = Array.isArray(cm.layerNames) && cm.layerNames.length ? cm.layerNames.map((x) => str(x)) : undefined;
+	const layerKeys = Array.isArray(cm.layerKeys) && cm.layerKeys.length
+		? cm.layerKeys
+				.map((x) => (x ?? {}) as WireKeyId & { layer?: unknown; activation?: unknown })
+				.filter((x) => wireKeyId(x) && n(x.layer) > 0 && ["momentary", "hold-tap", "toggle"].includes(String(x.activation)))
+				.map((x) => ({ keyId: wireKeyId(x), layer: n(x.layer), activation: String(x.activation) as LayerKey["activation"] }))
+		: undefined;
+	const layers = [...upper.entries()]
+		.sort((a, b) => a[0] - b[0])
+		.map(([index, byKeyId]) => ({ index, name: str(layerNames?.[index] ?? ""), byKeyId }));
+	// A layer that types nothing but opens under a key (an all-chord Fn) still arrives, named: the pulled
+	// board must draw the same legend the pushed one did.
+	if (layerKeys?.length) {
+		const held = new Set(layers.map((l) => l.index));
+		for (const index of [...new Set(layerKeys.map((k) => k.layer))].sort((a, b) => a - b)) {
+			if (!held.has(index) && index > 0) layers.push({ index, name: str(layerNames?.[index] ?? ""), byKeyId: {} });
+		}
+	}
+	layers.sort((a, b) => a.index - b.index); // filled-in layers land in file order too
+	return { name: str(rec.name), source: str(rec.source, 300), geometry: geo, byKey, ...(layers.length ? { layers } : {}), ...(layerNames ? { layerNames } : {}), ...(layerKeys ? { layerKeys } : {}) };
 }
 
 // The wire form of a StatMap. Sorted by key id so two devices that never met still produce byte-equal

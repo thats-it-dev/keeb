@@ -2,7 +2,7 @@
 // app actually writes, means a malformed schema fails a test today rather than in M5 when they go public.
 import { describe, expect, it } from "vitest";
 import { Lexicons, parseLexiconDoc } from "@atproto/lexicon";
-import { LEXICONS, PROGRESS, SESSION, SETTINGS, settings } from "../src/atproto/lexicons.ts";
+import { LEXICONS, PROGRESS, SESSION, SETTINGS, defs, settings } from "../src/atproto/lexicons.ts";
 import { charMap, geometryFromRecord, keyGeometry, progressRecord, sessionRecord, settingsRecord, statsFrom } from "../src/atproto/records.ts";
 import { GO60 } from "../src/data/go60.ts";
 
@@ -89,6 +89,30 @@ describe("lexicons", () => {
 		const keys = Array.from({ length: 201 }, (_, i) => ({ keyId: `k${i}`, hand: "l", row: 0, col: 0, x: i, y: 0, w: 100, h: 100, rot: 0 }));
 		const rec = { $type: "app.thatsit.typing.layout", name: "flood", geometry: { keys }, charMap: { chars: [] } } as unknown as Record<string, unknown>;
 		expect(check(rec).join(" ")).toMatch(/more than 200/i);
+	});
+
+	it("accepts the layered fields without demanding them, and a thousand chars", () => {
+		const one = [{ keyId: "k1", hand: "l", row: 0, col: 0, x: 0, y: 0, w: 100, h: 100, rot: 0 }];
+		const flat = { $type: "app.thatsit.typing.layout", name: "x", geometry: { keys: one }, charMap: { chars: [{ keyId: "k1", char: "a" }] } };
+		expect(check(flat)).toEqual([]); // nothing new is required: pre-layer writers are still valid
+		expect(
+			check({
+				...flat,
+				charMap: {
+					chars: [...(flat.charMap as { chars: unknown[] }).chars, { keyId: "k1", char: "1", layer: 2 }],
+					layerNames: ["Main", "", "Nav"],
+					layerKeys: [{ keyId: "k1", layer: 2, activation: "hold-tap" }],
+				},
+			}),
+		).toEqual([]);
+		expect(check({ ...flat, charMap: { chars: [{ keyId: "k1", char: "a", layer: -1 }] } }).join(" ")).toMatch(/less than|minimum/i);
+		// knownValues is advisory in atproto (a future activation must still validate, so old readers do not
+		// reject a new device's records); the reader in records.ts is what drops an unknown one.
+		expect(check({ ...flat, charMap: { chars: [{ keyId: "k1", char: "a" }], layerKeys: [{ keyId: "k1", layer: 1, activation: "dance" }] } })).toEqual([]);
+		expect(check({ ...flat, charMap: { chars: [{ keyId: "k1", char: "a" }], layerKeys: [{ keyId: "k1", layer: 1 }] } }).join(" ")).toMatch(/activation|required/i);
+		const chars = Array.from({ length: 1001 }, (_, i) => ({ keyId: `k${i % 200}`, char: "a", layer: 1 + (i % 4) }));
+		expect(check({ $type: "app.thatsit.typing.layout", name: "flood", geometry: { keys: one }, charMap: { chars } }).join(" ")).toMatch(/more than 1000/i);
+		expect(defs.defs.char.required).toEqual(["keyId", "char"]); // the append-only rule, stated as a test
 	});
 
 	it("has no def for a type nobody declared", () => {

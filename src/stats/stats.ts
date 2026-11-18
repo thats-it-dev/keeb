@@ -211,3 +211,15 @@ export function totals(stats: StatMap): { chars: number; errors: number } {
 	}
 	return { chars, errors };
 }
+
+// A stat's identity is a (key, layer) route: what you learned is not a property of the plastic alone. Layer
+// zero keeps the bare key id, so every number stored before layers existed still names the same thing.
+export const routeId = (layer: number, keyId: string): string => (layer === 0 ? keyId : `${keyId}.${layer}`);
+
+// Key ids never contain a dot, so a trailing ".<digits>" is unambiguously the layer.
+export function routeLayer(statId: string): number {
+	const match = /\.(\d+)$/.exec(statId);
+	return match ? Number(match[1]) : 0;
+}
+
+export const routeKey = (statId: string): string => statId.replace(/\.\d+$/, "");

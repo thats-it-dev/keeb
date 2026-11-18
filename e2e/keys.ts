@@ -20,7 +20,15 @@ export function keyName(ch: string): string {
 		"/": "Slash",
 		"`": "Backquote",
 	};
-	return named[ch] ?? ch;
+	// Shifted characters: a layered keymap routes them ("(" is LS(N9), not the 9 key), so the tests must
+	// type them the way a learner would -- holding shift over the plain key's code.
+	const shifted: Record<string, string> = {
+		"!": "Shift+Digit1", "@": "Shift+Digit2", "#": "Shift+Digit3", $: "Shift+Digit4", "%": "Shift+Digit5", "^": "Shift+Digit6",
+		"&": "Shift+Digit7", "*": "Shift+Digit8", "(": "Shift+Digit9", ")": "Shift+Digit0", _: "Shift+Minus", "+": "Shift+Equal",
+		"{": "Shift+BracketLeft", "}": "Shift+BracketRight", "|": "Shift+Backslash", ":": "Shift+Semicolon", '"': "Shift+Quote",
+		"<": "Shift+Comma", ">": "Shift+Period", "?": "Shift+Slash", "~": "Shift+Backquote",
+	};
+	return shifted[ch] ?? named[ch] ?? ch;
 }
 
 // The insight panel's own scroll column. Named directly, not under the shell's aside landmark: Playwright's

@@ -1,6 +1,7 @@
 import { html, nothing } from "https://kit.thatsit.app/lit.js";
 import { FINGER_NAME, type Geometry } from "../keyboard/types.ts";
-import type { Resolved } from "../keyboard/resolve.ts";
+import { keyLabel, type Resolved } from "../keyboard/resolve.ts";
+import { routeOf, ly } from "../keyboard/routes.ts";
 
 /**
  * The three lines under the heading: the numbers above the practice line, the board note, and what the
@@ -32,4 +33,16 @@ export function lastKey(r: Resolved, lastId: string) {
 	const key = r.byId.get(lastId);
 	if (!key) return html`<span class="label">keys</span> ${r.keys.length} mapped`;
 	return html`<span class="label">last</span> <span class="hit">${key.char}</span> · ${key.id} · ${FINGER_NAME[key.finger]}`;
+}
+
+/** The route instruction: the whole keystroke in one line -- hold this key, press that character. A
+ *  base-layer route needs no instruction (there is nothing to hold), so it renders nothing at all. */
+export function routeHint(r: Resolved, routeChar: string) {
+	const route = routeOf(r, routeChar);
+	if (!route || route.layer === 0 || route.ringId === "") return nothing;
+	const name = r.layerNames[route.layer] ?? `layer ${route.layer}`;
+	const ringKey = r.byId.get(route.ringId);
+	const hold = ringKey ? keyLabel(ringKey) : route.ringId;
+	const press = route.char === " " ? "space" : route.char.toUpperCase();
+	return html`<p class="hint ly${ly(route.layer)}">hold ${name} · ${hold}, press ${press}</p>`;
 }

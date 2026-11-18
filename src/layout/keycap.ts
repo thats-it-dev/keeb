@@ -1,4 +1,4 @@
-import type { Geometry, Keymap, KeymapRow } from "../keyboard/types.ts";
+import type { Geometry, Keymap, KeymapLayer, KeymapRow, LayerKey } from "../keyboard/types.ts";
 
 // A MoErgo Layout Editor (keycap) JSON export. Unlike info.json this carries no positions: the
 // "keyboard" field names a board we have to know, and "layers" is a flat array of bindings in that
@@ -18,6 +18,7 @@ export type KeycapFile = {
 	keyboard?: unknown;
 	layer_names?: unknown;
 	layers?: unknown;
+	custom_defined_behaviors?: unknown;
 };
 
 export type KeycapImport = {
@@ -36,13 +37,30 @@ const KEYCODES: Record<string, string> = {
 	A: "a", B: "b", C: "c", D: "d", E: "e", F: "f", G: "g", H: "h", I: "i", J: "j", K: "k", L: "l", M: "m",
 	N: "n", O: "o", P: "p", Q: "q", R: "r", S: "s", T: "t", U: "u", V: "v", W: "w", X: "x", Y: "y", Z: "z",
 	N1: "1", N2: "2", N3: "3", N4: "4", N5: "5", N6: "6", N7: "7", N8: "8", N9: "9", N0: "0",
-	MINUS: "-", EQUAL: "=", LBKT: "[", RBKT: "]", BSLH: "\\", SQT: "'", SEMI: ";", COMMA: ",", DOT: ".", FSLH: "/",
+	MINUS: "-", EQUAL: "=", LBKT: "[", RBKT: "]", BSLH: "\\", SQT: "'", SINGLE_QUOTE: "'", SEMI: ";", COMMA: ",", DOT: ".", FSLH: "/",
 	GRAVE: "`", LBRC: "{", RBRC: "}", SPACE: " ", EXCL: "!", AT: "@", HASH: "#", DLLR: "$", PRCT: "%", CARET: "^",
 	AMPS: "&", ASTER: "*", LPAR: "(", RPAR: ")", UNDER: "_", PLUS: "+",
+	// Control taps: multi-character on purpose -- they name a key, never a route. A hold-tap's tap side
+	// (`&lt 1 RET`) says what this thumb types, and that is what the board and the hint must call it.
+	RET: "Enter", ENTER: "Enter", BSPC: "Backspace", TAB: "Tab", DEL: "Delete", ESC: "Escape",
 };
 
-// Wrappers that name the key underneath: LS(MINUS) is the minus key, LC(Y) is the Y key.
+// What the US shift of each plain character is. LS(N9) types "(" -- the shift is the point, so this is
+// the character, not the "9" underneath. Letters shift to capitals, which rejoin their own routes.
+const SHIFTED: Record<string, string> = {
+	"`": "~", "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+	"-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?",
+};
+for (const c of "abcdefghijklmnopqrstuvwxyz") SHIFTED[c] = c.toUpperCase();
+
+const isShift = (wrapper: string): boolean => /^(LS|RS)$/.test(wrapper.toUpperCase());
+
+// Wrapper names. A shift wrapper is the character (LS(N9) types "("). Every other wrapper -- Ctrl, GUI,
+// Alt, layer-tap -- is a shortcut: it types nothing, and the key underneath belongs to its plain binding
+// on its own layer, never to the chord.
 const WRAPPED = /^(LS|RS|LC|RC|LG|RG|LE|LA|LT|RT)$/;
+
+const keyChar = (code: string): string | undefined => KEYCODES[code.replace(/^KC_/, "")];
 
 export function isKeycapFile(json: unknown): json is KeycapFile {
 	const f = json as KeycapFile;
@@ -52,6 +70,7 @@ export function isKeycapFile(json: unknown): json is KeycapFile {
 export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-import", name = "From layout file"): KeycapImport {
 	const problems: string[] = [];
 	const names = Array.isArray(file.layer_names) ? (file.layer_names as unknown[]).map(String) : [];
+	const holdTaps = holdTapBehaviorNames(file);
 	if (typeof file.keyboard !== "string" || !file.keyboard) return { problems: [...problems, "no `keyboard` field: cannot tell which board this is"], layerNames: names };
 	if (file.keyboard.trim().toLowerCase() !== base.id.toLowerCase()) {
 		return { problems: [...problems, `this file is for a "${file.keyboard}", not the ${base.name} selected here`], layerNames: names };
@@ -64,7 +83,7 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 			problems.push(`layer 0 position ${i + 1} is not a binding`);
 			return undefined;
 		}
-		return charOfBinding(binding);
+		return charOfBinding(binding, holdTaps);
 	});
 	if (bindings.length !== base.keys.length) {
 		problems.push(`layer 0 has ${bindings.length} bindings but the ${base.name} has ${base.keys.length} keys`);
@@ -87,12 +106,114 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 		bucket[key.hand][key.col] = bindings[i] ?? "";
 	}
 	const done = Object.fromEntries(Object.entries(rows).map(([role, pair]) => [role, { l: tuple(pair.l), r: tuple(pair.r) }])) as Keymap["rows"];
+	// Every further layer, under the index the file gave it. A layer survives if it types something or if
+	// a layer key opens it (an all-chords Fn is reachable and its ring says "Fn") — but a layer never
+	// renumbers the ones above it. A short later layer refuses the whole file — a
+	// half-read layer would route characters to keys the count check only ever verified on layer 0.
+	const fileLayers = file.layers as unknown[];
+	const { entries: layerKeys } = layerKeysFrom(file, base);
+	const opened = new Set(layerKeys.map((k) => k.layer));
+	const layers: KeymapLayer[] = bindings.some((c) => c !== undefined) ? [{ index: 0, name: names[0] ?? "", byKeyId: byKeyIdOf(bindings, base, problems, 0) }] : [];
+	for (let li = 1; li < fileLayers.length; li += 1) {
+		const arr = fileLayers[li];
+		if (!Array.isArray(arr)) continue;
+		if (arr.length !== base.keys.length) {
+			problems.push(`layer ${li} has ${arr.length} bindings but the ${base.name} has ${base.keys.length} keys`);
+			return { problems, layerNames: names };
+		}
+		const chars = arr.map((b, i) => {
+			const binding = b as KeycapBinding;
+			if (!binding || typeof binding.value !== "string") {
+				problems.push(`layer ${li} position ${i + 1} is not a binding`);
+				return undefined;
+			}
+			return charOfBinding(binding, holdTaps);
+		});
+		const byKeyId = byKeyIdOf(chars, base, problems, li);
+		if (Object.keys(byKeyId).length > 0 || opened.has(li)) layers.push({ index: li, name: names[li] ?? "", byKeyId });
+	}
 	return {
-		keymap: { id, name, source: `keycap layers: ${names.join(", ") || "unnamed"}`, rows: done },
+		keymap: {
+			id,
+			name,
+			source: `keycap layers: ${names.join(", ") || "unnamed"}`,
+			rows: done,
+			...(layers.length > 1 ? { layers } : {}),
+			...(layerKeys.length ? { layerKeys } : {}),
+		},
 		geometryId: base.id,
 		layerNames: names,
 		problems,
 	};
+}
+
+function byKeyIdOf(chars: (string | undefined)[], base: Geometry, problems: string[], li: number): Record<string, string> {
+	const byKeyId: Record<string, string> = {};
+	for (const [i, key] of base.keys.entries()) {
+		const c = chars[i];
+		if (c === undefined) continue;
+		if (byKeyId[key.id] !== undefined) problems.push(`layer ${li} types two characters on ${key.id}`);
+		byKeyId[key.id] = c;
+	}
+	return byKeyId;
+}
+
+/** The keys that activate layers, in order of first appearance. A layer-tap or momentary binding is a
+ *  layer key wherever it lives; a Custom name counts only when `custom_defined_behaviors` declares it a
+ *  hold-tap whose hold side is `&mo` — the home-row mods (`bindings = <&kp>, <&kp>`) type a key and must
+ *  not be mistaken for one. */
+export function layerKeysFrom(file: KeycapFile, base: Geometry): { entries: LayerKey[]; problems: string[] } {
+	const entries: LayerKey[] = [];
+	const problems: string[] = [];
+	const holdTaps = holdTapBehaviorNames(file);
+	const seen = new Set<string>();
+	const fileLayers = Array.isArray(file.layers) ? (file.layers as unknown[]) : [];
+	for (const [li, arr] of fileLayers.entries()) {
+		if (!Array.isArray(arr)) continue;
+		for (const [i, b] of (arr as KeycapBinding[]).entries()) {
+			const tokens = bindingTokens(b);
+			if (!tokens) continue;
+			const head = (tokens[0] ?? "").replace(/^&/, "").toLowerCase();
+			const layer = Number(tokens[1]);
+			if (!Number.isInteger(layer) || layer < 0 || layer >= Math.max(fileLayers.length, (file.layer_names as unknown[] | undefined)?.length ?? 0)) continue;
+			let activation: LayerKey["activation"] | undefined;
+			if (head === "lt") activation = "hold-tap";
+			else if (head === "mo") activation = "momentary";
+			else if (head === "df") activation = "toggle";
+			else if (holdTaps.has(head)) activation = "hold-tap";
+			if (!activation) continue;
+			const keyId = base.keys[i]?.id;
+			if (!keyId) {
+				problems.push(`layer ${li} position ${i + 1} names a key this board does not have`);
+				continue;
+			}
+			const at = `${layer}|${keyId}`;
+			if (seen.has(at)) continue;
+			seen.add(at);
+			entries.push({ layer, keyId, activation });
+		}
+	}
+	return { entries, problems };
+}
+
+// "&mo" with params, or a Custom string: either form is a behaviour name followed by its cells.
+function bindingTokens(b: KeycapBinding | undefined): string[] | undefined {
+	if (!b || typeof b.value !== "string") return undefined;
+	if (b.value === "Custom") {
+		const raw = b.params?.[0]?.value;
+		return typeof raw === "string" ? raw.trim().split(/\s+/) : undefined;
+	}
+	if (!b.value.startsWith("&")) return undefined;
+	return [b.value, ...(b.params ?? []).map((p) => p.value)];
+}
+
+function holdTapBehaviorNames(file: KeycapFile): Set<string> {
+	const src = typeof file.custom_defined_behaviors === "string" ? file.custom_defined_behaviors : "";
+	const names = new Set<string>();
+	for (const m of src.matchAll(/([\w-]+)(?:\s*:\s*[\w-]+)?\s*\{[^{}]*compatible\s*=\s*"zmk,behavior-hold-tap"[^{}]*bindings\s*=\s*<&mo>\s*,\s*<&kp>/g)) {
+		names.add(m[1]);
+	}
+	return names;
 }
 
 // Working arrays are mutable; the published row type is a fixed 6-tuple.
@@ -100,31 +221,58 @@ function tuple(row: string[]): KeymapRow {
 	return [row[0] ?? "", row[1] ?? "", row[2] ?? "", row[3] ?? "", row[4] ?? "", row[5] ?? ""];
 }
 
-/** The character a binding types, if it types one. */
-export function charOfBinding(b: KeycapBinding): string | undefined {
+/** The character a binding types, if it types one. `holdTaps` names the file's custom hold-tap
+ *  behaviours, whose last cell is the tap -- what the key types on its own layer. */
+export function charOfBinding(b: KeycapBinding, holdTaps?: Set<string>): string | undefined {
 	// Behaviour names arrive both as "&kp" and as a bare "Custom", so compare without the "&" and
 	// without case.
 	const head = (b.value.startsWith("&") ? b.value.slice(1) : b.value).toLowerCase();
 	if (head === "kp") return charOfParam(b.params?.[0]);
 	if (head === "mt" || head === "lt" || head === "hk") return charOfParam(b.params?.at(-1)); // hold something, tap a key
-	if (head === "custom" || head === "macro") return charOfCustom(b.params?.[0]?.value);
+	if (head === "custom" || head === "macro") return charOfCustom(b.params?.[0]?.value, holdTaps);
 	return undefined; // &trans, &none, &mo, &magic, &bt, &mkp, a board behaviour
 }
 
-function charOfParam(p: KeycapParam | undefined): string | undefined {
+function charOfParam(p: KeycapParam | undefined, shifted = false): string | undefined {
 	if (!p) return undefined;
+	const v = p.value.trim().toUpperCase();
 	const inner = p.params?.[0];
-	if (inner && WRAPPED.test(p.value)) return charOfParam(inner); // LS(MINUS) is the minus key
-	return KEYCODES[p.value.toUpperCase()];
+	if (WRAPPED.test(v)) {
+		if (!inner || !isShift(v)) return undefined; // a ctrl/gui/alt chord quits or switches; it types nothing
+		return charOfParam(inner, true); // LS(N9) is "("; LS over a shortcut stays a shortcut
+	}
+	const under = keyChar(v);
+	return under !== undefined && shifted ? (SHIFTED[under] ?? under) : under;
 }
 
-// A Custom binding holds raw devicetree text: "&lt 1 LC(UP)" or "&kp A".
-function charOfCustom(raw: string | undefined): string | undefined {
+// A Custom binding holds raw devicetree text: "&lt 1 LC(UP)" or "&kp LG(LS(N5))".
+function charOfCustom(raw: string | undefined, holdTaps?: Set<string>): string | undefined {
 	if (!raw) return undefined;
 	const tokens = raw.trim().split(/\s+/);
-	const last = tokens.at(-1) ?? "";
-	const wrapped = /^(?:LS|RS|LC|RC|LG|RG|LE|LA)\((\w+)\)$/.exec(last);
-	return KEYCODES[(wrapped ? wrapped[1] : last).toUpperCase()];
+	const head = (tokens.shift() ?? "").replace(/^&/, "").toLowerCase();
+	if (head === "kp") return unwrapKeycode(tokens.join(" "));
+	if (head === "hml" || head === "hmr" || head === "lt" || holdTaps?.has(head)) return unwrapKeycode(tokens.at(-1) ?? ""); // hold something, tap a key
+	return undefined;
+}
+
+// Peel the modifier calls to the bare keycode -- but a control wrapper anywhere in the chain types
+// nothing, and a shift (at any level above the key) types the shifted character.
+function unwrapKeycode(text: string): string | undefined {
+	let t = text.trim();
+	let shifted = false;
+	for (let depth = 0; depth < 6; depth += 1) {
+		if (/^\w+$/.test(t)) {
+			const under = keyChar(t.toUpperCase());
+			return under !== undefined && shifted ? (SHIFTED[under] ?? under) : under;
+		}
+		const m = /^(\w+)\(([\s\S]*)\)$/.exec(t); // the outermost call is the one that decides
+		if (!m) return undefined;
+		const name = (m[1] ?? "").toUpperCase();
+		if (WRAPPED.test(name) && !isShift(name)) return undefined; // a shortcut, not a character
+		if (isShift(name)) shifted = true;
+		t = ((m[2] ?? "").split(/[, ]+/).pop() ?? "").trim();
+	}
+	return undefined;
 }
 
 function roleOfRow(g: Geometry, k: { row: number }): "upper" | "home" | "lower" | "number" | "extra" | "thumb" {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPractised } from "../src/stats/format.ts";
+import { describeRoute, formatPractised } from "../src/stats/format.ts";
 import { formatThousands } from "../src/stats/format.ts";
 
 describe("formatPractised", () => {
@@ -60,5 +60,24 @@ describe("formatThousands", () => {
 		expect(formatThousands(-1234)).toBe("-1,234");
 		expect(formatThousands(-99)).toBe("-99");
 		expect(formatThousands(-1_000_000)).toBe("-1,000,000");
+	});
+});
+
+describe("describeRoute", () => {
+	const charOf = (s: string) => ({ "L_C5R3": "t", "L_C4R4.2": "1", "R_C2R2.1": "7" })[s] ?? s;
+	const layerName = (l: number) => ({ 1: "Sym", 2: "NavNum" })[l] ?? "";
+
+	it("names a base route by its character", () => {
+		expect(describeRoute("L_C5R3", charOf, layerName)).toBe("T");
+	});
+
+	it("names a layer route by character and layer", () => {
+		expect(describeRoute("L_C4R4.2", charOf, layerName)).toBe("1 · NavNum");
+		expect(describeRoute("R_C2R2.1", charOf, layerName)).toBe("7 · Sym");
+	});
+
+	it("falls back honestly", () => {
+		expect(describeRoute("zz", charOf, layerName)).toBe("zz"); // no route to look up: show the raw id
+		expect(describeRoute("X.9", (s) => (s === "X.9" ? "q" : s), () => "")).toBe("Q · layer 9"); // a layer number the file never named
 	});
 });

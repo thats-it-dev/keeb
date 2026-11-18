@@ -16,7 +16,7 @@ const MIN_TRACK_SESSIONS = 4;
 /** Demo rows carry no timestamps, so no insight that depends on "when" can be drawn from them. */
 const dated = (rows: SessionRow[]): SessionRow[] => rows.filter((r) => r.atMs > 0);
 
-export function insightPanel(rows: SessionRow[], targetCpm: number): PanelCard[] {
+export function insightPanel(rows: SessionRow[], targetCpm: number, keyName: (id: string) => string = (id) => id): PanelCard[] {
 	const timed = dated(rows);
 	const cards: PanelCard[] = [];
 
@@ -47,17 +47,17 @@ export function insightPanel(rows: SessionRow[], targetCpm: number): PanelCard[]
 	const tr = trends(timed, goalMs);
 	if (tr.improving.length + tr.plateaued.length + tr.slowing.length > 0) {
 		const rowsOut: { label: string; detail: string }[] = [];
-		for (const k of tr.improving.slice(0, 3)) rowsOut.push({ label: k.keyId, detail: gain(k) });
-		for (const k of tr.slowing.slice(0, 2)) rowsOut.push({ label: k.keyId, detail: `slipped ${k.firstMs} → ${k.lastMs} ms` });
+		for (const k of tr.improving.slice(0, 3)) rowsOut.push({ label: keyName(k.keyId), detail: gain(k) });
+		for (const k of tr.slowing.slice(0, 2)) rowsOut.push({ label: keyName(k.keyId), detail: `slipped ${k.firstMs} → ${k.lastMs} ms` });
 		const stuck = tr.plateaued.filter((k) => k.sessions >= MIN_TRACK_SESSIONS).slice(0, 3);
 		const done = tr.plateaued.filter((k) => k.ms <= goalMs).slice(0, 3);
 		cards.push({
 			id: "trends",
 			title: "Keys that moved",
 			body: done.length
-				? `At goal and holding: ${done.map((k) => `${k.keyId} at ${k.ms} ms`).join(", ")}. These need reps to stay, not work to get faster.`
+				? `At goal and holding: ${done.map((k) => `${keyName(k.keyId)} at ${k.ms} ms`).join(", ")}. These need reps to stay, not work to get faster.`
 				: stuck.length
-					? `Flattened out: ${stuck.map((k) => `${k.keyId} at ${k.ms} ms`).join(", ")}. Still struck, no longer faster — the point to change how you practise them, not how often.`
+					? `Flattened out: ${stuck.map((k) => `${keyName(k.keyId)} at ${k.ms} ms`).join(", ")}. Still struck, no longer faster — the point to change how you practise them, not how often.`
 					: tr.slowing.length
 						? "Nothing has settled, but some keys are slipping. See the rows below."
 						: tr.slowing.length
@@ -79,7 +79,7 @@ export function insightPanel(rows: SessionRow[], targetCpm: number): PanelCard[]
 							title: "Keys you reached",
 							stat: `${marks.length}`,
 							sub: `first averaged under ${goalMs} ms`,
-							rows: marks.map((m) => ({ label: m.keyId, detail: fmtDay.format(new Date(m.atMs)) })),
+							rows: marks.map((m) => ({ label: keyName(m.keyId), detail: fmtDay.format(new Date(m.atMs)) })),
 							body: `Dated to the first session whose own average beat ${goalMs} ms on that key. A key already fast when this window opens is credited here at the start, because the records that would date it properly have been pruned.`,
 						}
 					: { id: "milestones", title: "Keys you reached", body: `No session in this window averages under ${goalMs} ms on any key yet.` },

@@ -100,7 +100,23 @@
 						"type": "ref",
 						"ref": "#char"
 					},
-					"maxLength": 200
+					"maxLength": 1000
+				},
+				"layerNames": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"maxGraphemes": 100
+					},
+					"maxLength": 32
+				},
+				"layerKeys": {
+					"type": "array",
+					"items": {
+						"type": "ref",
+						"ref": "#layerKey"
+					},
+					"maxLength": 64
 				}
 			}
 		},
@@ -117,7 +133,37 @@
 				},
 				"char": {
 					"type": "string",
-					"maxGraphemes": 4
+					"maxGraphemes": 16
+				},
+				"layer": {
+					"type": "integer",
+					"minimum": 0
+				}
+			}
+		},
+		"layerKey": {
+			"type": "object",
+			"required": [
+				"keyId",
+				"layer",
+				"activation"
+			],
+			"properties": {
+				"keyId": {
+					"type": "string",
+					"maxGraphemes": 100
+				},
+				"layer": {
+					"type": "integer",
+					"minimum": 1
+				},
+				"activation": {
+					"type": "string",
+					"knownValues": [
+						"momentary",
+						"hold-tap",
+						"toggle"
+					]
 				}
 			}
 		},

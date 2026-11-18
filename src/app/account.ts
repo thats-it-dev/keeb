@@ -1,11 +1,11 @@
 import { auth } from "../atproto/auth.ts";
 import { Sync, type SharedLayoutRow, type SyncState } from "../atproto/sync.ts";
-import { layoutRecord, SHARED_PREFIX, type SessionRow } from "../atproto/records.ts";
+import { keyChars, layoutRecord, SHARED_PREFIX, type SessionRow } from "../atproto/records.ts";
 import { allGeometries } from "../data/geometries.ts";
 import { allKeymaps } from "../data/keymaps.ts";
 import { applyRemoteProgress, layoutKey, loadSyncState, saveHistory, saveSyncState } from "../data/store.ts";
 import { adoptShared, sharedLayout, type Layouts } from "./boards.ts";
-import type { Geometry } from "../keyboard/types.ts";
+import type { Geometry, Keymap } from "../keyboard/types.ts";
 import type { StatMap } from "../stats/stats.ts";
 
 /** The page as the account layer sees it: read what is on screen, write back what the repo said. */
@@ -148,14 +148,15 @@ export class Account {
 	 * to the other browser: without it this one keeps typing under `import:whatever` while the account says
 	 * `shared:<rkey>`, and the two never recognize each other again.
 	 */
-	async publish(g: Geometry, keys: { id: string; char: string }[]): Promise<void> {
+	async publish(g: Geometry, keymap: Keymap, keys: { id: string; char: string }[]): Promise<void> {
 		const sync = this.#sync;
 		if (!sync) return;
 		this.note = "";
 		try {
 			const now = this.host.read();
-			const rkey = await sync.pushLayout(layoutKey(now.geometryId, now.keymapId), layoutRecord(g.name, g.source, g, keys));
-			const withShared = await adoptShared({ rkey, layout: sharedLayout(g, keys) } satisfies SharedLayoutRow, now.layouts);
+			const layout = sharedLayout(g, keymap, keys);
+			const rkey = await sync.pushLayout(layoutKey(now.geometryId, now.keymapId), layoutRecord(g.name, g.source, g, keyChars(keymap, keys), { layerNames: layout.layerNames, layerKeys: layout.layerKeys }));
+			const withShared = await adoptShared({ rkey, layout } satisfies SharedLayoutRow, now.layouts);
 			if (withShared.boards.length !== now.layouts.boards.length || withShared.maps.length !== now.layouts.maps.length) this.host.writeLayouts(withShared);
 			const id = SHARED_PREFIX + rkey;
 			this.host.pick(id, id);

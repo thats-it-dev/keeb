@@ -282,6 +282,13 @@ put a second, storable answer next to the one `ladder()` derives from stats that
     learner presses space or Enter to start the next line. No "Line done" prompt is shown. Any other key on a
     finished line does nothing (no stat, no error). This is a keeb deviation from keybr: keybr flows straight
     into the next run, keeb holds the finished line so the learner controls the pace.
+16. On a layered board the key the lesson is asking for is outlined in its layer's colour (the base layer
+    uses the primary), the layer character on it renders enlarged at full opacity while its sibling glyphs
+    dim, and the key that opens the layer wears a dashed ring in the same colour -- plus one `hold <layer>
+    · <key>, press <char>` line under the board (§14). None of this exists on a built-in board, which
+    draws exactly the markup it drew before layers did. One later amendment rides on every board: control
+    names print as keycap symbols (Enter "⏎", Backspace "⌫") because the words never fitted a
+    thumb (§14.4); "same markup" means same structure, not the same word in an old label.
 
 ## 13. Daily time goal (not from keybr)
 
@@ -305,3 +312,39 @@ The day belongs to keeb, not to the clone, so it is specified here rather than a
 5. The tally keeps 7 local calendar days and the bar reads only today, so a stale row cannot stack a
    second charge onto a session already counted. `chargeDaily` reads, folds and writes in one IndexedDB
    transaction, so a second tab's charge is added to, never overwritten by, this one's wholesale write.
+
+## 14. Layered keymaps (not from keybr)
+
+A MoErgo keycap export can carry more than one layer. What keeb does with the extra layers:
+
+1. Import keeps every layer. `keymapFromKeycap` returns the file's own layer indices in `layers` (each
+   indexing its characters by key id, `&trans` contributing nothing) and the layer-opening keys in
+   `layerKeys`, found through `&lt`/`&mo`/`&df` bindings including custom hold-tap behaviours declared in
+   `custom_defined_behaviors`. A modifier wrapper is read by what it types: an `LS`/`RS` wrapper yields
+   the shifted character (`&kp LS(N9)` is "(", the shift being the point; capitals rejoin their letter's
+   route, and `SINGLE_QUOTE` is the same key as `SQT`), while a control wrapper anywhere in the chain --
+   `LC`, `LG`, `LA` -- is a shortcut that types nothing: no character, no route (`&kp LG(Q)` quits an
+   app; it must never teach "q"). A hold-tap's tap half names its key too: `&lt 1 RET` makes that
+   thumb an Enter key on the board and in the hint, whatever the shipped geometry labels it -- and the
+   full name travels in the shared layout record, unclipped. A layer that only opens (an all-shortcut
+   Fn) is kept for its ring's label.
+2. One route per character. Each typable character is taught at exactly one (key, layer): taught rows
+   beat untaught, then the shortest reach from the home row, then the lower layer, then the file's own
+   order. Digits therefore live on the nav layer at home-row positions, not on the number row they share
+   the character with. The route's key id is `keyId` on the base layer and `keyId.<layer>` above it --
+   and that suffix is the stat id, so a letter and a digit on the same plastic keep separate numbers and
+   every figure stored before layers keeps meaning the same thing.
+3. The ladder teaches layer characters after the alphabet: candidates are the taught base letters (as
+   always) plus every character whose route is on a layer. Inside a line they appear as their own
+   one-character words, the focused one at least twice, and a weak route earns an extra appearance.
+   Words are still spelled only from letters -- a layer character cannot be spelled.
+4. Every layer's character prints on the same keycap, colour-coded (`--chart-2/3/4` by layer index, never
+   `--chart-1`, which competes with the lit key's `--primary`), with a legend row naming each colour.
+   A key that opens a layer wears that layer's colour on its own outline (the route light and the struck
+   fill win when both would apply). Control names shrink to keycap symbols on the face -- Enter draws
+   "⏎" and Backspace "⌫" -- while the hint line and the stats keep spelling them out.
+   The route light is an outline, never a fill: the fill lane stays reserved for the key that was just
+   struck (§12.16), so the struck-key contract from §12 is unchanged. Keycaps draw with a gutter: every
+   face is inset 4 units from its cell, so neighbours never touch, and the focus and way-there rings sit
+   8 units in -- inside the face, not across the channel. A space is the space bar on every
+   layer: layer `SPACE` bindings route nowhere and draw nothing.

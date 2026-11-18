@@ -5,7 +5,9 @@ import { GO60 } from "../src/data/go60.ts";
 import { keymapById } from "../src/data/keymaps.ts";
 import { resolve } from "../src/keyboard/resolve.ts";
 import { LAYOUT, PROGRESS, SETTINGS, SESSION, defs, layout, progress, session, settings } from "../src/atproto/lexicons.ts";
-import { boardFromLayout, charMap, foldProgress, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, layoutFromRecord, layoutRecord, mergeProgress, newKey, progressGrowth, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
+import { boardFromLayout, charMap, foldProgress, fromProgressRecord, fromSessionRecord, fromSettingsRecord, geometryFromRecord, keyGeometry, keyStats, layoutFromRecord, layoutRecord, mergeProgress, newKey, progressGrowth, keyChars, progressRecord, pruneSessions, sessionRecord, sessionTimeMs, settingsRecord, statsFrom } from "../src/atproto/records.ts";
+import { sharedLayout } from "../src/app/boards.ts";
+import type { Keymap } from "../src/keyboard/types.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
@@ -273,4 +275,85 @@ describe("session rows", () => {
 		expect(both.b!.samples).toBe(10);
 	});
 
+});
+
+const layeredMap: Keymap = {
+	id: "import:go60-layers",
+	name: "Layered",
+	source: "test",
+	rows: {} as const,
+	byKey: { A: "a", B: "b" },
+	layers: [
+		{ index: 0, name: "Main", byKeyId: { A: "a", B: "b" } },
+		{ index: 2, name: "Nav", byKeyId: { A: "1", B: "b", C: "7" } },
+	],
+	layerKeys: [{ layer: 2, keyId: "D", activation: "hold-tap" as const }],
+};
+const resolvedKeys = [
+	{ id: "A", char: "a" },
+	{ id: "B", char: "b" },
+];
+
+describe("layered layout records", () => {
+	it("emits one entry per key+layer and skips a char the key already types below", () => {
+		const chars = keyChars(layeredMap, resolvedKeys);
+		const rec = layoutRecord("Layered", "test", GO60, chars);
+		expect(rec.charMap.chars.filter((c) => c.keyId === "A")).toEqual([
+			{ keyId: "A", char: "a" },
+			{ keyId: "A", char: "1", layer: 2 },
+		]); // layer zero carries no field: old readers see exactly what they saw before
+		expect(rec.charMap.chars.find((c) => c.keyId === "B" && "layer" in c)).toBeUndefined(); // B types "b" below already
+		expect(rec.charMap.chars.find((c) => c.keyId === "C")).toEqual({ keyId: "C", char: "7", layer: 2 });
+	});
+
+	it("round-trips layers, names and layer keys through the record", () => {
+		const s = sharedLayout(GO60, layeredMap, resolvedKeys);
+		expect(s.byKey).toEqual({ A: "a", B: "b" });
+		expect(s.layers).toEqual([{ index: 2, name: "Nav", byKeyId: { A: "1", C: "7" } }]);
+		expect(s.layerNames).toEqual(["Main", "", "Nav"]);
+		expect(s.layerKeys).toEqual([{ layer: 2, keyId: "D", activation: "hold-tap" }]);
+		const rec = layoutRecord(s.name, s.source, GO60, keyChars(layeredMap, resolvedKeys), { layerNames: s.layerNames, layerKeys: s.layerKeys });
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		expect(back.layers).toEqual(s.layers);
+		expect(back.layerNames).toEqual(["Main", "", "Nav"]);
+		expect(back.layerKeys).toEqual(s.layerKeys);
+		const { keymap } = boardFromLayout("rk1", back);
+		expect(keymap.layers?.map((l) => l.index)).toEqual([0, 2]);
+		expect(keymap.layers?.[0].byKeyId).toEqual({ A: "a", B: "b" });
+		expect(keymap.layerKeys).toEqual(s.layerKeys);
+	});
+
+	it("reads a flat record exactly as it read before layers existed", () => {
+		const rec = layoutRecord("Go60", "keeb", GO60, r.keys.map((k) => ({ id: k.id, char: k.char })));
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		expect(back.layers).toBeUndefined();
+		expect(back.layerNames).toBeUndefined();
+		expect(back.layerKeys).toBeUndefined();
+		const { keymap } = boardFromLayout("rk2", back);
+		expect(keymap.layers).toBeUndefined();
+		expect(keymap.layerKeys).toBeUndefined();
+	});
+});
+
+describe("control names on the wire", () => {
+	it("sends a control key's full name, not its first four letters", () => {
+		const chars = [{ id: "R_T2", char: "Enter" }, { id: "L_T3", char: "Backspace" }];
+		const rec = layoutRecord("Go60", "keycap", GO60, chars);
+		expect(rec.charMap.chars.map((c) => c.char)).toEqual(["Enter", "Backspace"]);
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		expect(back.byKey["R_T2"]).toBe("Enter");
+		expect(back.byKey["L_T3"]).toBe("Backspace");
+	});
+
+	it("pulls the same legend and the same Enter as the pushed board", () => {
+		const rec = layoutRecord("Go60", "keycap", GO60, [{ id: "R_T2", char: "Enter" }, { id: "L_C3R2", char: "d" }], {
+			layerNames: ["Main", "Sym", "NavNum", "Fn"],
+			layerKeys: [{ keyId: "L_T3", layer: 3, activation: "hold-tap" }], // Fn itself types nothing
+		});
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		const { keymap } = boardFromLayout("pulled", back);
+		const pulled = resolve(GO60, keymap);
+		expect(pulled.layerNames).toContain("Fn"); // a layer opened by a key keeps its name across the wire
+		expect(pulled.enterKey).toBe("R_T2"); // not the key the shipped geometry merely labels "Enter"
+	});
 });
