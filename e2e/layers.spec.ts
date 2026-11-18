@@ -92,7 +92,11 @@ test("the route lights the key, its layer colour, and the ring on the way there"
 	await expect(page.locator("rect.routering")).toHaveCount(1);
 	if (route!.ringId) await expect(key(page, route!.ringId).locator("rect.routering")).toBeVisible();
 	await expect(page.locator(".hint")).toBeVisible();
-	await expect(page.locator(".hint")).toHaveText(new RegExp(`hold ${route!.layer === 1 ? "Sym" : route!.layer === 2 ? "NavNum" : "(Fn|layer \\d)"} · .+, press ${ch === ch.toUpperCase() ? ch : ch.toUpperCase()}`));
+	// The hold name is the ring key's own tap from the file -- Enter on R_T2, Backspace on R_T1, Tab on
+	// L_T3 -- not the shipped geometry's label, which is what used to leak through as "space".
+	const hold = route!.ringId === "R_T2" ? "Enter" : route!.ringId === "R_T1" ? "Backspace" : route!.ringId === "L_T3" ? "Tab" : ".+";
+	const press = ch!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // tokens are symbols now: "(" is a regex metacharacter
+	await expect(page.locator(".hint")).toHaveText(new RegExp(`hold ${route!.layer === 1 ? "Sym" : route!.layer === 2 ? "NavNum" : "(Fn|layer \\d)"} · ${hold}, press ${press}`));
 });
 
 test("the focus ring lands on the key even when the focus is a layer route", async ({ page }) => {

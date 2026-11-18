@@ -166,6 +166,7 @@ describe("importing a layered keymap", () => {
 	it("lets a shift wrapper type the shifted character", () => {
 		// Tree form, exactly as the real export writes it: the shift IS the point of the binding.
 		expect(charOfBinding({ value: "&kp", params: [{ value: "LS", params: [{ value: "N9" }] }] })).toBe("(");
+		expect(charOfBinding({ value: "&kp", params: [{ value: "RS", params: [{ value: "N4" }] }] })).toBe("$"); // right shift, same rule
 		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp LS(N7)" }] })).toBe("&");
 		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp LS(MINUS)" }] })).toBe("_");
 		// A shift under another modifier still names the key underneath: the combo doctrine holds.
