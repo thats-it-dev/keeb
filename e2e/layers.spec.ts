@@ -95,6 +95,21 @@ test("the route lights the key, its layer colour, and the ring on the way there"
 	await expect(page.locator(".hint")).toHaveText(new RegExp(`hold ${route!.layer === 1 ? "Sym" : route!.layer === 2 ? "NavNum" : "(Fn|layer \\d)"} · .+, press ${ch === ch.toUpperCase() ? ch : ch.toUpperCase()}`));
 });
 
+test("the focus ring lands on the key even when the focus is a layer route", async ({ page }) => {
+	await importLayers(page);
+	await unlockEveryLetter(page);
+	await page.getByRole("button", { name: "New line" }).click();
+	// Read the focused character off the rendered metric (its <b> value: the label row can decorate it
+	// with the layer name), then look up its route.
+	const value = ((await page.locator(".read .metric", { hasText: "focus" }).locator("b").first().textContent()) ?? "").trim();
+	const ch = value.split(" · ")[0]!; // the route label decorates: "7 · Sym"
+	const route = await routeFor(page, ch);
+	expect(route, `no route for focus char ${JSON.stringify(ch)}`).toBeTruthy();
+	expect(route!.layer, `focus should be a layer character here, got ${JSON.stringify(ch)} on layer ${route!.layer}`).toBeGreaterThan(0);
+	await expect(key(page, route!.keyId).locator("rect.ring")).toHaveCount(1);
+	await expect(page.locator("tt-keyboard g rect.ring")).toHaveCount(1);
+});
+
 test("the first character of every fresh line already has its route lit", async ({ page }) => {
 	await importLayers(page);
 	await unlockEveryLetter(page);

@@ -1,7 +1,7 @@
 import { html, nothing } from "https://kit.thatsit.app/lit.js";
 import { FINGER_NAME, type Geometry } from "../keyboard/types.ts";
 import { keyLabel, type Resolved } from "../keyboard/resolve.ts";
-import { routeOf } from "../keyboard/routes.ts";
+import { routeOf, ly } from "../keyboard/routes.ts";
 
 /**
  * The three lines under the heading: the numbers above the practice line, the board note, and what the
@@ -44,5 +44,5 @@ export function routeHint(r: Resolved, routeChar: string) {
 	const ringKey = r.byId.get(route.ringId);
 	const hold = ringKey ? keyLabel(ringKey) : route.ringId;
 	const press = route.char === " " ? "space" : route.char.toUpperCase();
-	return html`<p class="hint ly${Math.min(route.layer, 3)}">hold ${name} · ${hold}, press ${press}</p>`;
+	return html`<p class="hint ly${ly(route.layer)}">hold ${name} · ${hold}, press ${press}</p>`;
 }

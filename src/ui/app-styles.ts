@@ -56,6 +56,7 @@ export const appStyles = [
 		.hint.ly1 { color: var(--chart-2); }
 		.hint.ly2 { color: var(--chart-3); }
 		.hint.ly3 { color: var(--chart-4); }
+		.hint.lyx { color: var(--text-secondary); }
 		.full { grid-column: 1 / -1; }
 		.board { display: flex; align-items: center; gap: 10px; }
 		.problems { margin: 0; padding-left: 1.1em; color: var(--accent); font-size: 0.85rem; }

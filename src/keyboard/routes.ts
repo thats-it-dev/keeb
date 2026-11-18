@@ -44,3 +44,8 @@ export function routeOf(r: { routeChars: Map<string, Route>; layerKeyOf: Map<num
 	if (!x) return undefined;
 	return { keyId: x.keyId, layer: x.layer, ringId: x.layer === 0 ? "" : (r.layerKeyOf.get(x.layer) ?? ""), char: x.char };
 }
+
+// ly1..ly3 are the three layer colours; a fourth layer and beyond share a neutral tone. --chart-1 is
+// skipped on purpose: the lit key is already --primary, and two ambers would compete for "this one".
+// One mapping for the keycaps, the rings, the legend and the hint line, so they cannot drift apart.
+export const ly = (layer: number): number | "x" => (layer <= 3 ? layer : "x");

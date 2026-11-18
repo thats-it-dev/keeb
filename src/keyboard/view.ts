@@ -2,6 +2,8 @@ import { LitElement, html, css, nothing, svg } from "https://kit.thatsit.app/lit
 import type { Resolved } from "./resolve.ts";
 import type { RouteView } from "./routes.ts";
 import type { RenderKey } from "./types.ts";
+import { ly } from "./routes.ts";
+import { routeKey } from "../stats/stats.ts";
 
 // Draws a resolved layout. Coordinates are already in 1/100 key units, so the SVG user unit is a hundredth.
 export class TtKeyboard extends LitElement {
@@ -91,9 +93,9 @@ export class TtKeyboard extends LitElement {
 		const cx = k.x + k.w / 2;
 		const cy = k.y + k.h / 2;
 		const t = k.rot ? `rotate(${k.rot / 10} ${cx} ${cy})` : nothing; // an empty transform attribute makes the group unmeasurable
-		const ring = k.id === this.focusId ? svg`<rect class="ring" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
+		const ring = k.id === routeKey(this.focusId) ? svg`<rect class="ring" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
 		const route = this.route;
-		const wayThere = route && route.layer > 0 && route.ringId === k.id && k.id !== this.focusId ? svg`<rect class="routering ly${ly(route.layer)}" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
+		const wayThere = route && route.layer > 0 && route.ringId === k.id && k.id !== routeKey(this.focusId) ? svg`<rect class="routering ly${ly(route.layer)}" x=${k.x + 5} y=${k.y + 5} width=${Math.max(0, k.w - 10)} height=${Math.max(0, k.h - 10)} rx="12"></rect>` : nothing;
 		// A key whose only character is its base one -- every key on a built-in board, and most keys on a
 		// layered one -- renders exactly the markup it rendered before layers existed. The corner-slot
 		// renderer only wakes up for keycaps that earned a second face.
@@ -134,9 +136,7 @@ export class TtKeyboard extends LitElement {
 
 // ly1..ly3 are the three layer colours; a fourth layer and beyond share a neutral tone. --chart-1 is
 // skipped on purpose: the lit key is already --primary, and two ambers would compete for "this one".
-function ly(layer: number): number | "x" {
-	return layer <= 3 ? layer : "x";
-}
+// lives in routes.ts so the hint line and the keycaps cannot drift apart.
 
 export function display(char: string): string {
 	if (char === " ") return "␣";
