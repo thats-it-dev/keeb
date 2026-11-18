@@ -89,8 +89,9 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number, options: 
  * letters that make words possible. Letters come from the taught keys; layer characters join after the
  * alphabet is dealt, because a layer is a poor fit for a brand-new typist. Within that band the order is
  * measured, not alphabetical: `SYMBOL_ORDER` (scripts/make-symbols.ts) ranks every character a sample of
- * written English could see, and what it could not see — control tokens, exotic code points — keeps the
- * old code-point order at the very tail.
+ * written English could see, and what it could not see keeps the old code-point order at the very tail.
+ * (Routes are always single characters — `resolve.ts` refuses multi-character bindings — so there is no
+ * token band to rank.)
  */
 export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[] {
 	const routes = r.routes.filter((x) => x.layer > 0 || (/^[a-z]$/.test(x.char) && r.byId.get(x.keyId)!.taught));
@@ -101,10 +102,7 @@ export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[] {
 		if (letter !== undefined) return letter;
 		const sym = SYMBOL_ORDER.indexOf(ch); // band 2: characters ranked by measured use
 		if (sym >= 0) return freq.length + 1 + sym;
-		// band 3: unseen single characters; band 4: multi-character control tokens — both keep the
-		// code-point tie-break below. `SYMBOL_ORDER.length + 1` separation keeps band 3 ahead of band 4
-		// however long the tables get.
-		return freq.length + 1 + SYMBOL_ORDER.length + (ch.length === 1 ? 0 : SYMBOL_ORDER.length + 1);
+		return freq.length + 1 + SYMBOL_ORDER.length; // band 3: what the sample never printed — tie-break below
 	};
 	const cost = (x: (typeof routes)[number]) => {
 		const role = roleOf(r.geometry, r.byId.get(x.keyId)!.row);

@@ -339,7 +339,8 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
    always) plus every character whose route is on a layer. Inside that band the order is measured, not
    code-point: `SYMBOL_ORDER` (`scripts/make-symbols.ts`, character counts over CC BY-SA Wikipedia
    extracts, generated not hand-edited) ranks what written English actually prints — comma and
-   period first — and characters the sample never saw (control tokens, exotic code points) keep the
+   period first — and characters the sample never printed (a glyph no source page used —
+   routes are single characters, so there is nothing else to rank) keep the
    code-point order at the very tail. Inside a line they appear as their own
    one-character words, the focused one at least twice, and a weak route earns an extra appearance.
    Words are still spelled only from letters -- a layer character cannot be spelled.
