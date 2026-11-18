@@ -68,7 +68,7 @@ describe("the curriculum", () => {
 		const first = ladder(r, {}, TARGET);
 		const l = ladder(r, { ...atGoal(first.unlocked), [first.next!]: observe(emptyStat(), 200) }, TARGET);
 		expect(l.unlocked.length).toBe(first.unlocked.length + 1);
-		expect(l.next).not.toBe(first.next); // the letter it just handed out is still the one to practise
+		expect(l.focus).toBe(first.next); // the letter it just handed out is still the one to practise
 	});
 
 	it("will not open further letters on a slow start group, however many are waiting", () => {

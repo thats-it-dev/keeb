@@ -41,14 +41,16 @@ export function emptyStat(): KeyStat {
 }
 
 /**
- * The best a key has run at, in ms x 16, where 0 means "nothing worth unlocking on yet". Progress written
- * before `bestMs16` existed has no record of its own past, so its current mean is the honest answer — but
- * only once that mean is believable (TRUST_SAMPLES): a new key's first lucky stroke must not read as a
- * past it earned.
+ * The best a key has run at, in ms x 16, where 0 means "nothing worth unlocking on yet". A key under the
+ * trust floor (TRUST_SAMPLES) claims nothing however its record was written — the floor is checked here,
+ * at the one place every reader (the ladder, the merge, the wire) goes through, so a stale claim from a
+ * pre-floor device or payload cannot earn an unlock either. Progress written before `bestMs16` existed has
+ * no record of its own past, so once trusted its current mean is the honest answer: it is the only
+ * measurement there is.
  */
 export function bestMs(stat: KeyStat): number {
-	if (stat.bestMs16 && stat.bestMs16 > 0) return stat.bestMs16;
-	return stat.samples >= TRUST_SAMPLES ? stat.ttMs16 : 0;
+	if (stat.samples < TRUST_SAMPLES) return 0;
+	return stat.bestMs16 && stat.bestMs16 > 0 ? stat.bestMs16 : stat.ttMs16;
 }
 
 export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
@@ -73,7 +75,7 @@ export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
 		// are exposure, not evidence, so the first crossing records the mean as it stands then, and every
 		// stroke after it may only lower (never raise) the claim. An unclaimed `bestMs16` stays absent —
 		// `bestMs` treats it as "nothing yet", and the wire form writes 0.
-		bestMs16: stat.samples + 1 >= TRUST_SAMPLES ? minTiming(stat.bestMs16 ?? 0, ttMs16) : stat.bestMs16,
+		bestMs16: stat.samples + 1 >= TRUST_SAMPLES ? minTiming(bestMs(stat), ttMs16) : stat.bestMs16,
 		samples: stat.samples + 1,
 		errors: stat.errors,
 	};

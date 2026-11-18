@@ -48,7 +48,7 @@ describe("lexicons", () => {
 	});
 
 	it("accept a progress record and read it back unchanged", () => {
-		const stats = { a: { ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 }, f: { ttMs16: 900, bestMs16: 600, samples: 3, errors: 0 } };
+		const stats = { a: { ttMs16: 3200, bestMs16: 3200, samples: 40, errors: 1 }, f: { ttMs16: 900, bestMs16: 600, samples: 33, errors: 0 } };
 		const rec = progressRecord("go60+qwerty", stats, Date.now());
 		expect(check(rec as unknown as Record<string, unknown>)).toEqual([]);
 		expect(statsFrom(rec.stats)).toEqual(stats);

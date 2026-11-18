@@ -34,6 +34,14 @@ describe("the trust floor", () => {
 	it("credits nothing to a key with too few strokes, however fast they were", () => {
 		expect(bestConfidence(typeAt(200, 5), 200)).toBe(0);
 	});
+
+	it("reads a stale sub-floor claim as nothing, wherever it came from", () => {
+		// A record written by a pre-floor app version (or off the wire from one) can carry a `bestMs16` a
+		// single lucky stroke earned. The claim keeps its field for history; it just cannot unlock anything.
+		const stale: KeyStat = { ttMs16: stroke(200), bestMs16: stroke(200), samples: 3, errors: 0 };
+		expect(bestTimeMs(stale)).toBe(0);
+		expect(bestConfidence(stale, 200)).toBe(0);
+	});
 });
 
 describe("the per-key average", () => {
