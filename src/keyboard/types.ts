@@ -78,4 +78,4 @@ export type Keymap = {
 	layerKeys?: LayerKey[];
 };
 
-export type RenderKey = Key & { char: string; finger: Finger; taught: boolean };
+export type RenderKey = Key & { char: string; finger: Finger; taught: boolean; glyphs: { char: string; layer: number }[] };
