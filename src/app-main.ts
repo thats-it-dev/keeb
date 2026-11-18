@@ -324,7 +324,7 @@ export class AppMain extends LitElement {
 							onSignIn: () => void this.#account.signIn(),
 							onSignOut: () => void this.#account.signOut(),
 							onSync: () => void this.#account.syncNow(),
-							onPublish: () => void this.#account.publish(geometryById(this.geometryId), r.keys.map((key) => ({ id: key.id, char: key.char }))),
+							onPublish: () => void this.#account.publish(geometryById(this.geometryId), keymapById(this.keymapId), r.keys.map((key) => ({ id: key.id, char: key.char }))),
 							onRemoveBoard: (id) => void this.#removeBoard(id),
 							onRemoveMap: (id) => void this.#removeMap(id),
 						})}

@@ -39,10 +39,20 @@ const key = {
 	},
 };
 
+// `layer` is additive and optional: 0 (or absent) is the base layer, so a reader from before layered
+// keymaps sees exactly the array it always saw. Only layer > 0 is ever written.
 const char = {
 	type: "object",
 	required: ["keyId", "char"],
-	properties: { keyId: string, char: { type: "string", maxGraphemes: 4 } },
+	properties: { keyId: string, char: { type: "string", maxGraphemes: 4 }, layer: { type: "integer", minimum: 0 } },
+};
+
+// Which key opens which layer, and how it is held. Also additive: `layerNames` is the sparse index ->
+// name array, so an absent name reads "" and an old record simply has no layers above the base.
+const layerKey = {
+	type: "object",
+	required: ["keyId", "layer", "activation"],
+	properties: { keyId: string, layer: { type: "integer", minimum: 1 }, activation: { type: "string", knownValues: ["momentary", "hold-tap", "toggle"] } },
 };
 
 // The fixed-point form of KeyStat. Weighting the mean by `samples` is what lets two devices merge
@@ -75,9 +85,16 @@ export const defs = {
 		charMap: {
 			type: "object",
 			required: ["chars"],
-			properties: { chars: { type: "array", items: { type: "ref", ref: "#char" }, maxLength: 200 } },
+			properties: {
+				// 1000, not 200: a layered keymap sends one entry per key+layer, so the old cap is reached
+				// by a legitimate six-layer board.
+				chars: { type: "array", items: { type: "ref", ref: "#char" }, maxLength: 1000 },
+				layerNames: { type: "array", items: string, maxLength: 32 },
+				layerKeys: { type: "array", items: { type: "ref", ref: "#layerKey" }, maxLength: 64 },
+			},
 		},
 		char,
+		layerKey,
 		keyStats: {
 			type: "array",
 			items: { type: "ref", ref: "#keyStat" },

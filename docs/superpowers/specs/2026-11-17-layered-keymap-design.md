@@ -28,7 +28,9 @@ layout. He wants to practise the layout he actually uses, on the board he actual
 - Modelling combos and conditional layers as hint routes. Hold-taps are parsed (they *are* the layer keys);
   a layer's tri-layer conditional (`if-layers <1 2>` → Fn) is recorded in the model but never hinted or used
   as the route. Tap characters of hold-taps render as if plainly bound on that layer.
-- Sharing layered keymaps through atproto records (a schema change; file import stands alone).
+- ~~Sharing layered keymaps through atproto records~~ — brought into scope by plan task 7: `char.layer`,
+  `charMap.layerNames` and `charMap.layerKeys` are additive optional fields, and a record written before
+  them reads as exactly the single-layer layout it always did.
 - Rebuilding the lesson algorithm. The ladder, unlock-on-best-confidence rule and word generator stay as
   `docs/spec.md` describes; the curriculum simply accepts more characters and can place them as tokens.
 

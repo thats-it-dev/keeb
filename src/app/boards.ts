@@ -1,7 +1,7 @@
 import { GEOMETRIES, allGeometries, forgetGeometry, geometryById, registerGeometry } from "../data/geometries.ts";
 import { KEYMAPS, allKeymaps, forgetKeymap, registerKeymap } from "../data/keymaps.ts";
 import { deleteBoard, deleteMap, loadBoards, loadMaps, saveBoard, saveMap } from "../data/store.ts";
-import { boardFromLayout, type SharedLayout } from "../atproto/records.ts";
+import { boardFromLayout, keyChars, layerNamesOf, type SharedLayout } from "../atproto/records.ts";
 import type { SharedLayoutRow } from "../atproto/sync.ts";
 import { geometryFromLayout, importId, importName } from "../layout/parse.ts";
 import { isKeycapFile, keymapFromKeycap, type KeycapFile } from "../layout/keycap.ts";
@@ -74,10 +74,25 @@ export async function adoptShared(row: SharedLayoutRow, layouts: Layouts): Promi
 }
 
 /** The layout on screen as the record the account will hold: positions plus the characters it resolved. */
-export function sharedLayout(g: Geometry, keys: { id: string; char: string }[]): SharedLayout {
-	const byKey: Record<string, string> = {};
-	for (const key of keys) byKey[key.id] = key.char;
-	return { name: g.name, source: g.source, geometry: { split: g.split, rowRoles: g.rowRoles, keys: g.keys }, byKey };
+export function sharedLayout(g: Geometry, keymap: Keymap, resolvedKeys: { id: string; char: string }[]): SharedLayout {
+	const chars = keyChars(keymap, resolvedKeys);
+	const layerNames = layerNamesOf(keymap);
+	const grouped = chars.reduce<Record<number, Record<string, string>>>((acc, c) => {
+		if (c.layer) (acc[c.layer] ??= {})[c.id] = c.char;
+		return acc;
+	}, {});
+	const upper = Object.keys(grouped).length
+		? Object.entries(grouped)
+				.map(([index, byKeyId]) => ({ index: Number(index), name: layerNames[Number(index)] ?? "", byKeyId }))
+				.sort((a, b) => a.index - b.index)
+		: undefined;
+	return {
+		name: g.name,
+		source: g.source,
+		geometry: { split: g.split, rowRoles: g.rowRoles, keys: g.keys },
+		byKey: Object.fromEntries(chars.filter((c) => !c.layer).map((c) => [c.id, c.char])),
+		...(upper ? { layers: upper, ...(layerNames.some(Boolean) ? { layerNames } : {}), ...(keymap.layerKeys?.length ? { layerKeys: keymap.layerKeys } : {}) } : {}),
+	};
 }
 
 export async function removeBoard(id: string, layouts: Layouts, currentGeometryId: string): Promise<{ boards: Geometry[]; geometryId: string }> {
