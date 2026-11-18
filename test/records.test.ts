@@ -49,11 +49,11 @@ describe("records", () => {
 		// The field was renamed before publishing because goat flags `id` as reserved across language
 		// code generators, and a published field name is permanent. Records written under the old name are
 		// still in repos, so reading accepts both and writing emits only the new one.
-		expect(statsFrom([{ keyId: "a", ttMs16: 3200, samples: 10, errors: 1 }, { keyId: "s", ttMs16: 900, samples: 2, errors: 0 }])).toEqual({
+		expect(statsFrom([{ keyId: "a", ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 }, { keyId: "s", ttMs16: 900, bestMs16: 900, samples: 2, errors: 0 }])).toEqual({
 			a: stat(3200, 10, 1),
 			s: stat(900, 2),
 		});
-		expect(statsFrom([{ id: "a", ttMs16: 3200, samples: 10, errors: 1 } as never])).toEqual({ a: stat(3200, 10, 1) });
+		expect(statsFrom([{ id: "a", ttMs16: 3200, bestMs16: 3200, samples: 10, errors: 1 } as never])).toEqual({ a: stat(3200, 10, 1) });
 		// the new name wins when a row somehow carries both
 		expect(Object.keys(statsFrom([{ keyId: "d", id: "f", ttMs16: 1, samples: 1, errors: 0 }]))).toEqual(["d"]);
 		expect(geometryFromRecord({ split: false, keys: [{ id: "L_C5R3", hand: "l", row: 2, col: 5, x: 0, y: 0, w: 100, h: 100, rot: 0 } as never] }).keys[0]!.id).toBe("L_C5R3");

@@ -10,7 +10,7 @@ import { resolve } from "../src/keyboard/resolve.ts";
 import { press, start } from "../src/lesson/engine.ts";
 import { ladder, START_SIZE, teachingOrder } from "../src/lesson/ladder.ts";
 import { roleOf } from "../src/keyboard/geometry.ts";
-import { emptyStat, type KeyStat, type StatMap } from "../src/stats/stats.ts";
+import { emptyStat, observe, type KeyStat, type StatMap } from "../src/stats/stats.ts";
 
 const r = resolve(GO60, keymapById("qwerty"));
 const TARGET = 200; // cpm -> 300 ms per character
@@ -59,6 +59,16 @@ describe("the curriculum", () => {
 		const first = ladder(r, {}, TARGET);
 		const l = ladder(r, { ...atGoal(first.unlocked), [first.next!]: emptyStat() }, TARGET);
 		expect(l.unlocked.length).toBe(first.unlocked.length + 1);
+	});
+
+	it("does not open a second letter on one lucky stroke of the newest one", () => {
+		// Michael's "unlocking too quickly": the newest letter's first fast keystroke WAS its mean (the cold
+		// seed), which became its best on the spot, and that best is what stops it blocking the next letter.
+		// The trust floor in stats.ts means a stroke is exposure at once but evidence only in numbers.
+		const first = ladder(r, {}, TARGET);
+		const l = ladder(r, { ...atGoal(first.unlocked), [first.next!]: observe(emptyStat(), 200) }, TARGET);
+		expect(l.unlocked.length).toBe(first.unlocked.length + 1);
+		expect(l.next).not.toBe(first.next); // the letter it just handed out is still the one to practise
 	});
 
 	it("will not open further letters on a slow start group, however many are waiting", () => {

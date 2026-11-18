@@ -101,6 +101,17 @@ Only "the key was measured this session" feeds `best`: an unmeasurable interval 
 0. keeb has the same trap already documented in `src/stats/stats.ts` (`hasTiming`), so `bestMs16` must be
 carried forward untouched by a stroke that produced no observation.
 
+**keeb amendment — the trust floor (`TRUST_SAMPLES`, 32).** keeb has no session aggregate to earn `best`
+from: the EMA updates per keystroke, and a brand-new key's first timed stroke *is* its whole mean (the cold
+seed). Measured consequence: one lucky interval on a just-handed-out letter made it "at goal" permanently,
+which stopped it blocking the next letter, and the ladder fired a letter per line in cascade. So `best` may
+not be claimed before the mean has two alpha horizons of strokes behind it: `observe()` writes `bestMs16`
+only once `samples >= TRUST_SAMPLES` (the first crossing records the mean as it stands then, and later
+strokes may only lower it), and the legacy no-field fallback reads the mean only for a record that is
+already trusted. A key under the floor claims nothing — on screen, on the wire (`keyStats` writes 0, and
+`statsFrom` materialises a claim only for a trusted legacy record), and in the ladder (`bestConfidence`
+returns 0).
+
 ## 5. The focused key
 
 ```text
@@ -271,6 +282,9 @@ put a second, storable answer next to the one `ladder()` derives from stats that
 10. The corpus contains no profanity, no contraction fragment, no interjection and no proper name, and the
     same check runs over generated output.
 11. A stroke with no measurable interval changes `samples` but never `bestMs16`.
+11b. A key under the trust floor (`TRUST_SAMPLES` strokes) claims no `best`, however fast one stroke was:
+    `bestConfidence` is 0, nothing is written to `bestMs16`, and the wire form carries no claim. Once the
+    floor is met the claim is earned and stays monotone (§4).
 12. Merging a progress record with itself does not change `bestMs16` (min is idempotent) and does not
     double `samples`.
 13. The readout shows live session accuracy as `acc` = (chars − errors) / chars × 100, rounded to one

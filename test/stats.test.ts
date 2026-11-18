@@ -1,7 +1,7 @@
 // The per-key mean is the number every other screen reads: the keycap, the goal bar, the ladder, the
 // headline wpm. These are the tests for what goes INTO it.
 import { describe, expect, it } from "vitest";
-import { bestTimeMs, emptyStat, hasTiming, merge, observe, observeError, progressGrowth, routeId, routeKey, routeLayer, timeToTypeMs, type KeyStat } from "../src/stats/stats.ts";
+import { bestConfidence, bestTimeMs, emptyStat, hasTiming, merge, observe, observeError, progressGrowth, routeId, routeKey, routeLayer, timeToTypeMs, TRUST_SAMPLES, type KeyStat } from "../src/stats/stats.ts";
 
 const stroke = (ms: number) => Math.round(ms) * 16;
 
@@ -11,6 +11,30 @@ const typeAt = (ms: number, n: number, from: KeyStat = emptyStat()): KeyStat => 
 	for (let i = 0; i < n; i += 1) s = observe(s, ms);
 	return s;
 };
+
+describe("the trust floor", () => {
+	// What the curriculum unlocks on must be a believable mean, not one lucky keystroke. The measured bug:
+	// a learner a hair under goal who got one fast stroke on a brand-new letter had that stroke become the
+	// letter's whole mean (the cold seed), permanently at goal, so the next letter arrived on the next line —
+	// and the next, in cascade. keybr avoids this by earning `best` from session aggregates; we cannot
+	// (there is no session until the pane closes), so `best` may not be claimed before the mean has two
+	// alpha horizons of strokes behind it (TRUST_SAMPLES).
+	it("does not let one lucky stroke earn a key's best", () => {
+		let s = observe(emptyStat(), 200); // the cold seed lands under the 300 ms goal
+		for (let i = 0; i < TRUST_SAMPLES - 1; i += 1) s = observe(s, 320); // slower than goal ever after
+		expect(s.samples).toBe(TRUST_SAMPLES);
+		expect(bestConfidence(s, 200)).toBeLessThan(1);
+	});
+
+	it("earns the best once the mean has enough evidence behind it", () => {
+		const s = typeAt(200, TRUST_SAMPLES);
+		expect(bestConfidence(s, 200)).toBeGreaterThanOrEqual(1);
+	});
+
+	it("credits nothing to a key with too few strokes, however fast they were", () => {
+		expect(bestConfidence(typeAt(200, 5), 200)).toBe(0);
+	});
+});
 
 describe("the per-key average", () => {
 	it("moves one sixteenth of the way to the newest stroke", () => {
@@ -46,13 +70,15 @@ describe("the per-key average", () => {
 		// No prior mean means nothing to weight against. This is what the run-boundary test in
 		// lesson.test.ts reads back, and what the session-diffing in insights.ts inverts.
 		expect(observe(emptyStat(), 200).ttMs16).toBe(stroke(200));
-		expect(observeError(emptyStat(), 200)).toEqual({ ttMs16: stroke(200), bestMs16: stroke(200), samples: 1, errors: 1 });
+		// And one stroke, however fast, is not yet a claim of best — the trust floor has not been met.
+		expect(observeError(emptyStat(), 200)).toEqual({ ttMs16: stroke(200), samples: 1, errors: 1 });
 	});
 
 	it("keeps the fastest mean, not the latest one", () => {
-		// What the curriculum unlocks on. A key that touched goal speed and then spent an hour hunting and
-		// pecking must still read as taught, or the ladder hands the letter out again.
-		let s = observe(emptyStat(), 200);
+		// What the curriculum unlocks on. A key that ran at goal speed long enough to be believed, and then
+		// spent an hour hunting and pecking, must still read as taught, or the ladder hands the letter out
+		// again.
+		let s = typeAt(200, TRUST_SAMPLES); // the mean is believable now, and it was at goal the whole time
 		s = observe(s, 4_000); // the outlier ceiling files this as the slowest keystroke the key has evidence for
 		expect(timeToTypeMs(s)).toBeGreaterThan(200); // the running mean did go slow
 		expect(bestTimeMs(s)).toBe(200); // and the curriculum still reads the fastest it ever ran

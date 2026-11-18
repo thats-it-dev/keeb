@@ -29,16 +29,26 @@ const OUTLIER_TIMES = 4;
  *  past a hunt-and-peck interval, and the 1/16 pull above is what carries a genuinely slow key down. */
 const COLD_MAX_MS = 2_000;
 
+/** The number of strokes a key's mean needs before its `best` may be claimed: two full alpha horizons.
+ *  One stroke moves the mean 1/16 of the way, so after 32 strokes a single lucky interval is at most a
+ *  ~14% dent in it — not enough to push a hunt-and-peck key under goal on its own. Without this floor the
+ *  cold seed made a new letter's very first fast stroke permanently "at goal", and the ladder handed out a
+ *  letter per line in cascade (docs/spec.md §3–§4). */
+export const TRUST_SAMPLES = 32;
+
 export function emptyStat(): KeyStat {
 	return { ttMs16: 0, samples: 0, errors: 0 };
 }
 
 /**
- * The best a key has run at, in ms x 16. Progress written before `bestMs16` existed has no record of its
- * own past, so its current mean is the honest answer: it is the only measurement there is.
+ * The best a key has run at, in ms x 16, where 0 means "nothing worth unlocking on yet". Progress written
+ * before `bestMs16` existed has no record of its own past, so its current mean is the honest answer — but
+ * only once that mean is believable (TRUST_SAMPLES): a new key's first lucky stroke must not read as a
+ * past it earned.
  */
 export function bestMs(stat: KeyStat): number {
-	return stat.bestMs16 && stat.bestMs16 > 0 ? stat.bestMs16 : stat.ttMs16;
+	if (stat.bestMs16 && stat.bestMs16 > 0) return stat.bestMs16;
+	return stat.samples >= TRUST_SAMPLES ? stat.ttMs16 : 0;
 }
 
 export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
@@ -59,7 +69,11 @@ export function observe(stat: KeyStat, elapsedMs: number): KeyStat {
 	// keystroke, which is how a key typed two hundred times could print 12 wpm off one stray pause.
 	return {
 		ttMs16,
-		bestMs16: minTiming(bestMs(stat), ttMs16),
+		// `best` is earned from the believable part of the mean's history: strokes before the trust floor
+		// are exposure, not evidence, so the first crossing records the mean as it stands then, and every
+		// stroke after it may only lower (never raise) the claim. An unclaimed `bestMs16` stays absent —
+		// `bestMs` treats it as "nothing yet", and the wire form writes 0.
+		bestMs16: stat.samples + 1 >= TRUST_SAMPLES ? minTiming(stat.bestMs16 ?? 0, ttMs16) : stat.bestMs16,
 		samples: stat.samples + 1,
 		errors: stat.errors,
 	};

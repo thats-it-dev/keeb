@@ -163,15 +163,18 @@ describe("lesson engine", () => {
 		expect(second.engine.stats[second.targetId]!.ttMs16).toBe(200 * 16);
 	});
 
-	it("remembers the fastest a key has ever run", () => {
-		// Best, not current: a key that touched goal speed once and then went slow must still count as taught,
-		// or the curriculum re-teaches a letter the learner has already passed.
+	it("does not earn a key's best from one lucky stroke", () => {
+		// The bug this retires: the fastest a key had ever run was taken from any single stroke, so the very
+		// first fast keystroke of a brand-new letter counted as its best forever — and that best is what
+		// opens the next letter, so the ladder handed out a letter per line. `best` now waits for the trust
+		// floor (TRUST_SAMPLES in stats.ts): a stroke is exposure at once, but evidence only in numbers.
 		const e = start(course, {});
-		const fast = press(course, e, [...e.text][0]!, 5000);
-		const want2 = [...fast.engine.text][fast.engine.index]!;
-		const after = press(course, fast.engine, want2, 5000 + 60_000); // a pause, filed at its ceiling
-		const id = after.engine.stats[after.targetId] ? after.targetId : fast.targetId;
-		expect(after.engine.stats[id]!.bestMs16).toBeLessThanOrEqual(after.engine.stats[id]!.ttMs16);
+		const first = press(course, e, [...e.text][0]!, 5000); // the run boundary: untimed
+		const want2 = [...first.engine.text][first.engine.index]!;
+		const second = press(course, first.engine, want2, 5200); // one 200 ms stroke: fast, and not believed
+		const stat = second.engine.stats[second.targetId]!;
+		expect(stat.ttMs16).toBe(200 * 16); // it was timed, and the mean is that stroke (cold seed)
+		expect(stat.bestMs16 ?? 0).toBe(0); // and yet there is no claim of best to unlock on
 	});
 
 	it("keeps an average from coming out faster than every key it averages", () => {
