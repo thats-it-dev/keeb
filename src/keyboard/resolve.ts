@@ -31,9 +31,11 @@ export function isTaught(g: Geometry, k: Key): boolean {
 }
 
 export function charFor(g: Geometry, kmap: Keymap, k: Key): string {
-	// A shared layout names this exact key, so its character wins outright. The row grid is the shape that
-	// shipped before records existed and stays the fallback for the built-in boards.
-	const named = kmap.byKey?.[k.id];
+	// A shared layout or a keycap file's main layer names this exact key, so its character wins outright
+	// -- control taps included ("&lt 1 RET" makes that thumb an Enter key, whatever the shipped geometry
+	// labels it). The row grid is the shape that shipped before records existed and stays the fallback
+	// for the built-in boards.
+	const named = kmap.byKey?.[k.id] ?? kmap.layers?.find((l) => l.index === 0)?.byKeyId[k.id];
 	if (named) return named;
 	if (!isTaught(g, k)) return k.label;
 	const role = roleOf(g, k.row) as "upper" | "home" | "lower";

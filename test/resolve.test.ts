@@ -87,7 +87,7 @@ describe("resolving a layered keymap", () => {
 
 	it("routes each character to the occurrence closest to home", () => {
 		expect(r.routeChars.get("1")).toEqual({ char: "1", keyId: "L_C4R4", layer: 2, statId: "L_C4R4.2" }); // NavNum, below home
-		expect(r.routeChars.get("7")!.layer).toBe(1); // Sym's right index sits nearer than NavNum's left
+		expect(r.routeChars.get("7")!.layer).toBe(2); // Sym's F key types "&" (LS(N7)), so the NavNum 7 wins
 		expect(r.routeChars.get("t")!.layer).toBe(0); // a taught letter beats every layer occurrence
 		expect(r.byStat.get("L_C4R4.2")!.char).toBe("1");
 		expect(r.byChar.get("1")).toBe("L_C4R4"); // and highlighting follows the route
@@ -101,10 +101,17 @@ describe("resolving a layered keymap", () => {
 	});
 
 	it("draws every layer's character on its key", () => {
-		const f = r.byId.get("R_C2R2")!; // f on Main, 7 on Sym
+		const f = r.byId.get("R_C2R2")!; // f on Main, "&" on Sym
 		expect(f.char).toBe("f");
-		expect(f.glyphs).toEqual([{ char: "f", layer: 0 }, { char: "7", layer: 1 }]);
-		const same = r.byId.get("R_T2")!; // space on several layers: one glyph, not three
-		expect(same.glyphs.filter((g) => g.char === " ")).toHaveLength(1);
+		expect(f.glyphs).toEqual([{ char: "f", layer: 0 }, { char: "&", layer: 1 }]);
+		const same = r.byId.get("R_T2")!; // its tap types Enter; a layer's SPACE adds no glyph
+		expect(same.char).toBe("Enter"); // the file says so, not the shipped geometry's label
+		expect(same.glyphs).toEqual([]);
+	});
+
+	it("routes the shifted symbols the file types", () => {
+		expect(r.routeChars.get("(")!.layer).toBe(1); // Sym's LS(N3) key -- "(" is now teachable
+		expect(r.routeChars.get("(")!.char).toBe("(");
+		expect(r.routeChars.get("7")!.char).toBe("7"); // and the digit keeps its own route, unchanged
 	});
 });

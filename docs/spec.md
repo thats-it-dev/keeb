@@ -318,8 +318,11 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
 1. Import keeps every layer. `keymapFromKeycap` returns the file's own layer indices in `layers` (each
    indexing its characters by key id, `&trans` contributing nothing) and the layer-opening keys in
    `layerKeys`, found through `&lt`/`&mo`/`&df` bindings including custom hold-tap behaviours declared in
-   `custom_defined_behaviors`. A character under a modifier wrapper (`&kp LS(N5)`, `&kp LG(LS(N5))`) folds
-   to the key underneath, exactly as the parameter-tree form already did.
+   `custom_defined_behaviors`. A modifier wrapper is read by what it types: an outermost `LS`/`RS`
+   yields the shifted character (`&kp LS(N9)` is "(", the shift being the point), while any other
+   wrapper -- `LC`, `LG`, `LA`, or a shift sitting under one of those -- names the key underneath
+   (`&kp LG(LS(N5))` is the "5" key). A hold-tap's tap half names its key too: `&lt 1 RET` makes that
+   thumb an Enter key on the board and in the hint, whatever the shipped geometry labels it.
 2. One route per character. Each typable character is taught at exactly one (key, layer): taught rows
    beat untaught, then the shortest reach from the home row, then the lower layer, then the file's own
    order. Digits therefore live on the nav layer at home-row positions, not on the number row they share

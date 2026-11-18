@@ -40,7 +40,20 @@ const KEYCODES: Record<string, string> = {
 	MINUS: "-", EQUAL: "=", LBKT: "[", RBKT: "]", BSLH: "\\", SQT: "'", SEMI: ";", COMMA: ",", DOT: ".", FSLH: "/",
 	GRAVE: "`", LBRC: "{", RBRC: "}", SPACE: " ", EXCL: "!", AT: "@", HASH: "#", DLLR: "$", PRCT: "%", CARET: "^",
 	AMPS: "&", ASTER: "*", LPAR: "(", RPAR: ")", UNDER: "_", PLUS: "+",
+	// Control taps: multi-character on purpose -- they name a key, never a route. A hold-tap's tap side
+	// (`&lt 1 RET`) says what this thumb types, and that is what the board and the hint must call it.
+	RET: "Enter", ENTER: "Enter", BSPC: "Backspace", TAB: "Tab", DEL: "Delete", ESC: "Escape",
 };
+
+// What the US shift of each plain character is. LS(N9) types "(" -- the shift is the point, so this is
+// the character, not the "9" underneath. Letters shift to capitals, which rejoin their own routes.
+const SHIFTED: Record<string, string> = {
+	"`": "~", "1": "!", "2": "@", "3": "#", "4": "$", "5": "%", "6": "^", "7": "&", "8": "*", "9": "(", "0": ")",
+	"-": "_", "=": "+", "[": "{", "]": "}", "\\": "|", ";": ":", "'": "\"", ",": "<", ".": ">", "/": "?",
+};
+for (const c of "abcdefghijklmnopqrstuvwxyz") SHIFTED[c] = c.toUpperCase();
+
+const isShift = (wrapper: string): boolean => /^(LS|RS)$/.test(wrapper.toUpperCase());
 
 // Wrappers that name the key underneath: LS(MINUS) is the minus key, LC(Y) is the Y key.
 const WRAPPED = /^(LS|RS|LC|RC|LG|RG|LE|LA|LT|RT)$/;
@@ -53,6 +66,7 @@ export function isKeycapFile(json: unknown): json is KeycapFile {
 export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-import", name = "From layout file"): KeycapImport {
 	const problems: string[] = [];
 	const names = Array.isArray(file.layer_names) ? (file.layer_names as unknown[]).map(String) : [];
+	const holdTaps = holdTapBehaviorNames(file);
 	if (typeof file.keyboard !== "string" || !file.keyboard) return { problems: [...problems, "no `keyboard` field: cannot tell which board this is"], layerNames: names };
 	if (file.keyboard.trim().toLowerCase() !== base.id.toLowerCase()) {
 		return { problems: [...problems, `this file is for a "${file.keyboard}", not the ${base.name} selected here`], layerNames: names };
@@ -65,7 +79,7 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 			problems.push(`layer 0 position ${i + 1} is not a binding`);
 			return undefined;
 		}
-		return charOfBinding(binding);
+		return charOfBinding(binding, holdTaps);
 	});
 	if (bindings.length !== base.keys.length) {
 		problems.push(`layer 0 has ${bindings.length} bindings but the ${base.name} has ${base.keys.length} keys`);
@@ -106,7 +120,7 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 				problems.push(`layer ${li} position ${i + 1} is not a binding`);
 				return undefined;
 			}
-			return charOfBinding(binding);
+			return charOfBinding(binding, holdTaps);
 		});
 		const byKeyId = byKeyIdOf(chars, base, problems, li);
 		if (Object.keys(byKeyId).length > 0) layers.push({ index: li, name: names[li] ?? "", byKeyId });
@@ -201,39 +215,50 @@ function tuple(row: string[]): KeymapRow {
 	return [row[0] ?? "", row[1] ?? "", row[2] ?? "", row[3] ?? "", row[4] ?? "", row[5] ?? ""];
 }
 
-/** The character a binding types, if it types one. */
-export function charOfBinding(b: KeycapBinding): string | undefined {
+/** The character a binding types, if it types one. `holdTaps` names the file's custom hold-tap
+ *  behaviours, whose last cell is the tap -- what the key types on its own layer. */
+export function charOfBinding(b: KeycapBinding, holdTaps?: Set<string>): string | undefined {
 	// Behaviour names arrive both as "&kp" and as a bare "Custom", so compare without the "&" and
 	// without case.
 	const head = (b.value.startsWith("&") ? b.value.slice(1) : b.value).toLowerCase();
 	if (head === "kp") return charOfParam(b.params?.[0]);
 	if (head === "mt" || head === "lt" || head === "hk") return charOfParam(b.params?.at(-1)); // hold something, tap a key
-	if (head === "custom" || head === "macro") return charOfCustom(b.params?.[0]?.value);
+	if (head === "custom" || head === "macro") return charOfCustom(b.params?.[0]?.value, holdTaps);
 	return undefined; // &trans, &none, &mo, &magic, &bt, &mkp, a board behaviour
 }
 
-function charOfParam(p: KeycapParam | undefined): string | undefined {
+function charOfParam(p: KeycapParam | undefined, top = true): string | undefined {
 	if (!p) return undefined;
 	const inner = p.params?.[0];
-	if (inner && WRAPPED.test(p.value)) return charOfParam(inner); // LS(MINUS) is the minus key
+	if (inner && WRAPPED.test(p.value)) {
+		const under = charOfParam(inner, false); // deeper wrappers name the key underneath, unchanged
+		if (under === undefined) return undefined;
+		return top && isShift(p.value) ? (SHIFTED[under] ?? under) : under; // LS(N9) is "("; LG(LS(N5)) is still the 5 key
+	}
 	return KEYCODES[p.value.toUpperCase()];
 }
 
 // A Custom binding holds raw devicetree text: "&lt 1 LC(UP)" or "&kp LG(LS(N5))".
-function charOfCustom(raw: string | undefined): string | undefined {
+function charOfCustom(raw: string | undefined, holdTaps?: Set<string>): string | undefined {
 	if (!raw) return undefined;
 	const tokens = raw.trim().split(/\s+/);
 	const head = (tokens.shift() ?? "").replace(/^&/, "").toLowerCase();
 	if (head === "kp") return unwrapKeycode(tokens.join(" "));
-	if (head === "hml" || head === "hmr" || head === "lt") return unwrapKeycode(tokens.at(-1) ?? ""); // hold something, tap a key
+	if (head === "hml" || head === "hmr" || head === "lt" || holdTaps?.has(head)) return unwrapKeycode(tokens.at(-1) ?? ""); // hold something, tap a key
 	return undefined;
 }
 
-// The key-underneath doctrine, on text: peel the innermost modifier call until a keycode is bare.
+// Peel the modifier calls to the bare keycode -- but the outermost one decides: LS/RS types its shifted
+// character, everything else names the key underneath.
 function unwrapKeycode(text: string): string | undefined {
-	let t = text.trim();
+	const t0 = text.trim();
+	const outerShift = /^(LS|RS)\s*\(/i.test(t0);
+	let t = t0;
 	for (let depth = 0; depth < 5; depth += 1) {
-		if (/^\w+$/.test(t)) return KEYCODES[t.toUpperCase()];
+		if (/^\w+$/.test(t)) {
+			const under = KEYCODES[t.toUpperCase()];
+			return under !== undefined && outerShift ? (SHIFTED[under] ?? under) : under;
+		}
 		const groups = [...t.matchAll(/\(([^()]*)\)/g)]; // the innermost calls are the ones with no nested parens
 		const inner = groups.at(-1)?.[1];
 		if (inner === undefined) return undefined;

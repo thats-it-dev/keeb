@@ -48,25 +48,26 @@ describe("reading characters out of a layout editor export", () => {
 	});
 
 	it("puts the upper row where the fingers are", () => {
-		// The vendor's matrix order is left outer to inner, then right inner to outer.
-		expect(keymap!.rows.upper?.l).toEqual(["", "b", "l", "d", "c", "v"]);
-		expect(keymap!.rows.upper?.r).toEqual(["", ",", "u", "o", "f", "j"]);
+		// The vendor's matrix order is left outer to inner, then right inner to outer. The outer column
+		// carries what the file says those keys type -- Tab included.
+		expect(keymap!.rows.upper?.l).toEqual(["Tab", "b", "l", "d", "c", "v"]);
+		expect(keymap!.rows.upper?.r).toEqual(["Backspace", ",", "u", "o", "f", "j"]);
 	});
 
 	it("puts the home row where the fingers are", () => {
 		expect(keymap!.rows.home?.l).toEqual(["", "n", "r", "t", "s", "g"]);
-		expect(keymap!.rows.home?.r).toEqual(["", "i", "e", "a", "h", "y"]);
+		expect(keymap!.rows.home?.r).toEqual(["Enter", "i", "e", "a", "h", "y"]);
 	});
 
 	it("puts the lower row where the fingers are", () => {
 		expect(keymap!.rows.lower?.l).toEqual(["", "x", "q", "m", "w", "z"]);
-		expect(keymap!.rows.lower?.r).toEqual(["=", ".", ";", "'", "p", "k"]);
+		expect(keymap!.rows.lower?.r).toEqual(["+", ".", ";", "'", "p", "k"]); // LS(EQUAL) types "+", not "="
 	});
 
 	it("keeps a real character on the outer column", () => {
 		// The shipped keymaps leave column 0 blank so the geometry label shows, but when the file
 		// genuinely types something there we show that instead. It stays outside the taught set.
-		expect(keymap!.rows.lower?.r[0]).toBe("=");
+		expect(keymap!.rows.lower?.r[0]).toBe("+");
 		expect(keymap!.rows.home?.l[0]).toBe(""); // LCTRL types no character
 	});
 
@@ -84,8 +85,8 @@ describe("character of a single binding", () => {
 		expect(charOfBinding(kp("MINUS"))).toBe("-");
 	});
 
-	it("unwraps a shifted or chorded keycode to the key underneath", () => {
-		expect(charOfBinding({ value: "&kp", params: [{ value: "LS", params: [{ value: "MINUS" }] }] })).toBe("-");
+	it("shifts an LS keycode and folds other chords to the key underneath", () => {
+		expect(charOfBinding({ value: "&kp", params: [{ value: "LS", params: [{ value: "MINUS" }] }] })).toBe("_"); // the shift is the point
 		expect(charOfBinding({ value: "&kp", params: [{ value: "LC", params: [{ value: "Y" }] }] })).toBe("y");
 	});
 
@@ -160,5 +161,26 @@ describe("importing a layered keymap", () => {
 		const { keymap: km } = keymapFromKeycap(edited, GO60);
 		expect(km!.layers![0].byKeyId["L_T3"]).toBeUndefined();
 		expect(km!.layerKeys!.some((k) => k.keyId === "L_T3")).toBe(false);
+	});
+
+	it("lets a shift wrapper type the shifted character", () => {
+		// Tree form, exactly as the real export writes it: the shift IS the point of the binding.
+		expect(charOfBinding({ value: "&kp", params: [{ value: "LS", params: [{ value: "N9" }] }] })).toBe("(");
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp LS(N7)" }] })).toBe("&");
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp LS(MINUS)" }] })).toBe("_");
+		// A shift under another modifier still names the key underneath: the combo doctrine holds.
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp LG(LS(N5))" }] })).toBe("5");
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&kp LC(LG(LS(N4)))" }] })).toBe("4");
+	});
+
+	it("reads the tap key of every hold-tap form", () => {
+		expect(charOfBinding({ value: "Custom", params: [{ value: "&lt 1 RET" }] })).toBe("Enter");
+		expect(charOfBinding({ value: "&lt", params: [{ value: "2" }, { value: "BSPC" }] })).toBe("Backspace");
+		// A declared custom hold-tap works by the same rule as &lt.
+		const edited = structuredClone(layered) as Fixture;
+		edited.layers[0][58] = { value: "Custom", params: [{ value: "&lt_bspc 2 BSPC" }] };
+		expect(keymapFromKeycap(edited, GO60).keymap!.layers![0].byKeyId["R_T2"]).toBe("Backspace");
+		// The fixture's own right thumb: "&lt 1 RET" -- the tap belongs to the layer-0 character map.
+		expect(keymap!.layers![0].byKeyId["R_T2"]).toBe("Enter");
 	});
 });

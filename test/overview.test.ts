@@ -133,7 +133,7 @@ describe("route rows", () => {
 		const rows = routeRows(lr);
 		expect(rows.length).toBe(lr.keys.length + lr.routes.filter((x) => x.layer > 0).length);
 		const seven = rows.find((x) => x.id === "R_C2R2.1");
-		expect(seven?.label).toBe("7 · Sym");
+		expect(seven?.label).toBe("& · Sym"); // the Sym F key types shift-7, not 7
 	});
 
 	it("counts layer routes in the numbers the screen leads with", () => {
