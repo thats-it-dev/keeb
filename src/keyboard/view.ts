@@ -24,6 +24,13 @@ export class TtKeyboard extends LitElement {
 		.route.ly2 rect { stroke: var(--chart-3); }
 		.route.ly3 rect { stroke: var(--chart-4); }
 		.route.lyx rect { stroke: var(--text-secondary); }
+		/* A key that OPENS a layer wears that layer's colour on its own outline, so the way to every layer
+		 * is coloured before the lesson asks for it. Never at the same time as the route class: when the
+		 * route lands here, the route's stroke (and the struck-key fill) decide. */
+		.lkey.ly1 rect { stroke: var(--chart-2); }
+		.lkey.ly2 rect { stroke: var(--chart-3); }
+		.lkey.ly3 rect { stroke: var(--chart-4); }
+		.lkey.lyx rect { stroke: var(--text-secondary); }
 		.route .g:not(.gok) { opacity: 0.5; }
 		/* The key the lesson is built around wears a broken ring of its own. A second element rather than a
 		 * recoloured border, because this board already uses fill for "you just hit this" and red for "you
@@ -42,6 +49,7 @@ export class TtKeyboard extends LitElement {
 		.routering { fill: none; stroke-width: 4; stroke-dasharray: 4 5; pointer-events: none; }
 		.routering.ly1 { stroke: var(--chart-2); }
 		.routering.ly2 { stroke: var(--chart-3); }
+		.routering.ly3 { stroke: var(--chart-4); }
 		.routering.lyx { stroke: var(--text-secondary); }
 		/* The layer legend under a layered board: state is never carried by colour alone -- every swatch
 		 * wears its layer's name. */
@@ -87,7 +95,10 @@ export class TtKeyboard extends LitElement {
 		// the route in the outline lane, leaving the FILL lane to what just happened (struck, missed).
 		const hasLayers = (this.resolved?.layerNames.length ?? 0) > 0;
 		const isRoute = hasLayers && this.route !== undefined && this.route.keyId === k.id;
-		const cls = ["k", k.rot ? "curved" : "", k.taught ? "" : "unt", k.id === this.active ? "on" : "", k.id === this.missed ? "missed" : "", isRoute ? "route" : "", isRoute && this.route!.layer > 0 ? `ly${ly(this.route!.layer)}` : ""]
+		// Which layer this key opens, if it opens one (the inverse of layerKeyOf: a handful of entries).
+		let opens: number | undefined;
+		for (const [layer, keyId] of this.resolved?.layerKeyOf ?? []) if (keyId === k.id) opens = layer;
+		const cls = ["k", k.rot ? "curved" : "", k.taught ? "" : "unt", k.id === this.active ? "on" : "", k.id === this.missed ? "missed" : "", isRoute ? "route" : "", isRoute && this.route!.layer > 0 ? `ly${ly(this.route!.layer)}` : "", opens !== undefined && !isRoute && k.id !== this.active && k.id !== this.missed ? `lkey ly${ly(opens)}` : ""]
 			.filter(Boolean)
 			.join(" ");
 		const cx = k.x + k.w / 2;
@@ -138,8 +149,13 @@ export class TtKeyboard extends LitElement {
 // skipped on purpose: the lit key is already --primary, and two ambers would compete for "this one".
 // lives in routes.ts so the hint line and the keycaps cannot drift apart.
 
+// Control names draw as keycap symbols: the words do not fit a one-unit thumb. The hint line and the
+// stats keep spelling them out -- only the face of the key is shorthand.
+const SYMBOLS: Record<string, string> = { Enter: "\u23CE", Backspace: "\u232B" };
+
 export function display(char: string): string {
-	if (char === " ") return "␣";
+	if (char === " ") return "\u2423";
+	if (SYMBOLS[char]) return SYMBOLS[char];
 	if (char.length === 1) return char.toUpperCase();
 	return char;
 }

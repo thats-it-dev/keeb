@@ -338,6 +338,9 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
    Words are still spelled only from letters -- a layer character cannot be spelled.
 4. Every layer's character prints on the same keycap, colour-coded (`--chart-2/3/4` by layer index, never
    `--chart-1`, which competes with the lit key's `--primary`), with a legend row naming each colour.
+   A key that opens a layer wears that layer's colour on its own outline (the route light and the struck
+   fill win when both would apply). Control names shrink to keycap symbols on the face -- Enter draws
+   "\u23ce" and Backspace "\u232b" -- while the hint line and the stats keep spelling them out.
    The route light is an outline, never a fill: the fill lane stays reserved for the key that was just
    struck (§12.16), so the struck-key contract from §12 is unchanged. A space is the space bar on every
    layer: layer `SPACE` bindings route nowhere and draw nothing.

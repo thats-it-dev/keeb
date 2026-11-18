@@ -114,6 +114,18 @@ test("the focus ring lands on the key even when the focus is a layer route", asy
 	await expect(page.locator("tt-keyboard g rect.ring")).toHaveCount(1);
 });
 
+test("the thumbs wear their layer: a symbol on the face, the layer colour on the outline", async ({ page }) => {
+	await importLayers(page);
+	// Words do not fit a 1u thumb: Enter and Backspace draw as their keycap symbols.
+	await expect(key(page, "R_T2")).toContainText("\u23CE"); // &lt 1 RET
+	await expect(key(page, "R_T1")).toContainText("\u232B"); // &lt_bspc 2 BSPC
+	await expect(key(page, "R_T2")).not.toContainText("Enter");
+	// The key that opens a layer wears that layer's colour on its own outline.
+	await expect(key(page, "R_T2")).toHaveClass(/\bly1\b/); // Sym
+	await expect(key(page, "R_T1")).toHaveClass(/\bly2\b/); // NavNum
+	await expect(key(page, "L_T3")).toHaveClass(/\bly3\b/); // Fn
+});
+
 test("the first character of every fresh line already has its route lit", async ({ page }) => {
 	await importLayers(page);
 	await unlockEveryLetter(page);
