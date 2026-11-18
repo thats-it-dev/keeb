@@ -13,6 +13,7 @@ import { roleOf } from "../keyboard/geometry.ts";
 import type { Resolved } from "../keyboard/resolve.ts";
 import { bestConfidence, confidence, emptyStat, type StatMap } from "../stats/stats.ts";
 import { frequencyOrder } from "./model.ts";
+import { SYMBOL_ORDER } from "./symbols.ts";
 
 /** Letters a brand new learner is given. Below this the language cannot be spelled at all. */
 export const START_SIZE = 6;
@@ -86,18 +87,31 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number, options: 
  * inside a row, most frequent letter first. That is the same weighting keybr gives its keyboard layout,
  * and it keeps the two orders honest about the thing they have in common, which is that both start with
  * letters that make words possible. Letters come from the taught keys; layer characters join after the
- * alphabet is dealt, because a layer is a poor fit for a brand-new typist.
+ * alphabet is dealt, because a layer is a poor fit for a brand-new typist. Within that band the order is
+ * measured, not alphabetical: `SYMBOL_ORDER` (scripts/make-symbols.ts) ranks every character a sample of
+ * written English could see, and what it could not see — control tokens, exotic code points — keeps the
+ * old code-point order at the very tail.
  */
 export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[] {
 	const routes = r.routes.filter((x) => x.layer > 0 || (/^[a-z]$/.test(x.char) && r.byId.get(x.keyId)!.taught));
 	const freq = frequencyOrder();
 	const rank = new Map(freq.map((ch, i) => [ch, i]));
+	const rankOf = (ch: string): number => {
+		const letter = rank.get(ch);
+		if (letter !== undefined) return letter;
+		const sym = SYMBOL_ORDER.indexOf(ch); // band 2: characters ranked by measured use
+		if (sym >= 0) return freq.length + 1 + sym;
+		// band 3: unseen single characters; band 4: multi-character control tokens — both keep the
+		// code-point tie-break below. `SYMBOL_ORDER.length + 1` separation keeps band 3 ahead of band 4
+		// however long the tables get.
+		return freq.length + 1 + SYMBOL_ORDER.length + (ch.length === 1 ? 0 : SYMBOL_ORDER.length + 1);
+	};
 	const cost = (x: (typeof routes)[number]) => {
 		const role = roleOf(r.geometry, r.byId.get(x.keyId)!.row);
 		return role === "home" ? 1 : role === "upper" ? 2 : r.byId.get(x.keyId)!.taught ? 3 : 4;
 	};
 	const byFrequency = (a: (typeof routes)[number], b: (typeof routes)[number]) =>
-		(rank.get(a.char) ?? freq.length) - (rank.get(b.char) ?? freq.length) || (a.char < b.char ? -1 : 1);
+		rankOf(a.char) - rankOf(b.char) || (a.char < b.char ? -1 : 1);
 	const sorted = [...routes].sort((a, b) => (keyboardOrder ? cost(a) - cost(b) || byFrequency(a, b) : byFrequency(a, b)));
 	return sorted.map((x) => x.statId);
 }

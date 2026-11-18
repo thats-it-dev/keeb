@@ -9,6 +9,7 @@ import { keymapFromKeycap, type KeycapBinding, type KeycapFile } from "../src/la
 import { resolve } from "../src/keyboard/resolve.ts";
 import { press, start } from "../src/lesson/engine.ts";
 import { ladder, START_SIZE, teachingOrder } from "../src/lesson/ladder.ts";
+import { SYMBOL_ORDER } from "../src/lesson/symbols.ts";
 import { roleOf } from "../src/keyboard/geometry.ts";
 import { emptyStat, type KeyStat, type StatMap } from "../src/stats/stats.ts";
 
@@ -177,8 +178,17 @@ describe("the layered ladder", () => {
 		expect(order.slice(0, START_SIZE).map(charOf)).toEqual(base.slice(0, START_SIZE).map((id) => r.byId.get(id)!.char.toLowerCase()));
 		const lastLetter = Math.max(...lrLetterRoutes.map((x) => order.indexOf(x.statId)));
 		for (const x of lrLayerRoutes) expect(order.indexOf(x.statId), x.char).toBeGreaterThan(lastLetter);
-		const first = order.slice(lastLetter + 1);
-		expect(first).toEqual([...first].sort((x, y) => (charOf(x) < charOf(y) ? -1 : charOf(x) > charOf(y) ? 1 : 0))); // untouched ties: character code point
+		// The symbol band ranks by measured use, not by code point: a comma is struck vastly more than an
+		// exclamation mark, and a learner who has finished the alphabet should meet `,` before `{`. What the
+		// sample never saw (control tokens, exotic characters) keeps the code-point order at the tail.
+		const syms = order.slice(lastLetter + 1).map(charOf);
+		const measured = SYMBOL_ORDER.filter((c) => syms.includes(c));
+		expect(syms.filter((c) => SYMBOL_ORDER.includes(c))).toEqual(measured);
+		expect(syms.indexOf(",")).toBeLessThan(syms.indexOf("!"));
+		expect(syms.indexOf(".")).toBeLessThan(syms.indexOf("#"));
+		expect(syms.indexOf("&")).toBeLessThan(syms.indexOf("{"));
+		const unmeasured = syms.filter((c) => !SYMBOL_ORDER.includes(c));
+		expect(unmeasured).toEqual([...unmeasured].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0)));
 	});
 
 	it("opens a layer character when every letter route is at goal", () => {
