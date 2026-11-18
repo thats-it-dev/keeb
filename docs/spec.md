@@ -39,7 +39,8 @@ every run boundary in `src/lesson/engine.ts`. That shape survives; only the rule
 `#getLetters()` sorts the model's letters into teaching order.
 
 - default — `Letter.frequencyOrder`: by that letter's corpus frequency, descending; ties by code point.
-  Frequencies come from the trained table, not from a hand-written list.
+  Frequencies come from the trained table, not from a hand-written list. The corpus is plain letters, so
+  non-letter characters a layer contributes are ranked by `SYMBOL_ORDER` instead — see §14.3.
 - `guided.keyboardOrder = true` — `Letter.weightedFrequencyOrder(letters, keyboard.weight)`, where
   `Keyboard.getCodePoints` gives weight **1 to home-row characters, 2 to top-row characters, 1000 to
   everything else**, and the sort keeps frequency as the tie-break. So keyboard order is not a fixed
@@ -349,7 +350,12 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
    and that suffix is the stat id, so a letter and a digit on the same plastic keep separate numbers and
    every figure stored before layers keeps meaning the same thing.
 3. The ladder teaches layer characters after the alphabet: candidates are the taught base letters (as
-   always) plus every character whose route is on a layer. Inside a line they appear as their own
+   always) plus every character whose route is on a layer. Inside that band the order is measured, not
+   code-point: `SYMBOL_ORDER` (`scripts/make-symbols.ts`, character counts over CC BY-SA Wikipedia
+   extracts, generated not hand-edited) ranks what written English actually prints — comma and
+   period first — and characters the sample never printed (a glyph no source page used —
+   routes are single characters, so there is nothing else to rank) keep the
+   code-point order at the very tail. Inside a line they appear as their own
    one-character words, the focused one at least twice, and a weak route earns an extra appearance.
    Words are still spelled only from letters -- a layer character cannot be spelled.
 4. Every layer's character prints on the same keycap, colour-coded (`--chart-2/3/4` by layer index, never
