@@ -71,6 +71,8 @@ test("a plain board renders exactly what it rendered before layers", async ({ pa
 	await expect(page.locator("tt-keyboard g.k text")).toHaveCount(60); // one text per key: no glyph classes at all
 	await expect(page.locator("tt-keyboard text.g")).toHaveCount(0);
 	await expect(page.locator(".hint")).toHaveCount(0); // a base route needs no instruction
+	// The symbol amendment (§12.16) rides every board: the built-in's Enter thumb draws "⏎", not the word.
+	await expect(key(page, "R_T1")).toContainText("\u23CE");
 });
 
 test("the route lights the key, its layer colour, and the ring on the way there", async ({ page }) => {
@@ -90,6 +92,7 @@ test("the route lights the key, its layer colour, and the ring on the way there"
 	await expect(key(page, route!.keyId)).toHaveClass(new RegExp(`\\bly${Math.min(route!.layer, 3)}\\b`));
 	await expect(key(page, route!.keyId).locator("text.gok")).toHaveCount(1);
 	await expect(page.locator("rect.routering")).toHaveCount(1);
+	await expect(page.locator("tt-keyboard g.route.lkey")).toHaveCount(0); // the route light wins over the layer-coloured outline
 	if (route!.ringId) await expect(key(page, route!.ringId).locator("rect.routering")).toBeVisible();
 	await expect(page.locator(".hint")).toBeVisible();
 	// The hold name is the ring key's own tap from the file -- Enter on R_T2, Backspace on R_T1, Tab on
@@ -120,10 +123,11 @@ test("the thumbs wear their layer: a symbol on the face, the layer colour on the
 	await expect(key(page, "R_T2")).toContainText("\u23CE"); // &lt 1 RET
 	await expect(key(page, "R_T1")).toContainText("\u232B"); // &lt_bspc 2 BSPC
 	await expect(key(page, "R_T2")).not.toContainText("Enter");
-	// The key that opens a layer wears that layer's colour on its own outline.
-	await expect(key(page, "R_T2")).toHaveClass(/\bly1\b/); // Sym
-	await expect(key(page, "R_T1")).toHaveClass(/\bly2\b/); // NavNum
-	await expect(key(page, "L_T3")).toHaveClass(/\bly3\b/); // Fn
+	// The key that opens a layer wears that layer's colour on its own outline -- the lkey path, not a
+	// coincident route class: lyN alone would also match a lit route.
+	await expect(key(page, "R_T2")).toHaveClass(/\blkey\b.*\bly1\b|\bly1\b.*\blkey\b/); // Sym
+	await expect(key(page, "R_T1")).toHaveClass(/\blkey\b.*\bly2\b|\bly2\b.*\blkey\b/); // NavNum
+	await expect(key(page, "L_T3")).toHaveClass(/\blkey\b.*\bly3\b|\bly3\b.*\blkey\b/); // Fn
 });
 
 test("the first character of every fresh line already has its route lit", async ({ page }) => {
