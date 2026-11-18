@@ -54,7 +54,8 @@ export type Geometry = {
 export type KeymapRow = readonly [string, string, string, string, string, string];
 
 // One layer of a layered keymap, as the file numbered them: `index` is the file's layer index, so a
-// characterless Fn layer drops out of `Keymap.layers` without renumbering the layers above it.
+// layer that types nothing and opens under no key drops out of `Keymap.layers` without renumbering the
+// layers above it — an all-chord Fn stays in, because a layer key opens it.
 // `byKeyId` holds only the keys that type a single character on THIS layer — `&trans` inherits from the
 // layer below and contributes nothing here.
 export type KeymapLayer = { index: number; name: string; byKeyId: Record<string, string> };

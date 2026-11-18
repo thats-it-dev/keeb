@@ -178,6 +178,7 @@ export function layoutFromRecord(rec: Record<string, unknown> | undefined): Shar
 			if (!held.has(index) && index > 0) layers.push({ index, name: str(layerNames?.[index] ?? ""), byKeyId: {} });
 		}
 	}
+	layers.sort((a, b) => a.index - b.index); // filled-in layers land in file order too
 	return { name: str(rec.name), source: str(rec.source, 300), geometry: geo, byKey, ...(layers.length ? { layers } : {}), ...(layerNames ? { layerNames } : {}), ...(layerKeys ? { layerKeys } : {}) };
 }
 
