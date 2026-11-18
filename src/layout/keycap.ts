@@ -37,7 +37,7 @@ const KEYCODES: Record<string, string> = {
 	A: "a", B: "b", C: "c", D: "d", E: "e", F: "f", G: "g", H: "h", I: "i", J: "j", K: "k", L: "l", M: "m",
 	N: "n", O: "o", P: "p", Q: "q", R: "r", S: "s", T: "t", U: "u", V: "v", W: "w", X: "x", Y: "y", Z: "z",
 	N1: "1", N2: "2", N3: "3", N4: "4", N5: "5", N6: "6", N7: "7", N8: "8", N9: "9", N0: "0",
-	MINUS: "-", EQUAL: "=", LBKT: "[", RBKT: "]", BSLH: "\\", SQT: "'", SEMI: ";", COMMA: ",", DOT: ".", FSLH: "/",
+	MINUS: "-", EQUAL: "=", LBKT: "[", RBKT: "]", BSLH: "\\", SQT: "'", SINGLE_QUOTE: "'", SEMI: ";", COMMA: ",", DOT: ".", FSLH: "/",
 	GRAVE: "`", LBRC: "{", RBRC: "}", SPACE: " ", EXCL: "!", AT: "@", HASH: "#", DLLR: "$", PRCT: "%", CARET: "^",
 	AMPS: "&", ASTER: "*", LPAR: "(", RPAR: ")", UNDER: "_", PLUS: "+",
 	// Control taps: multi-character on purpose -- they name a key, never a route. A hold-tap's tap side
@@ -55,8 +55,12 @@ for (const c of "abcdefghijklmnopqrstuvwxyz") SHIFTED[c] = c.toUpperCase();
 
 const isShift = (wrapper: string): boolean => /^(LS|RS)$/.test(wrapper.toUpperCase());
 
-// Wrappers that name the key underneath: LS(MINUS) is the minus key, LC(Y) is the Y key.
+// Wrapper names. A shift wrapper is the character (LS(N9) types "("). Every other wrapper -- Ctrl, GUI,
+// Alt, layer-tap -- is a shortcut: it types nothing, and the key underneath belongs to its plain binding
+// on its own layer, never to the chord.
 const WRAPPED = /^(LS|RS|LC|RC|LG|RG|LE|LA|LT|RT)$/;
+
+const keyChar = (code: string): string | undefined => KEYCODES[code.replace(/^KC_/, "")];
 
 export function isKeycapFile(json: unknown): json is KeycapFile {
 	const f = json as KeycapFile;
@@ -102,10 +106,13 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 		bucket[key.hand][key.col] = bindings[i] ?? "";
 	}
 	const done = Object.fromEntries(Object.entries(rows).map(([role, pair]) => [role, { l: tuple(pair.l), r: tuple(pair.r) }])) as Keymap["rows"];
-	// Every further layer, under the index the file gave it: a characterless Fn/mouse layer drops out of
-	// `layers` but never renumbers the ones above it. A short later layer refuses the whole file — a
+	// Every further layer, under the index the file gave it. A layer survives if it types something or if
+	// a layer key opens it (an all-chords Fn is reachable and its ring says "Fn") — but a layer never
+	// renumbers the ones above it. A short later layer refuses the whole file — a
 	// half-read layer would route characters to keys the count check only ever verified on layer 0.
 	const fileLayers = file.layers as unknown[];
+	const { entries: layerKeys } = layerKeysFrom(file, base);
+	const opened = new Set(layerKeys.map((k) => k.layer));
 	const layers: KeymapLayer[] = bindings.some((c) => c !== undefined) ? [{ index: 0, name: names[0] ?? "", byKeyId: byKeyIdOf(bindings, base, problems, 0) }] : [];
 	for (let li = 1; li < fileLayers.length; li += 1) {
 		const arr = fileLayers[li];
@@ -123,9 +130,8 @@ export function keymapFromKeycap(file: KeycapFile, base: Geometry, id = "keycap-
 			return charOfBinding(binding, holdTaps);
 		});
 		const byKeyId = byKeyIdOf(chars, base, problems, li);
-		if (Object.keys(byKeyId).length > 0) layers.push({ index: li, name: names[li] ?? "", byKeyId });
+		if (Object.keys(byKeyId).length > 0 || opened.has(li)) layers.push({ index: li, name: names[li] ?? "", byKeyId });
 	}
-	const { entries: layerKeys } = layerKeysFrom(file, base);
 	return {
 		keymap: {
 			id,
@@ -227,15 +233,16 @@ export function charOfBinding(b: KeycapBinding, holdTaps?: Set<string>): string 
 	return undefined; // &trans, &none, &mo, &magic, &bt, &mkp, a board behaviour
 }
 
-function charOfParam(p: KeycapParam | undefined, top = true): string | undefined {
+function charOfParam(p: KeycapParam | undefined, shifted = false): string | undefined {
 	if (!p) return undefined;
+	const v = p.value.trim().toUpperCase();
 	const inner = p.params?.[0];
-	if (inner && WRAPPED.test(p.value)) {
-		const under = charOfParam(inner, false); // deeper wrappers name the key underneath, unchanged
-		if (under === undefined) return undefined;
-		return top && isShift(p.value) ? (SHIFTED[under] ?? under) : under; // LS(N9) is "("; LG(LS(N5)) is still the 5 key
+	if (WRAPPED.test(v)) {
+		if (!inner || !isShift(v)) return undefined; // a ctrl/gui/alt chord quits or switches; it types nothing
+		return charOfParam(inner, true); // LS(N9) is "("; LS over a shortcut stays a shortcut
 	}
-	return KEYCODES[p.value.toUpperCase()];
+	const under = keyChar(v);
+	return under !== undefined && shifted ? (SHIFTED[under] ?? under) : under;
 }
 
 // A Custom binding holds raw devicetree text: "&lt 1 LC(UP)" or "&kp LG(LS(N5))".
@@ -248,21 +255,22 @@ function charOfCustom(raw: string | undefined, holdTaps?: Set<string>): string |
 	return undefined;
 }
 
-// Peel the modifier calls to the bare keycode -- but the outermost one decides: LS/RS types its shifted
-// character, everything else names the key underneath.
+// Peel the modifier calls to the bare keycode -- but a control wrapper anywhere in the chain types
+// nothing, and a shift (at any level above the key) types the shifted character.
 function unwrapKeycode(text: string): string | undefined {
-	const t0 = text.trim();
-	const outerShift = /^(LS|RS)\s*\(/i.test(t0);
-	let t = t0;
-	for (let depth = 0; depth < 5; depth += 1) {
+	let t = text.trim();
+	let shifted = false;
+	for (let depth = 0; depth < 6; depth += 1) {
 		if (/^\w+$/.test(t)) {
-			const under = KEYCODES[t.toUpperCase()];
-			return under !== undefined && outerShift ? (SHIFTED[under] ?? under) : under;
+			const under = keyChar(t.toUpperCase());
+			return under !== undefined && shifted ? (SHIFTED[under] ?? under) : under;
 		}
-		const groups = [...t.matchAll(/\(([^()]*)\)/g)]; // the innermost calls are the ones with no nested parens
-		const inner = groups.at(-1)?.[1];
-		if (inner === undefined) return undefined;
-		t = (inner.split(/[, ]/).pop() ?? "").trim();
+		const m = /^(\w+)\(([\s\S]*)\)$/.exec(t); // the outermost call is the one that decides
+		if (!m) return undefined;
+		const name = (m[1] ?? "").toUpperCase();
+		if (WRAPPED.test(name) && !isShift(name)) return undefined; // a shortcut, not a character
+		if (isShift(name)) shifted = true;
+		t = ((m[2] ?? "").split(/[, ]+/).pop() ?? "").trim();
 	}
 	return undefined;
 }

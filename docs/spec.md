@@ -318,11 +318,14 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
 1. Import keeps every layer. `keymapFromKeycap` returns the file's own layer indices in `layers` (each
    indexing its characters by key id, `&trans` contributing nothing) and the layer-opening keys in
    `layerKeys`, found through `&lt`/`&mo`/`&df` bindings including custom hold-tap behaviours declared in
-   `custom_defined_behaviors`. A modifier wrapper is read by what it types: an outermost `LS`/`RS`
-   yields the shifted character (`&kp LS(N9)` is "(", the shift being the point), while any other
-   wrapper -- `LC`, `LG`, `LA`, or a shift sitting under one of those -- names the key underneath
-   (`&kp LG(LS(N5))` is the "5" key). A hold-tap's tap half names its key too: `&lt 1 RET` makes that
-   thumb an Enter key on the board and in the hint, whatever the shipped geometry labels it.
+   `custom_defined_behaviors`. A modifier wrapper is read by what it types: an `LS`/`RS` wrapper yields
+   the shifted character (`&kp LS(N9)` is "(", the shift being the point; capitals rejoin their letter's
+   route, and `SINGLE_QUOTE` is the same key as `SQT`), while a control wrapper anywhere in the chain --
+   `LC`, `LG`, `LA` -- is a shortcut that types nothing: no character, no route (`&kp LG(Q)` quits an
+   app; it must never teach "q"). A hold-tap's tap half names its key too: `&lt 1 RET` makes that
+   thumb an Enter key on the board and in the hint, whatever the shipped geometry labels it -- and the
+   full name travels in the shared layout record, unclipped. A layer that only opens (an all-shortcut
+   Fn) is kept for its ring's label.
 2. One route per character. Each typable character is taught at exactly one (key, layer): taught rows
    beat untaught, then the shortest reach from the home row, then the lower layer, then the file's own
    order. Digits therefore live on the nav layer at home-row positions, not on the number row they share

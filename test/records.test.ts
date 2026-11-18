@@ -334,3 +334,14 @@ describe("layered layout records", () => {
 		expect(keymap.layerKeys).toBeUndefined();
 	});
 });
+
+describe("control names on the wire", () => {
+	it("sends a control key's full name, not its first four letters", () => {
+		const chars = [{ id: "R_T2", char: "Enter" }, { id: "L_T3", char: "Backspace" }];
+		const rec = layoutRecord("Go60", "keycap", GO60, chars);
+		expect(rec.charMap.chars.map((c) => c.char)).toEqual(["Enter", "Backspace"]);
+		const back = layoutFromRecord(rec as unknown as Record<string, unknown>)!;
+		expect(back.byKey["R_T2"]).toBe("Enter");
+		expect(back.byKey["L_T3"]).toBe("Backspace");
+	});
+});

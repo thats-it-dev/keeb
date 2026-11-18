@@ -133,7 +133,7 @@
 				},
 				"char": {
 					"type": "string",
-					"maxGraphemes": 4
+					"maxGraphemes": 16
 				},
 				"layer": {
 					"type": "integer",

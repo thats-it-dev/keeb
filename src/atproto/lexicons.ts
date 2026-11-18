@@ -44,7 +44,7 @@ const key = {
 const char = {
 	type: "object",
 	required: ["keyId", "char"],
-	properties: { keyId: string, char: { type: "string", maxGraphemes: 4 }, layer: { type: "integer", minimum: 0 } },
+	properties: { keyId: string, char: { type: "string", maxGraphemes: 16 }, layer: { type: "integer", minimum: 0 } }, // 16: control names ("Backspace") travel in this field
 };
 
 // Which key opens which layer, and how it is held. Also additive: `layerNames` is the sparse index ->

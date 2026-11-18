@@ -112,6 +112,10 @@ describe("resolving a layered keymap", () => {
 	it("routes the shifted symbols the file types", () => {
 		expect(r.routeChars.get("(")!.layer).toBe(1); // Sym's LS(N3) key -- "(" is now teachable
 		expect(r.routeChars.get("(")!.char).toBe("(");
-		expect(r.routeChars.get("7")!.char).toBe("7"); // and the digit keeps its own route, unchanged
+		expect(r.routeChars.get("\"")!.layer).toBe(1); // LS(SINGLE_QUOTE): the long alias is the same key
+		expect(r.routeChars.get("q")!.layer).toBe(0); // the Fn layer's LG(Q) quits things; it must not teach q
+		expect(r.routeChars.get("4")!.layer).not.toBe(3); // no longer the LC(LG(LS(N4))) shortcut: it rides the number row or NavNum's &hml LALT N4 tap
+		expect(r.byId.get("L_C4R3")!.glyphs).toContainEqual({ char: "4", layer: 2 }); // hold for Alt, tap for 4: a real character on the r key
+		expect(r.routeChars.get("7")!.char).toBe("7"); // digits keep their own routes, unchanged
 	});
 });

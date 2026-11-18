@@ -105,7 +105,7 @@ export function geometryFromRecord(rec: KeyGeometryRecord): Pick<Geometry, "spli
 // Layered fields ride inside charMap and are optional: `layer` only when > 0, so a reader from before
 // layers sees the same array it always saw. The two arrays name the layers and their opening keys.
 export const charMap = (keys: KeyChar[], extra?: { layerNames?: string[]; layerKeys?: LayerKey[] }) => ({
-	chars: keys.map((k) => ({ keyId: str(k.id), char: [...k.char].slice(0, 4).join(""), ...((k.layer ?? 0) > 0 ? { layer: n(k.layer) } : {}) })),
+	chars: keys.map((k) => ({ keyId: str(k.id), char: [...k.char].slice(0, 16).join(""), ...((k.layer ?? 0) > 0 ? { layer: n(k.layer) } : {}) })), // 16, not 4: "Backspace" must arrive whole
 	...(extra?.layerNames?.length ? { layerNames: extra.layerNames.map((s) => str(s)) } : {}),
 	...(extra?.layerKeys?.length ? { layerKeys: extra.layerKeys.map((x) => ({ keyId: str(x.keyId), layer: n(x.layer), activation: x.activation })) } : {}),
 });
