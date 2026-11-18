@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** keeb imports a multi-layer keycap JSON, draws every layer's characters on one colour-coded keycap legend, lights the target's route (key + ringed layer key + hint), and teaches the layer characters with per key+layer stats.
+**Goal:** keeb imports a multi-layer keycap JSON, draws every layer's characters on one colour-coded keycap legend, lights the target's route (key + ringed layer key + hint), teaches the layer characters with per key+layer stats, and shares layered keymaps through the atproto layout record.
 
 **Architecture:** The keycap parser keeps all layers and the layer keys instead of only layer 0. `resolve()` gains a route model — each character routes to exactly one (key, layer) by a taught-row-first / closest-to-home ranking. The lesson ladder and engine address stats by route id (`keyId` for base, `keyId.layer` for layers), and `tt-keyboard` renders multi-glyph keycaps with kit chart-colour layer coding.
 
@@ -17,7 +17,7 @@
 - Layer indices are file-order and stable: dropping a characterless layer from the model must not renumber the survivors.
 - `Keymap.rows`/`byKey` semantics are unchanged; built-in and one-layer keymaps must render byte-identical SVG and keep every existing test green.
 - Import validation (board name, binding count, matrix-order check) stays on layer 0 only.
-- atproto records change not at all: stat ids already travel as opaque strings (`keyId` in records/lexicons is a plain string field, no pattern — dotted ids round-trip; verified in `src/atproto/records.ts` and `src/atproto/lexicons.ts`).
+- atproto **stats** records change not at all: stat ids already travel as opaque strings (`keyId` in records/lexicons is a plain string field, no pattern — dotted ids round-trip; verified in `src/atproto/records.ts` and `src/atproto/lexicons.ts`). The **layout** record gains optional fields only (`char.layer`, `charMap.layerNames`, `charMap.layerKeys`, `charMap.chars` maxLength 200→1000) — this supersedes the spec's non-goal "sharing layered keymaps through atproto records": old readers ignore the additions, new readers default a missing `layer` to 0.
 - Stat-id format **supersedes the spec's §Stats identity**: `keyId.layer` suffix with no migration, not `L<layer>:<keyId>` with one (spec written first; the suffix form makes Review Focus 2 free).
 - `&trans` in a later layer means "inherit the layer below": it contributes **no** candidate and no glyph — the character shows once, at its lowest explicitly-bound layer.
 - `Keymap.layers`/`layerKeys` need no persistence work: `store.saveMap` stores the object whole.
@@ -43,6 +43,7 @@ Behaviours no single task's tests would catch that a real keymap will exercise �
 - Modify `src/stats/stats.ts` — `routeId`/`routeLayer`/`routeKey`.
 - Modify `src/lesson/engine.ts`, `src/lesson/ladder.ts`, `src/lesson/generator.ts` — route-addressed stats, layer-char curriculum, token insertion.
 - Modify `src/app-main.ts`, `src/lesson/practice.ts`, `src/stats/format.ts`, `src/stats/panel.ts`, `src/stats/overview.ts` — hint line, parent-state route binding, route labels, route-keyed overview rows.
+- Modify `src/atproto/lexicons.ts`, `src/atproto/records.ts`, `src/atproto/sync.ts`, `src/app/boards.ts` — optional layer fields on the shared layout record (Task 7).
 - Create `test/fixtures/go60-layers.json`; extend `test/keycap.test.ts`, `test/resolve.test.ts`, `test/routes.test.ts`, `test/stats.test.ts`, `test/ladder.test.ts`, `test/generator.test.ts`, `e2e/layout.spec.ts`, `e2e/practice.spec.ts`; update `docs/spec.md`.
 
 ---
@@ -222,7 +223,7 @@ export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[];
   export function describeRoute(statId: string, charOf: (s: string) => string, layerName: (l: number) => string): string;
   // base -> uppercased char (as today's callers do); layer N -> `${char} · ${name}`
   ```
-  Hint text, exact pattern: `hold <LayerName> · <keyLabel(layerKeyId)>, press <char>` using `keyLabel` from `view.ts`. Panel/insight rows pass `describeRoute` as their label mapper (default keeps bare ids when no route data). **`#overview()`** must stop building `KeyInfo[]` from `r.keys` alone: overview's rows join on `statId` — feed it `resolved.routes` mapped to `{ id: statId, label: describeRoute(...), hand }` (hand via `byId.get(routeId(keyId))`), and pass `ladder.unlocked/next/focus` (already stat ids) against those rows, so layer characters appear in the progress table and the "at goal" counts. `docs/spec.md`: new §13 (layer import, routing rule, layer keys, stat ids, tokens) and §12 item 16 referencing it.
+  Hint text, exact pattern: `hold <LayerName> · <keyLabel(layerKeyId)>, press <char>` using `keyLabel` from `view.ts`. Panel/insight rows pass `describeRoute` as their label mapper (default keeps bare ids when no route data). **`#overview()`** must stop building `KeyInfo[]` from `r.keys` alone: overview's rows join on `statId` — feed it `resolved.routes` mapped to `{ id: statId, label: describeRoute(...), hand }` (hand via `byId.get(routeId(keyId))`), and pass `ladder.unlocked/next/focus` (already stat ids) against those rows, so layer characters appear in the progress table and the "at goal" counts. `docs/spec.md`: new §14 (layer import, routing rule, layer keys, stat ids, tokens — §13 is taken by the daily goal) and §12 item 16 referencing it.
 
 - [ ] **Step 1: Write the failing tests.** e2e: on a NavNum digit the hint line is visible with text `hold NavNum · Enter, press 1`-shaped content (fixture names); unit: `describeRoute("L_C5R3.2", …) === "1 · NavNum"`, `describeRoute("L_C5R3", …) === "T"`-equivalent for base, unknown suffix-free ids fall back to the raw id; `test/overview.test.ts`: a layered `Resolved` whose digit route has samples yields a `7 · NavNum`-shaped row, counts it in `measured`/coverage, and `unlocked`/`next`/`focus` ids all resolve to rows.
 
@@ -236,7 +237,43 @@ export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[];
 
 ---
 
-### Task 7: Full gate
+### Task 7: Sync — layered keymaps in the shared layout record
+
+**Files:**
+- Modify: `src/atproto/lexicons.ts`, `src/atproto/records.ts`, `src/atproto/sync.ts`, `src/app/boards.ts`, `docs/superpowers/specs/2026-11-17-layered-keymap-design.md`
+- Test: `test/records.test.ts`, `test/sync.test.ts`, `test/lexicons.test.ts`
+
+**Interfaces:**
+- Produces (all optional, additive — the lexicon is append-only, `char`/`keyStat` keep their required fields):
+  ```ts
+  // lexicons.ts — #char gains: layer: integer (min 0, optional). New def #layerKey:
+  { keyId: string, layer: integer, activation: { knownValues: ["momentary","hold-tap","toggle"] } }
+  // #charMap gains: layerNames: { type:"array", items:string, maxLength:32 } and
+  //                 layerKeys:  { type:"array", items:{ $ref:#layerKey }, maxLength:64 }; chars maxLength 200 -> 1000
+  // records.ts
+  export type KeyChar = { id: string; char: string; layer?: number }; // charMap() emits `layer` only when > 0
+  export type SharedLayout = { /* as today */ layerNames?: string[]; layerKeys?: LayerKey[]; layers?: KeymapLayer[] };
+  // layoutFromRecord: groups chars by layer (>0 entries become layers[]; missing layer reads 0 — an old
+  // record resolves to today's single-layer shape unchanged); boardFromLayout attaches layers/layerKeys/layerNames to the keymap it builds.
+  // sharedLayout(g, keys) becomes sharedLayout(g, keymap, resolvedKeys): flattens resolved layer-0 chars plus
+  // keymap.layers (skipping a char equal to the same key's lower-layer char — the Task 2 dedupe rule), names, layer keys.
+  ```
+  Sync's layout push/pull call sites thread the keymap through — `sharedLayout`'s one caller is `src/app/account.ts:158`; `adoptShared` saves the keymap whole (store already does). `npm run lexicons` regenerates the published defs; **`goat lex publish` must run before a second device reads the new fields** — that's part of shipping this branch, flagged in the PR body. The design doc's non-goal line "Sharing layered keymaps through atproto records" becomes a goal with a one-line pointer to this task.
+- Consumes: Task 1's `KeymapLayer`/`LayerKey` types, Task 2's dedupe rule.
+
+- [ ] **Step 1: Write the failing tests.** records: round-trip — layered keymap → `layoutRecord` → `layoutFromRecord` yields the same `layers`/`layerKeys`/`layerNames`; an old flat record (no `layer` anywhere) reads as today's `SharedLayout` with `layers` undefined; a new record read by the OLD field access (`byKey`) still shows exactly the layer-0 chars. lexicons: `#char` has no new required fields; maxLength is 1000. sync/boards: `sharedLayout` of a layered keymap contains the NavNum digits once each — a char already bound on a lower layer of the same key is not re-emitted (wire-size rule).
+
+- [ ] **Step 2: Run `npx vitest run test/records.test.ts test/sync.test.ts test/lexicons.test.ts`** — expect FAIL.
+
+- [ ] **Step 3: Implement** the defs (comment each addition: optional, ignored by pre-layer readers), the encoder grouping/flatten above, the `sharedLayout` signature change with its call site in `account.ts` and the `boards.ts`/`sync.ts` types it flows through, and the spec-doc non-goal amendment. Run `npm run lexicons` and commit its output if it changes tracked files.
+
+- [ ] **Step 4: Run `npm test`** — expect PASS, including the untouched progress/session record tests.
+
+- [ ] **Step 5: Commit** `feat(atproto): share layered keymaps through the layout record`
+
+---
+
+### Task 8: Full gate
 
 - [ ] **Step 1:** `npm run verify` (typecheck + vitest + knip + Playwright). Known flakiness: full e2e under parallel load times out on base too — if only e2e timeouts fail, rerun `npm run e2e` serially once (`npx playwright test --workers=1`) before believing a failure.
 - [ ] **Step 2:** Fix, then commit `chore: layered keymaps verification fixes` (only if changes were needed).
