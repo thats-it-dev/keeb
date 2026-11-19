@@ -437,11 +437,11 @@ const seedSpeed = (page: Page, msById: Record<string, number>) =>
 const ladderOrder = (page: Page) =>
 	page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { engine: { ladder: { order: string[] } } }).engine.ladder.order);
 
-/** Tick a settings checkbox by its label, and wait for the page to act on it. */
+/** Flip a settings switch by its label, and wait for the page to act on it. */
 const setToggle = async (page: Page, label: string, on: boolean) => {
 	await page.getByRole("button", { name: "Settings" }).click();
-	const box = page.locator("dialog").getByLabel(label, { exact: false });
-	if ((await box.isChecked()) !== on) await box.click();
+	const sw = page.locator("dialog").getByRole("switch", { name: label });
+	if (((await sw.getAttribute("aria-checked")) === "true") !== on) await sw.click();
 	await page.locator("dialog [aria-label='Close settings']").click();
 };
 
@@ -519,7 +519,7 @@ test("real words are a setting, and it survives a reload", async ({ page }) => {
 	await page.reload();
 	await ready(page);
 	await page.getByRole("button", { name: "Settings" }).click();
-	await expect(page.locator("dialog").getByLabel("use real words", { exact: false })).toBeChecked();
+	await expect(page.locator("dialog").getByRole("switch", { name: "use real words" })).toHaveAttribute("aria-checked", "true");
 });
 
 test("keyboard order starts on the home row instead of the language's six", async ({ page }) => {

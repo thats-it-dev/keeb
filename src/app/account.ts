@@ -21,8 +21,9 @@ export type AccountHost = {
 	reload(): void;
 	/** Change the selection through the page, so the open session closes on the old layout first. */
 	pick(geometryId: string, keymapId: string): void;
-	/** Adopt a selection quietly, at boot or on Sync, where nothing is mid-session. */
-	select(geometryId: string, keymapId: string): void;
+	/** Adopt a selection quietly, at boot or on Sync, where nothing is mid-session. Await it when the writes
+	 *  that follow must land on the newly selected layout's row: the promise settles once its row is loaded. */
+	select(geometryId: string, keymapId: string): Promise<unknown> | void;
 	/** Close the session that is open, so its characters reach the repo. */
 	endSession(): Promise<void>;
 	/** Something changed that the page must repaint. */
@@ -160,9 +161,10 @@ export class Account {
 				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : now.keymapId;
 				this.#adopting += 1;
 				try {
-					// Select first: the goal and switches persist to the row keyed by the layout on screen, and
-					// that row must be the row of the layout the record is selecting, not the one being left.
-					if (g !== now.geometryId || k !== now.keymapId) h.select(g, k);
+					// Select first, and await the load of its row: the writes below persist the whole live
+					// state, so until the new layout's own values are on screen they would carry the switches
+					// of the layout being left into the row being adopted into.
+					if (g !== now.geometryId || k !== now.keymapId) await h.select(g, k);
 					if (settings.targetCpm) h.writeGoal(settings.targetCpm);
 					// Only switch values the record actually carries: a record predating the switches has no
 					// opinion about them, and calling writeCurriculum would persist this device's other-layout

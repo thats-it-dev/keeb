@@ -36,3 +36,31 @@ test("settings is grouped into named sections", async ({ page }) => {
 		await expect(page.locator("dialog").getByRole("heading", { name: group, level: 3 })).toBeVisible();
 	}
 });
+
+test("toggles are kit switches, with the label left and the control right", async ({ page }) => {
+	await openSettings(page);
+	const switches = page.locator("dialog").getByRole("switch");
+	await expect(switches).toHaveCount(2);
+	for (const name of ["teach in keyboard order", "use real words"]) {
+		const sw = page.getByRole("switch", { name });
+		await expect(sw).toBeVisible();
+		const row = page.locator("dialog .panel label.row", { hasText: name });
+		const [s, l, r] = [await sw.boundingBox(), await page.locator("dialog .panel .label", { hasText: name }).first().boundingBox(), await row.boundingBox()];
+		// Justify, not merely order: the words start at the row's left edge, the switch ends at its right.
+		expect(Math.abs(l!.x - r!.x)).toBeLessThan(2);
+		expect(Math.abs(s!.x + s!.width - (r!.x + r!.width))).toBeLessThan(2);
+		expect(s!.width).toBeGreaterThanOrEqual(40); // the kit pill, not an empty button passing on position alone
+	}
+	// The same rule for the grid rows: every label sits on the panel's content edge, every control on the other.
+	const panel = page.locator("dialog .panel");
+	const pb = await panel.boundingBox();
+	const [padL, padR] = await panel.evaluate((el: HTMLElement) => [parseFloat(getComputedStyle(el).paddingLeft), parseFloat(getComputedStyle(el).paddingRight)]);
+	for (const t of await page.locator("dialog .panel label > .label").all()) {
+		const b = await t.boundingBox();
+		expect(Math.abs(b!.x - (pb!.x + padL))).toBeLessThan(2);
+	}
+	for (const c of await page.locator("dialog .panel label > select, dialog .panel label > input").all()) {
+		const b = await c.boundingBox();
+		expect(Math.abs(b!.x + b!.width - (pb!.x + pb!.width - padR))).toBeLessThan(2);
+	}
+});
