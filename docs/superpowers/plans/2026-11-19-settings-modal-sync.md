@@ -10,4 +10,5 @@ Branch: `settings-modal-sync`
 - [x] 5. Failing e2e: settings dialog fits a 720px-tall viewport (content scrollable, close reachable); then modal CSS (max-height, overflow, sticky head, 26rem).
 - [x] 6. Modal markup: four group headings; account line wraps; keep every e2e-referenced selector.
 - [x] 7. Run `npm test` and the touched e2e specs (`sync`, `layout`, `daily`, `practice`, `keeb`) green; typecheck.
-- [ ] 8. Reviewer over the branch, push, open PR, report links (Michael merges).
+- [x] 8. Reviewer over the branch: P1 (adopt ordering wrote the old layout's row + echoed a mixed record) and the pull-stamp stomp fixed with `test/account.test.ts` + a pull-race case in `test/sync.test.ts`.
+- [ ] 9. `npm run verify`, screenshot gate, re-review the amended branch, push, open PR, report links (Michael merges).

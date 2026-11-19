@@ -42,8 +42,17 @@ export class Account {
 	note = "";
 	handle = "";
 	#sync: Sync | undefined;
+	// True while syncNow is writing an adopted record through the host. The host's write callbacks persist
+	// what they are given, and persisting is also how a local edit announces itself — but nothing the
+	// account just handed us is a local edit, and echoing it back mid-adopt is how a half-applied record
+	// gets pushed with a fresh timestamp and wins the next direction check.
+	#adopting = false;
 
-	constructor(readonly host: AccountHost) {}
+	// The second argument exists for the tests: an Account can be pointed at a Sync over a fake PDS
+	// without inventing an auth session. boot() ignores it and builds its own from whatever auth says.
+	constructor(readonly host: AccountHost, sync?: Sync) {
+		this.#sync = sync;
+	}
 
 	get connected(): boolean {
 		return this.#sync !== undefined;
@@ -91,7 +100,7 @@ export class Account {
 	 */
 	async settingsChanged(): Promise<void> {
 		const sync = this.#sync;
-		if (!sync) return;
+		if (!sync || this.#adopting) return;
 		const now = this.host.read();
 		try {
 			await sync.pushSettings({ geometry: now.geometryId, keymap: now.keymapId, targetCpm: now.targetCpm, keyboardOrder: now.keyboardOrder, realWords: now.realWords }, Date.now());
@@ -137,25 +146,32 @@ export class Account {
 				h.writeStats(await applyRemoteProgress(key, remote));
 				if (JSON.stringify(h.read().stats) !== before) h.reload();
 			}
-			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
-			// over on a quiet page: at boot, or when they press Sync. And only when the record is genuinely
-			// newer than this device's last edit — otherwise the stale record clobbers a fresh goal and the
-			// clobbered value is pushed straight back, which is how a changed goal never synced.
+			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross over
+			// on a quiet page: when they press Sync (boot deliberately passes adapt=false). And only when the
+			// record is genuinely newer than this device's last edit — otherwise the stale record clobbers a
+			// fresh goal and the clobbered value is pushed straight back, which is how a changed goal never
+			// synced.
 			if (adapt && settingsAt > settingsLocalAt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) {
 				const now = h.read();
 				// An id this browser cannot resolve is skipped, not adopted: the account may name a board whose
 				// file never arrived, and selecting it would render a page with no keys on it.
 				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : now.geometryId;
 				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : now.keymapId;
-				if (settings.targetCpm) h.writeGoal(settings.targetCpm);
-				h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
-				if (g !== now.geometryId || k !== now.keymapId) h.select(g, k);
-				else h.reload();
-				// This device now stands where the record stands; and the trailing push is skipped, because
-				// reloading the page is async — reading the host back right now would race the adopted value
-				// with the one still in memory.
-				await sync.stampSettings(settingsAt);
-				adoptedSettings = true;
+				this.#adopting = true;
+				try {
+					// Select first: the goal and switches persist to the row keyed by the layout on screen, and
+					// that row must be the row of the layout the record is selecting, not the one being left.
+					if (g !== now.geometryId || k !== now.keymapId) h.select(g, k);
+					if (settings.targetCpm) h.writeGoal(settings.targetCpm);
+					h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
+					if (g === now.geometryId && k === now.keymapId) h.reload();
+					// This device now stands where the record stands; the trailing push is skipped, because it
+					// would read a page mid-reload and push the mix the record is being applied to.
+					await sync.stampSettings(settingsAt);
+					adoptedSettings = true;
+				} finally {
+					this.#adopting = false;
+				}
 			}
 		} catch (err) {
 			// A failed read must not cancel the writes below. The reason this device has anything queued is

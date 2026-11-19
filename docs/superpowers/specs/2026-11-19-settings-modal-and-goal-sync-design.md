@@ -72,7 +72,15 @@ Two complaints about the keeb (touchtype) settings modal:
 - `Account.settingsChanged()` (new): when connected, read the live values and
   `pushSettings`. Called by `#goal` and `#curriculum` right after `saveSettings`.
 - Host `writeGoal`/`writeCurriculum` persist the adopted values into the per-layout
-  settings row, so a layout reload can't resurrect the old number.
+  settings row, so a layout reload can't resurrect the old number — and they do it after
+  the record's layout selection is applied, so the values land in the row of the layout the
+  record names, not the one being left. While `syncNow` is adopting, `settingsChanged()`
+  is suppressed: an adopted value is not a local edit, and echoing it mid-adopt would push
+  a half-applied mix with a fresh timestamp.
+- Known limitation (reviewer note): the direction check compares two devices' wall clocks
+  (`settingsLocalAt` here vs the record's `updatedAt` set by whoever pushed last). Clock
+  skew of minutes can pick the wrong side; accepted, because any later edit re-decides and
+  the sessions/progress sync is unaffected.
 
 ### Modal
 

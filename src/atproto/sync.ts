@@ -97,10 +97,10 @@ export class Sync {
 	 * to merge per layout, every session the repo still keeps, and the shared boards to register.
 	 */
 	async pull(): Promise<{ settings: Partial<Settings>; settingsAt: number; settingsLocalAt: number; progress: Record<string, StatMap>; sessions: SessionRow[]; layouts: SharedLayoutRow[] }> {
-		const state = await this.store.load();
 		const [records, settings, sessions, layouts] = await Promise.all([list(this.s, PROGRESS), list(this.s, SETTINGS), list(this.s, SESSION), list(this.s, LAYOUT)]);
 		const progress: Record<string, StatMap> = {};
 		const seen = new Map<string, number>();
+		const touched: Record<string, string> = {};
 		for (const rec of records) {
 			const parsed = fromProgressRecord(rec.value);
 			if (!parsed) continue;
@@ -111,11 +111,16 @@ export class Sync {
 			if (stamp >= best) {
 				seen.set(parsed.layout, stamp);
 				progress[parsed.layout] = parsed.stats;
-				state.progressRkeys[parsed.layout] = rkeyOf(rec.uri);
+				touched[parsed.layout] = rkeyOf(rec.uri);
 			}
 		}
-		state.lastPull = Math.round(Date.now() / 1000);
-		await this.store.save(state);
+		// Write back over a freshly loaded row, not the copy loaded before the awaits above: an edit that
+		// stamped settingsLocalAt while the lists were in flight must not be erased by this save, and the
+		// stamp reported below is the one that survived.
+		const fresh = await this.store.load();
+		fresh.lastPull = Math.round(Date.now() / 1000);
+		for (const [layout, rkey] of Object.entries(touched)) fresh.progressRkeys[layout] = rkey;
+		await this.store.save(fresh);
 		// A shared layout's identity is its rkey, and a tid sorts chronologically, so ordering by it gives the
 		// picker a stable order that two devices reach independently.
 		const shares = layouts
@@ -131,7 +136,7 @@ export class Sync {
 		return {
 			settings: fromSettingsRecord(newest?.value),
 			settingsAt: newest?.at ?? 0,
-			settingsLocalAt: state.settingsLocalAt ?? 0,
+			settingsLocalAt: fresh.settingsLocalAt ?? 0,
 			progress,
 			sessions: sessions.flatMap((r) => {
 				const parsed = fromSessionRecord(r.value, rkeyOf(r.uri));
