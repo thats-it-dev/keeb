@@ -47,6 +47,9 @@ export const appStyles = [
 		.panel label > .label { justify-self: start; }
 		.panel label > select,
 		.panel label > input:not([type=checkbox]) { justify-self: end; width: 100%; max-width: 12rem; }
+		/* A file picker under its natural width renders as clipped gibberish ("No …sen"); it gets the
+		 * column, and a font small enough that "No file chosen" fits inside it. */
+		.panel label > input[type=file] { max-width: none; font-size: 0.75rem; }
 		.read { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; }
 		.metric { display: grid; gap: 2px; justify-items: center; font-variant-numeric: tabular-nums; }
 		.metric b { font-weight: 600; font-size: 1.05rem; }

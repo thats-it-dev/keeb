@@ -9,5 +9,5 @@ Branch: `settings-modal-sync`
 - [x] 4. `app-main`: `#goal` and `#curriculum` call `settingsChanged()` after saving.
 - [x] 5. Failing e2e: settings dialog fits a 720px-tall viewport (content scrollable, close reachable); then modal CSS (max-height, overflow, sticky head, 26rem).
 - [x] 6. Modal markup: four group headings; account line wraps; keep every e2e-referenced selector.
-- [ ] 7. Run `npm test` and the touched e2e specs (`sync`, `layout`, `daily`, `practice`, `keeb`) green; typecheck.
+- [x] 7. Run `npm test` and the touched e2e specs (`sync`, `layout`, `daily`, `practice`, `keeb`) green; typecheck.
 - [ ] 8. Reviewer over the branch, push, open PR, report links (Michael merges).
