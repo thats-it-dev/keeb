@@ -27,8 +27,9 @@ export type SettingsProps = {
 	onPick: (part: "g" | "k", value: string) => void;
 	onGoal: (e: Event) => void;
 	onDailyGoal: (e: Event) => void;
-	/** A curriculum switch: which letters come next, and where the words come from. */
-	onCurriculum: (part: "keyboardOrder" | "realWords", on: boolean) => void;
+	/** A curriculum switch, flipped: the handler reads the current state, not the props this render closed
+	 *  over, so two clicks inside one frame cannot send the same flipped value twice. */
+	onCurriculum: (part: "keyboardOrder" | "realWords") => void;
 	onUpload: (e: Event) => void;
 	onHandle: (value: string) => void;
 	onSignIn: () => void;
@@ -68,8 +69,8 @@ export function settingsDialog(p: SettingsProps) {
 				<!-- The curriculum switches, in words a learner has, on kit switches (sharedStyles carries
 				     .switch): label left, control right, applied on the click. Both change what the next line
 				     contains, so neither belongs in a place you discover by accident. -->
-				<label class="full row"><span class="label">teach in keyboard order</span><button class="switch" role="switch" aria-checked=${String(p.keyboardOrder)} aria-label="teach in keyboard order" @click=${() => p.onCurriculum("keyboardOrder", !p.keyboardOrder)}></button></label>
-				<label class="full row"><span class="label">use real words</span><button class="switch" role="switch" aria-checked=${String(p.realWords)} aria-label="use real words" @click=${() => p.onCurriculum("realWords", !p.realWords)}></button></label>
+				<label class="full row"><span class="label" id="tt-kb-order">teach in keyboard order</span><button class="switch" role="switch" aria-checked=${String(p.keyboardOrder)} aria-labelledby="tt-kb-order" @click=${() => p.onCurriculum("keyboardOrder")}></button></label>
+				<label class="full row"><span class="label" id="tt-real-words">use real words</span><button class="switch" role="switch" aria-checked=${String(p.realWords)} aria-labelledby="tt-real-words" @click=${() => p.onCurriculum("realWords")}></button></label>
 				<h3 class="group">account</h3>
 				<div class="full sync">
 					${p.did

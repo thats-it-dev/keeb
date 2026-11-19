@@ -47,7 +47,6 @@ export const appStyles = [
 		/* The kit switch already sizes itself; its row spans both columns so a long label cannot widen the
 		 * label gutter and squeeze the input column — words hold the left edge, the switch the right. */
 		.panel label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-		.panel label > .switch { justify-self: end; }
 		/* A file picker under its natural width renders as clipped gibberish ("No …sen"); it gets the
 		 * column, and a font small enough that "No file chosen" fits inside it. */
 		.panel label > input[type=file] { max-width: none; font-size: 0.75rem; }

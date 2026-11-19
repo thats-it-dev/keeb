@@ -44,7 +44,10 @@ test("toggles are kit switches, with the label left and the control right", asyn
 	for (const name of ["teach in keyboard order", "use real words"]) {
 		const sw = page.getByRole("switch", { name });
 		await expect(sw).toBeVisible();
-		const [s, l] = [await sw.boundingBox(), await page.locator("dialog .panel .label", { hasText: name }).first().boundingBox()];
-		expect(s!.x).toBeGreaterThan(l!.x + l!.width - 1); // the control sits past its words, against the right edge
+		const row = page.locator("dialog .panel label.row", { hasText: name });
+		const [s, l, r] = [await sw.boundingBox(), await page.locator("dialog .panel .label", { hasText: name }).first().boundingBox(), await row.boundingBox()];
+		// Justify, not merely order: the words start at the row's left edge, the switch ends at its right.
+		expect(Math.abs(l!.x - r!.x)).toBeLessThan(2);
+		expect(Math.abs(s!.x + s!.width - (r!.x + r!.width))).toBeLessThan(2);
 	}
 });

@@ -226,9 +226,9 @@ export class AppMain extends LitElement {
 	}
 
 	// The two curriculum switches: they change which letters are in play, so the practice pane restarts here.
-	#curriculum(part: "keyboardOrder" | "realWords", on: boolean): void {
-		if (part === "keyboardOrder") this.keyboardOrder = on;
-		else this.realWords = on;
+	#curriculum(part: "keyboardOrder" | "realWords"): void {
+		if (part === "keyboardOrder") this.keyboardOrder = !this.keyboardOrder;
+		else this.realWords = !this.realWords;
 		this.#saveSettings();
 	}
 
@@ -316,7 +316,7 @@ export class AppMain extends LitElement {
 							onPick: (part, value) => this.#pick(part, value),
 							onGoal: (e) => this.#goal(e),
 							onDailyGoal: (e) => (this.dailyGoalMin = setDailyGoalMin(Number((e.target as HTMLInputElement).value)) ?? this.dailyGoalMin),
-							onCurriculum: (part, on) => this.#curriculum(part, on),
+							onCurriculum: (part) => this.#curriculum(part),
 							onUpload: (e) => void this.#upload(e),
 							onHandle: (v) => (this.#account.handle = v),
 							// Signing in, syncing and publishing are the account's business; see app/account.ts. Each leaves
