@@ -65,12 +65,8 @@ export class AppMain extends LitElement {
 			this.boards = boards;
 			this.maps = maps;
 		},
-		writeGoal: (targetCpm) => (this.targetCpm = targetCpm),
-		writeCurriculum: (curriculum) => {
-			this.settings = { ...this.settings, ...curriculum };
-			this.keyboardOrder = curriculum.keyboardOrder ?? this.keyboardOrder;
-			this.realWords = curriculum.realWords ?? this.realWords;
-		},
+		writeGoal: (cpm) => { this.targetCpm = cpm; this.#saveSettings(); },
+		writeCurriculum: (c) => { this.keyboardOrder = c.keyboardOrder ?? this.keyboardOrder; this.realWords = c.realWords ?? this.realWords; this.#saveSettings(); },
 		reload: () => void this.#load({ g: this.geometryId, k: this.keymapId }),
 		pick: (geometryId, keymapId) => {
 			this.#pick("g", geometryId);
@@ -224,20 +220,24 @@ export class AppMain extends LitElement {
 	// Words per minute field → stored as characters per minute (goal × 5).
 	#goal(e: Event): void {
 		const v = Number((e.target as HTMLInputElement).value);
-		if (Number.isFinite(v) && v >= 15 && v <= 120) {
-			this.targetCpm = wpmToCpm(v);
-			this.settings = { ...this.settings, targetCpm: this.targetCpm };
-			void saveSettings(layoutKey(this.geometryId, this.keymapId), this.settings);
-		}
+		if (!Number.isFinite(v) || v < 15 || v > 120) return;
+		this.targetCpm = wpmToCpm(v);
+		this.#saveSettings();
 	}
 
-	// The two curriculum switches. They are stored with the goal, and they change which letters are in play,
-	// so the practice pane restarts its line on them.
+	// The two curriculum switches: they change which letters are in play, so the practice pane restarts here.
 	#curriculum(part: "keyboardOrder" | "realWords", on: boolean): void {
-		this.settings = { ...this.settings, [part]: on };
 		if (part === "keyboardOrder") this.keyboardOrder = on;
 		else this.realWords = on;
-		void saveSettings(layoutKey(this.geometryId, this.keymapId), { ...this.settings, targetCpm: this.targetCpm });
+		this.#saveSettings();
+	}
+
+	// One place an edit reaches both stores. The fields are the truth on screen (#load re-derives them from
+	// the row); the account used to be missing, which is the half of "goal WPM doesn't sync" you could see.
+	#saveSettings(): void {
+		this.settings = { ...this.settings, targetCpm: this.targetCpm, keyboardOrder: this.keyboardOrder, realWords: this.realWords };
+		void saveSettings(layoutKey(this.geometryId, this.keymapId), this.settings);
+		void this.#account.settingsChanged();
 	}
 
 	// The file picker: what a layout file means is app/boards.ts's business, and this only says which list

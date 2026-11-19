@@ -4,7 +4,7 @@
 // on as if there were no network. And the local copy stays authoritative while you type — sync happens
 // around a session, never inside a keystroke, because a slow PDS must not show up as a slow typist.
 import { LAYOUT, PROGRESS, SESSION, SETTINGS } from "./lexicons.ts";
-import { fromProgressRecord, fromSessionRecord, fromSettingsRecord, layoutFromRecord, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, type LayoutRecord, type SessionRow, type SharedLayout } from "./records.ts";
+import { clockSeconds, fromProgressRecord, fromSessionRecord, fromSettingsRecord, layoutFromRecord, newKey, progressRecord, pruneSessions, sessionRecord, settingsRecord, type LayoutRecord, type SessionRow, type SharedLayout } from "./records.ts";
 import type { Settings } from "../data/store.ts";
 import type { StatMap } from "../stats/stats.ts";
 import type { Session } from "./auth.ts";
@@ -24,6 +24,14 @@ export type SyncState = {
 	 * Optional on the type because a browser that synced before this field existed has nothing in its row.
 	 */
 	progressSeen?: Record<string, StatMap>;
+	/**
+	 * When this device's settings last stood still, in record-clock seconds: the moment its values were
+	 * pushed to the settings record or adopted from it. Compared against the record's updatedAt on the next
+	 * pull, it is what decides which side has the edit — without it a stale record clobbers a fresh change
+	 * and the clobbered value is pushed straight back.
+	 * Optional on the type because a browser that synced before this field existed has nothing in its row.
+	 */
+	settingsLocalAt?: number;
 	lastPull: number;
 };
 
@@ -88,7 +96,7 @@ export class Sync {
 	 * Everything the network knows that this browser does not. Returns the settings to adopt, the progress
 	 * to merge per layout, every session the repo still keeps, and the shared boards to register.
 	 */
-	async pull(): Promise<{ settings: Partial<Settings>; progress: Record<string, StatMap>; sessions: SessionRow[]; layouts: SharedLayoutRow[] }> {
+	async pull(): Promise<{ settings: Partial<Settings>; settingsAt: number; settingsLocalAt: number; progress: Record<string, StatMap>; sessions: SessionRow[]; layouts: SharedLayoutRow[] }> {
 		const state = await this.store.load();
 		const [records, settings, sessions, layouts] = await Promise.all([list(this.s, PROGRESS), list(this.s, SETTINGS), list(this.s, SESSION), list(this.s, LAYOUT)]);
 		const progress: Record<string, StatMap> = {};
@@ -122,6 +130,8 @@ export class Sync {
 		}, undefined);
 		return {
 			settings: fromSettingsRecord(newest?.value),
+			settingsAt: newest?.at ?? 0,
+			settingsLocalAt: state.settingsLocalAt ?? 0,
 			progress,
 			sessions: sessions.flatMap((r) => {
 				const parsed = fromSessionRecord(r.value, rkeyOf(r.uri));
@@ -146,7 +156,20 @@ export class Sync {
 	}
 
 	async pushSettings(s: Settings, nowMs: number): Promise<void> {
+		// Stamp before the PUT, not after: a write refused while offline is still a local edit, and the
+		// stamp is what makes the next sync push it instead of adopting the stale record in its place.
+		const state = await this.store.load();
+		state.settingsLocalAt = clockSeconds(nowMs);
+		await this.store.save(state);
 		await put(this.s, SETTINGS, "self", settingsRecord(s, nowMs));
+	}
+
+	/** Say this device's copy now matches the record dated `at` — call it after adopting, so the next pull
+	 *  does not mistake the account's own words for somebody else's edit. */
+	async stampSettings(at: number): Promise<void> {
+		const state = await this.store.load();
+		state.settingsLocalAt = at;
+		await this.store.save(state);
 	}
 
 	/**

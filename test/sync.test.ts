@@ -368,4 +368,33 @@ describe("sync", () => {
 		expect(res.layouts[0]!.layout.byKey.k1).toBe("q");
 	});
 
+	it("stamps when settings were last local and hands both stamps back on the next pull", async () => {
+		// The direction check that keeps a stale record from clobbering a fresh edit needs two numbers on
+		// every pull: what the repo says (updatedAt) and when this device last stood (settingsLocalAt).
+		const rows = { [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [], [LAYOUT]: [] };
+		const { session, calls } = fake(rows);
+		const store = memStore();
+		const sync = new Sync(session, store);
+		const res0 = await sync.pull();
+		expect(res0.settingsAt).toBe(0);
+		expect(res0.settingsLocalAt).toBe(0);
+		const at = Math.round(Date.now() / 1000);
+		await sync.pushSettings({ geometry: "go60", keymap: "qwerty", targetCpm: 250, keyboardOrder: false, realWords: false }, at * 1000);
+		expect(store.state.settingsLocalAt).toBe(at);
+		commit(rows, calls); // the repo now holds what was pushed, as a real PDS would
+		const res1 = await sync.pull();
+		expect(res1.settingsAt).toBe(at);
+		expect(res1.settingsLocalAt).toBe(at);
+	});
+
+	it("stamps settings as local even when the record write is refused", async () => {
+		// Offline edit: the stamp is what makes the next sync push the local value instead of adopting the
+		// stale remote one. Stamping only after a successful PUT would lose the edit in exactly that race.
+		const { session } = fake({ [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [] }, true);
+		const store = memStore();
+		const at = Math.round(Date.now() / 1000);
+		await expect(new Sync(session, store).pushSettings({ geometry: "go60", keymap: "qwerty", targetCpm: 250, keyboardOrder: false, realWords: false }, at * 1000)).rejects.toThrow();
+		expect(store.state.settingsLocalAt).toBe(at);
+	});
+
 });
