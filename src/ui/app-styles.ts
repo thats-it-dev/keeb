@@ -27,10 +27,12 @@ export const appStyles = [
 		.col { display: grid; gap: 14px; width: 100%; justify-items: center; }
 		/* The svg inside is width:100% of its host, and an inline host has no width of its own. */
 		tt-keyboard, tt-practice { display: block; width: 100%; }
-		/* Settings is a modal dialog: centred by the UA, and ::backdrop is the tint over the page. */
-		dialog { border: 1px solid var(--border-color); border-radius: calc(var(--radius) * 2); background: var(--bg); color: var(--text-primary); padding: 0; box-shadow: 0 18px 50px var(--shadow-color); width: min(24rem, calc(100vw - 2rem)); }
+		/* Settings is a modal dialog: centred by the UA, and ::backdrop is the tint over the page. It owns
+		* its own scroll — the page behind must not move under a reader who is halfway through the list. */
+		dialog { border: 1px solid var(--border-color); border-radius: calc(var(--radius) * 2); background: var(--bg); color: var(--text-primary); padding: 0; box-shadow: 0 18px 50px var(--shadow-color); width: min(26rem, calc(100vw - 2rem)); max-height: min(85dvh, 44rem); overflow-y: auto; }
 		dialog::backdrop { background: color-mix(in srgb, var(--text-primary), transparent 62%); backdrop-filter: blur(3px); }
-		.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border-color); }
+		/* Sticky so closing stays reachable however far the panel scrolled. */
+		.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg); z-index: 1; }
 		/* Borderless icon button. The kit's own dialogs use a class named .x with exactly this recipe,
 		* but it lives in their component styles, not in sharedStyles, so it is declared here too.
 		* (.btn.ghost is NOT borderless — it keeps border-color: var(--border-color).) */
@@ -39,9 +41,15 @@ export const appStyles = [
 		/* Two columns: the label sits against the left edge, the control against the right. */
 		.panel { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; padding: 16px 14px; }
 		.panel label { display: contents; }
+		/* Checkbox rows are not label/control pairs: the box belongs beside its words, not in the label gutter. */
+		.panel label.full { display: flex; align-items: baseline; gap: 8px; justify-self: start; }
+		.panel label.full > .label { white-space: nowrap; }
 		.panel label > .label { justify-self: start; }
 		.panel label > select,
-		.panel label > input { justify-self: end; width: 100%; max-width: 12rem; }
+		.panel label > input:not([type=checkbox]) { justify-self: end; width: 100%; max-width: 12rem; }
+		/* A file picker under its natural width renders as clipped gibberish ("No …sen"); it gets the
+		 * column, and a font small enough that "No file chosen" fits inside it. */
+		.panel label > input[type=file] { max-width: none; font-size: 0.75rem; }
 		.read { display: flex; gap: 26px; flex-wrap: wrap; justify-content: center; }
 		.metric { display: grid; gap: 2px; justify-items: center; font-variant-numeric: tabular-nums; }
 		.metric b { font-weight: 600; font-size: 1.05rem; }
@@ -58,9 +66,15 @@ export const appStyles = [
 		.hint.ly3 { color: var(--chart-4); }
 		.hint.lyx { color: var(--text-secondary); }
 		.full { grid-column: 1 / -1; }
+		/* Group headings inside the dialog: the same micro-label type the insight cards use, so the modal
+		 * reads as four named parts instead of one long label grid. */
+		.group { grid-column: 1 / -1; margin: 10px 0 -4px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+		/* The account line wraps, and a full did:plc breaks anywhere rather than riding over the edge. */
+		.sync { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+		.sync > .label { overflow-wrap: anywhere; }
 		.board { display: flex; align-items: center; gap: 10px; }
 		.problems { margin: 0; padding-left: 1.1em; color: var(--accent); font-size: 0.85rem; }
-		/* Sign-in is one line of the panel, not a section: it is optional and rarely touched. */
+		/* Sign-in lives under its own group heading now; the note it earns stays beside it. */
 		/* The progress section is a pane section, so it is narrower than the page: tighter gaps, and the same
 		heading type the history section above it uses. */
 		.stats { width: 100%; display: grid; gap: 10px; }

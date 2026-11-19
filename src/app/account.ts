@@ -42,8 +42,18 @@ export class Account {
 	note = "";
 	handle = "";
 	#sync: Sync | undefined;
+	// Nonzero while syncNow is writing an adopted record through the host, and counting rather than a flag:
+	// two overlapping syncs must not have the shallower one's finally clear the deeper one's shield. The
+	// host's write callbacks persist what they are given, and persisting is also how a local edit
+	// announces itself — but nothing the account just handed us is a local edit, and echoing it back
+	// mid-adopt pushes a half-applied record with a fresh timestamp that wins the next direction check.
+	#adopting = 0;
 
-	constructor(readonly host: AccountHost) {}
+	// The second argument exists for the tests: an Account can be pointed at a Sync over a fake PDS
+	// without inventing an auth session. boot() ignores it and builds its own from whatever auth says.
+	constructor(readonly host: AccountHost, sync?: Sync) {
+		this.#sync = sync;
+	}
 
 	get connected(): boolean {
 		return this.#sync !== undefined;
@@ -85,6 +95,22 @@ export class Account {
 		this.host.invalidate();
 	}
 
+	/**
+	 * The learner edited a setting on screen. Send just the settings record — no pull, no flush — so a goal
+	 * change reaches the account the moment the field blurs instead of waiting for someone to press Sync.
+	 */
+	async settingsChanged(): Promise<void> {
+		const sync = this.#sync;
+		if (!sync || this.#adopting) return;
+		const now = this.host.read();
+		try {
+			await sync.pushSettings({ geometry: now.geometryId, keymap: now.keymapId, targetCpm: now.targetCpm, keyboardOrder: now.keyboardOrder, realWords: now.realWords }, Date.now());
+		} catch (err) {
+			this.note = `settings not sent: ${(err as Error).message}`;
+			this.host.invalidate();
+		}
+	}
+
 	/** Bring the account and this browser into line, in whichever direction each piece is newer. */
 	async syncNow(adapt = true): Promise<void> {
 		const sync = this.#sync;
@@ -94,8 +120,16 @@ export class Account {
 		const read = h.read();
 		const key = layoutKey(read.geometryId, read.keymapId);
 		const notes: string[] = [];
+		// Which side has the settings edit. Both start at zero so a pull that throws leaves the push path
+		// exactly as it was — an unreachable PDS must not strand a queued local change.
+		let settingsAt = 0;
+		let settingsLocalAt = 0;
+		let adoptedSettings = false;
 		try {
-			const { settings, progress, sessions, layouts } = await sync.pull();
+			const pulled = await sync.pull();
+			const { settings, progress, sessions, layouts } = pulled;
+			settingsAt = pulled.settingsAt;
+			settingsLocalAt = pulled.settingsLocalAt;
 			// Shared boards land before anything reads the settings record: the account may name a layout this
 			// browser has never seen, and the adoption check below only accepts an id it can resolve.
 			let adopted = read.layouts;
@@ -113,18 +147,35 @@ export class Account {
 				h.writeStats(await applyRemoteProgress(key, remote));
 				if (JSON.stringify(h.read().stats) !== before) h.reload();
 			}
-			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross
-			// over on a quiet page: at boot, or when they press Sync.
-			if (adapt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) {
+			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross over
+			// on a quiet page: when they press Sync (boot deliberately passes adapt=false). And only when the
+			// record is genuinely newer than this device's last edit — otherwise the stale record clobbers a
+			// fresh goal and the clobbered value is pushed straight back, which is how a changed goal never
+			// synced.
+			if (adapt && settingsAt > settingsLocalAt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) {
 				const now = h.read();
 				// An id this browser cannot resolve is skipped, not adopted: the account may name a board whose
 				// file never arrived, and selecting it would render a page with no keys on it.
 				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : now.geometryId;
 				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : now.keymapId;
-				if (settings.targetCpm) h.writeGoal(settings.targetCpm);
-				h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
-				if (g !== now.geometryId || k !== now.keymapId) h.select(g, k);
-				else h.reload();
+				this.#adopting += 1;
+				try {
+					// Select first: the goal and switches persist to the row keyed by the layout on screen, and
+					// that row must be the row of the layout the record is selecting, not the one being left.
+					if (g !== now.geometryId || k !== now.keymapId) h.select(g, k);
+					if (settings.targetCpm) h.writeGoal(settings.targetCpm);
+					// Only switch values the record actually carries: a record predating the switches has no
+					// opinion about them, and calling writeCurriculum would persist this device's other-layout
+					// values into the newly selected layout's row.
+					if (typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean") h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
+					if (g === now.geometryId && k === now.keymapId) h.reload();
+					adoptedSettings = true;
+					// This device now stands where the record stands; the trailing push is skipped even when it
+					// did, because it would read a page mid-reload and push the mix the record is being applied to.
+					await sync.stampSettings(settingsAt);
+				} finally {
+					this.#adopting -= 1;
+				}
 			}
 		} catch (err) {
 			// A failed read must not cancel the writes below. The reason this device has anything queued is
@@ -133,10 +184,12 @@ export class Account {
 			notes.push(`read failed: ${(err as Error).message}`);
 		}
 		const after = h.read();
-		try {
-			await sync.pushSettings({ geometry: after.geometryId, keymap: after.keymapId, targetCpm: after.targetCpm, keyboardOrder: after.keyboardOrder, realWords: after.realWords }, Date.now());
-		} catch (err) {
-			notes.push(`settings not sent: ${(err as Error).message}`);
+		if (!adoptedSettings && settingsLocalAt >= settingsAt) {
+			try {
+				await sync.pushSettings({ geometry: after.geometryId, keymap: after.keymapId, targetCpm: after.targetCpm, keyboardOrder: after.keyboardOrder, realWords: after.realWords }, Date.now());
+			} catch (err) {
+				notes.push(`settings not sent: ${(err as Error).message}`);
+			}
 		}
 		const queued = await sync.flush(Date.now());
 		this.note = [...notes, queued.error ?? (queued.sent ? `${queued.sent} session(s) sent` : "up to date")].join(" · ");

@@ -21,9 +21,10 @@ const REQUIRED: Record<string, string[]> = {
 };
 
 /** A PDS that answers from a map of collection -> records, and remembers what it was asked to do. */
-function fake(rows: Record<string, { uri: string; value: Record<string, unknown> }[]>, fail = false) {
+function fake(rows: Record<string, { uri: string; value: Record<string, unknown> }[]>, fail = false, duringList?: () => Promise<void>) {
 	const calls: Call[] = [];
 	const stored: Record<string, Record<string, unknown>> = {};
+	let hookUsed = false;
 	const session: Session = {
 		did: DID,
 		async fetchHandler(pathname, init) {
@@ -37,7 +38,13 @@ function fake(rows: Record<string, { uri: string; value: Record<string, unknown>
 			const field = (k: string) => (init?.method === "GET" || !body ? params[k] : body[k] === undefined ? undefined : String(body[k]));
 			const missing = (REQUIRED[path ?? ""] ?? []).filter((k) => !field(k));
 			if (missing.length) return jsonResponse(400, { error: "InvalidRequest", message: `Invalid ${path} params: Missing required key "${missing[0]}"` });
-			if (path === "com.atproto.repo.listRecords") return jsonResponse(200, { records: rows[params.collection!] ?? [] });
+			if (path === "com.atproto.repo.listRecords") {
+				if (duringList && !hookUsed) {
+					hookUsed = true;
+					await duringList(); // work that lands while the pull is still mid-flight
+				}
+				return jsonResponse(200, { records: rows[params.collection!] ?? [] });
+			}
 			if (path === "com.atproto.repo.putRecord") {
 				stored[`${body?.collection ?? ""}/${body?.rkey ?? ""}`] = body?.record as Record<string, unknown>;
 				return jsonResponse(200, { uri: `${DID}/${body?.rkey}`, cid: "bafy" });
@@ -85,6 +92,20 @@ const memStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncS
 			return box.state;
 		},
 		load: async () => box.state,
+		save: async (s) => {
+			box.state = s;
+		},
+	};
+};
+
+/** Like IndexedDB, which hands every read a fresh copy: two reads that overlap cannot both save the row. */
+const copyStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncState } => {
+	const box = { state: initial };
+	return {
+		get state() {
+			return box.state;
+		},
+		load: async () => structuredClone(box.state),
 		save: async (s) => {
 			box.state = s;
 		},
@@ -366,6 +387,58 @@ describe("sync", () => {
 		expect(res.layouts.map((l) => l.layout.name)).toEqual(["Older", "Newer"]);
 		expect(res.layouts[0]!.rkey).toBe("1111older");
 		expect(res.layouts[0]!.layout.byKey.k1).toBe("q");
+	});
+
+	it("stamps when settings were last local and hands both stamps back on the next pull", async () => {
+		// The direction check that keeps a stale record from clobbering a fresh edit needs two numbers on
+		// every pull: what the repo says (updatedAt) and when this device last stood (settingsLocalAt).
+		const rows = { [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [], [LAYOUT]: [] };
+		const { session, calls } = fake(rows);
+		const store = memStore();
+		const sync = new Sync(session, store);
+		const res0 = await sync.pull();
+		expect(res0.settingsAt).toBe(0);
+		expect(res0.settingsLocalAt).toBe(0);
+		const at = Math.round(Date.now() / 1000);
+		await sync.pushSettings({ geometry: "go60", keymap: "qwerty", targetCpm: 250, keyboardOrder: false, realWords: false }, at * 1000);
+		expect(store.state.settingsLocalAt).toBe(at);
+		commit(rows, calls); // the repo now holds what was pushed, as a real PDS would
+		const res1 = await sync.pull();
+		expect(res1.settingsAt).toBe(at);
+		expect(res1.settingsLocalAt).toBe(at);
+	});
+
+	it("stamps settings as local even when the record write is refused", async () => {
+		// Offline edit: the stamp is what makes the next sync push the local value instead of adopting the
+		// stale remote one. Stamping only after a successful PUT would lose the edit in exactly that race.
+		const { session } = fake({ [SESSION]: [], [PROGRESS]: [], [SETTINGS]: [] }, true);
+		const store = memStore();
+		const at = Math.round(Date.now() / 1000);
+		await expect(new Sync(session, store).pushSettings({ geometry: "go60", keymap: "qwerty", targetCpm: 250, keyboardOrder: false, realWords: false }, at * 1000)).rejects.toThrow();
+		expect(store.state.settingsLocalAt).toBe(at);
+	});
+
+	it("keeps a stamp an edit took while the pull was still listing", async () => {
+		// A pull spans four paginated listings. A goal blur in that window stamps the sync row; a pull that
+		// saves the copy it loaded before the awaits would erase that stamp, and the next sync would then
+		// read the older record as the winner and push the stale goal over the edit.
+		const remoteAt = Math.round(Date.now() / 1000) - 3600;
+		const rows = {
+			[PROGRESS]: [],
+			[SESSION]: [],
+			[LAYOUT]: [],
+			[SETTINGS]: [{ uri: `at://${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "go60", keymap: "qwerty", targetCpm: 150, keyboardOrder: false, realWords: false, updatedAt: remoteAt } }],
+		};
+		const store = copyStore();
+		const sync = new Sync(
+			fake(rows, false, async () => {
+				await sync.pushSettings({ geometry: "go60", keymap: "qwerty", targetCpm: 250, keyboardOrder: false, realWords: false }, Date.now());
+			}).session,
+			store,
+		);
+		const res = await sync.pull();
+		expect(res.settingsLocalAt).toBeGreaterThan(remoteAt);
+		expect(store.state.settingsLocalAt).toBe(res.settingsLocalAt);
 	});
 
 });
