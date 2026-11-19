@@ -6,7 +6,6 @@ import { Sync, emptyState, type SyncState, type SyncStore } from "../src/atproto
 import { Account, type AccountHost } from "../src/app/account.ts";
 import type { Session } from "../src/atproto/auth.ts";
 import type { StatMap } from "../src/stats/stats.ts";
-import { DEFAULT_SETTINGS } from "../src/data/store.ts";
 
 // syncNow caches pulled sessions into IndexedDB; there is none in a node test and this is not the
 // behavior under review. Everything else store.ts does here is pure object work.
@@ -54,12 +53,17 @@ const memStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncS
 	};
 };
 
-/** A page shaped like app-main's host wiring: the writes persist (and persist means "announce"), so the
- *  order they arrive in is exactly the order app-main's #saveSettings would save rows in. */
-function fakeHost(start: { geometryId: string; keymapId: string; targetCpm: number }) {
+/** A page wired like app-main's host: each write persists the whole live state, under the key of the
+ *  layout on screen at the moment of the write — which is what makes write-before-select detectable. */
+function fakeHost(start: { geometry: string; keymap: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean }) {
 	const log: string[] = [];
+	const rows: Record<string, { geometry: string; keymap: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean }> = { "go60+qwerty": { ...start }, "corne+workman": { geometry: "corne", keymap: "workman", targetCpm: 300, keyboardOrder: false, realWords: true } };
 	let account: Account;
-	const state = { ...start, keyboardOrder: false, realWords: false, stats: {} as StatMap, sessions: [] };
+	const state = { geometryId: start.geometry, keymapId: start.keymap, targetCpm: start.targetCpm, keyboardOrder: start.keyboardOrder, realWords: start.realWords, stats: {} as StatMap, sessions: [] };
+	const persist = () => {
+		rows[`${state.geometryId}+${state.keymapId}`] = { geometry: state.geometryId, keymap: state.keymapId, targetCpm: state.targetCpm, keyboardOrder: state.keyboardOrder, realWords: state.realWords };
+		void account.settingsChanged(); // what app-main's #saveSettings does after writing the row
+	};
 	const h: AccountHost = {
 		read: () => ({ ...state, layouts: { boards: [], maps: [] } }),
 		writeStats: () => undefined,
@@ -68,13 +72,13 @@ function fakeHost(start: { geometryId: string; keymapId: string; targetCpm: numb
 		writeGoal: (cpm) => {
 			state.targetCpm = cpm;
 			log.push("writeGoal");
-			void account.settingsChanged(); // what app-main's #saveSettings does after persisting
+			persist();
 		},
 		writeCurriculum: (curriculum) => {
 			state.keyboardOrder = curriculum.keyboardOrder ?? state.keyboardOrder;
 			state.realWords = curriculum.realWords ?? state.realWords;
 			log.push("writeCurriculum");
-			void account.settingsChanged();
+			persist();
 		},
 		reload: () => log.push("reload"),
 		pick: () => undefined,
@@ -86,7 +90,7 @@ function fakeHost(start: { geometryId: string; keymapId: string; targetCpm: numb
 		endSession: async () => undefined,
 		invalidate: () => undefined,
 	};
-	return { host: h, log, attach: (a: Account) => (account = a), state };
+	return { host: h, log, rows, attach: (a: Account) => (account = a), state };
 }
 
 const at = () => Math.round(Date.now() / 1000);
@@ -98,17 +102,17 @@ describe("account settings sync", () => {
 			[SETTINGS]: [{ uri: `${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, keyboardOrder: true, realWords: false, updatedAt: stamp } }],
 		});
 		const store = memStore();
-		const page = fakeHost({ geometryId: "go60", keymapId: "qwerty", targetCpm: 200 });
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false });
 		const account = new Account(page.host, new Sync(session, store));
 		page.attach(account);
 		await account.syncNow();
-		// The adopted goal must persist under the NEW layout's key: select lands before the writes, so a
-		// saveSettings on the write path cannot drop it into the row of the board being left behind.
+		// Select first, then write — so the adopted goal persists under the NEW layout's row.
 		expect(page.log.slice(0, 3)).toEqual(["select", "writeGoal", "writeCurriculum"]);
+		expect(page.rows["corne+workman"]).toMatchObject({ targetCpm: 240, keyboardOrder: true });
+		expect(page.rows["go60+qwerty"]!.targetCpm).toBe(200); // the row being left keeps its own goal
 		// No echo: neither mid-adopt nor the trailing push may PUT a settings record this sync just applied.
 		expect(puts.filter((p) => p.collection === SETTINGS)).toEqual([]);
 		expect(store.state.settingsLocalAt).toBe(stamp);
-		expect(page.state).toMatchObject({ geometryId: "corne", keymapId: "workman", targetCpm: 240, keyboardOrder: true });
 	});
 
 	it("pushes a newer local edit instead of adopting the stale record", async () => {
@@ -117,7 +121,7 @@ describe("account settings sync", () => {
 		});
 		const store = memStore();
 		store.state.settingsLocalAt = at(); // the learner changed the goal on this device an hour later
-		const page = fakeHost({ geometryId: "go60", keymapId: "qwerty", targetCpm: 250 });
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 250, keyboardOrder: false, realWords: false });
 		const account = new Account(page.host, new Sync(session, store));
 		page.attach(account);
 		await account.syncNow();
@@ -130,7 +134,7 @@ describe("account settings sync", () => {
 	it("an edit made while the sync page is open pushes once and is not echoed twice", async () => {
 		const { session, puts } = fakePds({});
 		const store = memStore();
-		const page = fakeHost({ geometryId: "go60", keymapId: "qwerty", targetCpm: 200 });
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false });
 		const account = new Account(page.host, new Sync(session, store));
 		page.attach(account);
 		await account.syncNow(); // boot: no record yet, the trailing push creates one
@@ -138,5 +142,20 @@ describe("account settings sync", () => {
 		const sent = puts.filter((p) => p.collection === SETTINGS);
 		expect(sent).toHaveLength(2);
 		expect(sent[1]!.record.targetCpm).toBe(200);
+	});
+
+	it("a record predating the switches carries no opinion about them and writes no curriculum", async () => {
+		const stamp = at();
+		const { session, puts } = fakePds({
+			[SETTINGS]: [{ uri: `${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, updatedAt: stamp } }],
+		});
+		const store = memStore();
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false });
+		const account = new Account(page.host, new Sync(session, store));
+		page.attach(account);
+		await account.syncNow();
+		expect(page.log).toEqual(["select", "writeGoal"]); // writeCurriculum is not called for absent fields
+		expect(page.rows["corne+workman"]!.targetCpm).toBe(240);
+		expect(puts.filter((p) => p.collection === SETTINGS)).toEqual([]);
 	});
 });

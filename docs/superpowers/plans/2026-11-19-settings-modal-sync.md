@@ -11,4 +11,4 @@ Branch: `settings-modal-sync`
 - [x] 6. Modal markup: four group headings; account line wraps; keep every e2e-referenced selector.
 - [x] 7. Run `npm test` and the touched e2e specs (`sync`, `layout`, `daily`, `practice`, `keeb`) green; typecheck.
 - [x] 8. Reviewer over the branch: P1 (adopt ordering wrote the old layout's row + echoed a mixed record) and the pull-stamp stomp fixed with `test/account.test.ts` + a pull-race case in `test/sync.test.ts`.
-- [ ] 9. `npm run verify`, screenshot gate, re-review the amended branch, push, open PR, report links (Michael merges).
+- [x] 9. `npm run verify`, screenshot gate, re-review the amended branch (verdict: OK with notes; all three fixable P2s closed in ba1936e, lock-free-row and clock-skew documented), push, open PR, report links (Michael merges).

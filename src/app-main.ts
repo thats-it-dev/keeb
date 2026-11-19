@@ -232,10 +232,10 @@ export class AppMain extends LitElement {
 		this.#saveSettings();
 	}
 
-	// One place an edit reaches both stores. The fields are the truth on screen (#load re-derives them from
-	// the row); the account used to be missing, which is the half of "goal WPM doesn't sync" you could see.
+	// One place an edit reaches both stores. The fields plus the current ids ARE the row — spreading the old
+	// settings here is how a write during a layout adopt saved the layout being left into the new row.
 	#saveSettings(): void {
-		this.settings = { ...this.settings, targetCpm: this.targetCpm, keyboardOrder: this.keyboardOrder, realWords: this.realWords };
+		this.settings = { geometry: this.geometryId, keymap: this.keymapId, targetCpm: this.targetCpm, keyboardOrder: this.keyboardOrder, realWords: this.realWords };
 		void saveSettings(layoutKey(this.geometryId, this.keymapId), this.settings);
 		void this.#account.settingsChanged();
 	}

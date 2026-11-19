@@ -42,11 +42,12 @@ export class Account {
 	note = "";
 	handle = "";
 	#sync: Sync | undefined;
-	// True while syncNow is writing an adopted record through the host. The host's write callbacks persist
-	// what they are given, and persisting is also how a local edit announces itself — but nothing the
-	// account just handed us is a local edit, and echoing it back mid-adopt is how a half-applied record
-	// gets pushed with a fresh timestamp and wins the next direction check.
-	#adopting = false;
+	// Nonzero while syncNow is writing an adopted record through the host, and counting rather than a flag:
+	// two overlapping syncs must not have the shallower one's finally clear the deeper one's shield. The
+	// host's write callbacks persist what they are given, and persisting is also how a local edit
+	// announces itself — but nothing the account just handed us is a local edit, and echoing it back
+	// mid-adopt pushes a half-applied record with a fresh timestamp that wins the next direction check.
+	#adopting = 0;
 
 	// The second argument exists for the tests: an Account can be pointed at a Sync over a fake PDS
 	// without inventing an auth session. boot() ignores it and builds its own from whatever auth says.
@@ -157,20 +158,23 @@ export class Account {
 				// file never arrived, and selecting it would render a page with no keys on it.
 				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : now.geometryId;
 				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : now.keymapId;
-				this.#adopting = true;
+				this.#adopting += 1;
 				try {
 					// Select first: the goal and switches persist to the row keyed by the layout on screen, and
 					// that row must be the row of the layout the record is selecting, not the one being left.
 					if (g !== now.geometryId || k !== now.keymapId) h.select(g, k);
 					if (settings.targetCpm) h.writeGoal(settings.targetCpm);
-					h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
+					// Only switch values the record actually carries: a record predating the switches has no
+					// opinion about them, and calling writeCurriculum would persist this device's other-layout
+					// values into the newly selected layout's row.
+					if (typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean") h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
 					if (g === now.geometryId && k === now.keymapId) h.reload();
-					// This device now stands where the record stands; the trailing push is skipped, because it
-					// would read a page mid-reload and push the mix the record is being applied to.
-					await sync.stampSettings(settingsAt);
 					adoptedSettings = true;
+					// This device now stands where the record stands; the trailing push is skipped even when it
+					// did, because it would read a page mid-reload and push the mix the record is being applied to.
+					await sync.stampSettings(settingsAt);
 				} finally {
-					this.#adopting = false;
+					this.#adopting -= 1;
 				}
 			}
 		} catch (err) {

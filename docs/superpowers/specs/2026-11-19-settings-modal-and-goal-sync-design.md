@@ -81,6 +81,12 @@ Two complaints about the keeb (touchtype) settings modal:
   (`settingsLocalAt` here vs the record's `updatedAt` set by whoever pushed last). Clock
   skew of minutes can pick the wrong side; accepted, because any later edit re-decides and
   the sessions/progress sync is unaffected.
+- Known limitation (second-review notes): the sync-state row is lock-free read-modify-write,
+  so a `pushLayout` overlapping a pull can still lose one side's bookkeeping (worst case: a
+  duplicate progress record, which the newest-wins pick already tolerates). And adopting a
+  record that predates the curriculum switches (so names another layout but carries no
+  booleans) leaves the switches as this device had them; every record pushed since the
+  switches shipped carries them, so this is legacy-only.
 
 ### Modal
 
