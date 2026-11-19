@@ -88,6 +88,10 @@ Two complaints about the keeb (touchtype) settings modal:
   booleans) leaves those switches at the values the targeted layout's own row stores — the
   adopt awaits the row's load before writing, so no value from the layout being left leaks
   in; every record pushed since the switches shipped carries them, so this is legacy-only.
+- Known limitation (third-review note): if the learner changes the layout selects while an
+  adopt's load is still in flight, the `#pending` token lets the newer pick win, so the
+  adopt's writes can resolve against the just-superseded row. Pre-existing token semantics;
+  needs the dialog open during a boot sync at the exact moment of a manual pick.
 
 ### Modal
 
