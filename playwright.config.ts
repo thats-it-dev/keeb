@@ -8,7 +8,7 @@ export default defineConfig({
 	timeout: 60_000,
 	expect: { timeout: 15_000 },
 	// Tests share only the preview server, so they run in parallel. On a 20-core machine 50% (10) causes random 60s timeouts; fixed at 4 locally, CI stays at 2.
-	workers: process.env.CI ? 2 : "50%",
+	workers: process.env.CI ? 2 : 4,
 	use: { baseURL: base || "http://localhost:4317", trace: "retain-on-failure" },
 	projects: [
 		// No hasTouch: Chromium with a coarse pointer swallows synthetic keyboard events, so a
