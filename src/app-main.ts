@@ -72,7 +72,7 @@ export class AppMain extends LitElement {
 			this.#pick("g", geometryId);
 			this.#pick("k", keymapId);
 		},
-		select: (geometryId, keymapId) => { this.#selectLoad = true; const loading = this.#load({ g: geometryId, k: keymapId }); this.geometryId = geometryId; this.keymapId = keymapId; return loading; },
+		select: (geometryId, keymapId) => { this.#selectLoad = geometryId !== this.geometryId || keymapId !== this.keymapId; const loading = this.#load({ g: geometryId, k: keymapId }); this.geometryId = geometryId; this.keymapId = keymapId; return loading; },
 		endSession: (): Promise<void> => this.#session.end(),
 		invalidate: () => {
 			this.did = this.#account.did;

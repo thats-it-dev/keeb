@@ -55,7 +55,7 @@ test("toggles are kit switches, with the label left and the control right", asyn
 	const panel = page.locator("dialog .panel");
 	const pb = await panel.boundingBox();
 	const [padL, padR] = await panel.evaluate((el: HTMLElement) => [parseFloat(getComputedStyle(el).paddingLeft), parseFloat(getComputedStyle(el).paddingRight)]);
-	for (const t of await page.locator("dialog .panel .label").all()) {
+	for (const t of await page.locator("dialog .panel label > .label").all()) {
 		const b = await t.boundingBox();
 		expect(Math.abs(b!.x - (pb!.x + padL))).toBeLessThan(2);
 	}
