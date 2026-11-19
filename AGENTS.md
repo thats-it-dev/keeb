@@ -7,6 +7,7 @@ Read this file before you edit anything. `README.md` covers the kit, layouts, th
 | When | Run |
 | --- | --- |
 | While changing code | `npm run typecheck && npm test` |
+| While splitting files or deleting dead code | `npm run guardrails` (line limit, package name, no e2e sleeps, knip; a few seconds) |
 | While changing one screen | `npm run e2e:one -- e2e/<file>.spec.ts` (desktop only, one spec) |
 | Before every commit | `npm run verify` (typecheck, unit tests, lint, full e2e) |
 
@@ -20,11 +21,20 @@ Read this file before you edit anything. `README.md` covers the kit, layouts, th
 
 1. **Core logic first.** Put the app's rules (scoring, scheduling, parsing, statistics, merging) in plain
    functions under `src/<area>/`, with unit tests in `test/`. No DOM, no Lit, no storage in those files.
-2. **Clones and "like X" apps:** before writing code, write `docs/spec.md` with the original's actual
-   algorithm, with links to where you read it. Test the core logic against that spec.
+2. **Spec before code.** Replace the starter `docs/spec.md` with what Michael asked for (see **Spec**).
+   Test the core logic against it.
 3. **Stop for Michael.** When the core works, ask him to try it, and wait. Do not start sync, sharing,
    charts or other extras until he confirms the core behaves right.
 4. Then UI, storage, sync and extras, one PR each.
+
+## Spec
+
+`docs/spec.md` is the contract: what the app does, the rules it follows, its data and what it leaves out.
+
+- Read it before changing behaviour. A behaviour change updates it in the same PR; the PR body says what changed.
+- Each behaviour rule is a bullet a test can check. Clones and "like X" apps: the original's actual
+  algorithm, with links to where you read it.
+- `npm test` fails while the file is missing or still the starter.
 
 ## Tests for logic that adds up numbers
 
@@ -35,6 +45,16 @@ Averages, counts, timers, speeds and merges need tests with **varied** input, no
 - the first event, with nothing before it
 - merging a record with itself, or applying the same update twice, must not double anything
 - randomness: pass a seeded random function in, and test that different seeds give different output
+
+## Output that changes as the user goes along
+
+Generated content (words, lines, puzzles, schedules) and anything that follows the user's progress
+(levels, unlocks, difficulty) must be checked at **every** stage, not only the first:
+
+- before the PR, print real output at the first, a middle and the last stage (for example 6 letters
+  unlocked, 14, all 26) and read it as the user would; fix anything a person would not accept
+- each rule the request states ("every word has the focused letter", "never a doubled space") gets a
+  test that loops over all stages, with stats from a user partway through, not only a fresh start
 
 ## Fixing a bug
 
@@ -47,15 +67,43 @@ Averages, counts, timers, speeds and merges need tests with **varied** input, no
 
 ## Code rules
 
+- Every character you write costs time (the model writes about 34 tokens a second). Change existing
+  files with the edit tool, never a whole-file write: `oldText` is the fewest unique lines that locate
+  the change (usually 1-3), and `newText` repeats as few unchanged lines as possible. Read a file once
+  and read only the lines you need (`offset`/`limit`) when you look again.
 - Files under `src/` stay under 400 lines; `npm test` fails otherwise. Split by responsibility:
   `app-main.ts` only composes components, and each panel, chart or dialog is its own file.
 - No unused exports or files; `npm run lint` (knip) fails otherwise. Delete dead code, don't keep it.
 - Comments say what the code does and why. Never tell the story of a bug, a measurement or an earlier
   version in a comment; that goes in the commit message. Delete a comment the code no longer matches.
 - `package.json` `name` equals `app.config.json` `name`.
-- Styling: use kit components, `sharedStyles` classes and kit tokens only (see README "Rules").
+- Side panels: put navigation in tk-shell's nav slot and details in its aside slot. Never build a panel, drawer, scrim or panel toggle yourself; the kit draws them.
+- Numbers and charts: use the kit's `tk-stat`/`tk-stats`, `tk-sparkline`, `tk-timeseries`, `tk-bars` and `tk-heatmap` (kit README "Charts"). On the charts `x`, `y`, `label` and `value` name fields of your rows, not display text. Never draw charts yourself with SVG, canvas or d3, and never pick chart colors.
+- Styling: use kit components, `sharedStyles` classes and kit tokens only (the template README's "Rules", and the
+  UI patterns rule below: an app rewrites its README, this file keeps the rules). The kit's
+  tokens are exactly these; `npm test` fails on any other `var(--…)`, and a made-up name renders as no colour
+  at all. Colours: `--bg` (page), `--panel` (a raised surface), `--surface`, `--text-primary`,
+  `--text-secondary`, `--text-muted`, `--border-color`, `--line` (hairlines), `--primary` (brand amber, for
+  the thing to look at), `--accent` (status red), `--success` (status green), `--secondary`, `--overlay`,
+  `--shadow-color`, `--code-bg`, `--ring` (focus), `--underline-color`; charts `--chart-1` to `--chart-4`
+  (series only). Shape and type: `--radius`, `--font-body`, `--font-display`, `--font-mono`. There is no
+  `--tk-*` colour token. Light and dark values come with the token; never pick a colour per theme.
+- UI patterns: https://kit.thatsit.app/ is the design system, every token, class, component, pattern and icon
+  with its code. Before building a settings dialog, a form row, a switch, an icon button, a list with actions,
+  an empty state, a card or a notice, fetch that page and copy its pattern. A settings dialog or a confirm is
+  `tk-sheet` with the page's `.form` pattern inside (label left, control right); never a hand-built `<dialog>`.
+  The switch is `<button class="switch" role="switch" aria-checked aria-labelledby>`; an icon button is
+  `.icon-btn`; a goal bar is `tk-progress`; icons come from the kit (`SETTINGS_ICON`, `TRASH_ICON`,
+  `PENCIL_ICON`, `PLUS_ICON`, `X_ICON`, …, or `ICONS[name]`), never a pasted SVG. Never re-declare a kit class or
+  pattern in app CSS.
 - Accessibility: never convey state by colour alone, and never put `aria-live` on text that changes on
   every keystroke.
+
+## To-do list
+
+- Keep the to-do list current: mark an item completed as soon as it is done, not at the end.
+- Before your final reply, every item is completed or deleted. Delete items that no longer apply. If something is
+  really unfinished, say so in the reply and leave only that item open.
 
 ## Commits
 

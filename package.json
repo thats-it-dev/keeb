@@ -22,7 +22,9 @@
 		"lint": "knip --no-progress",
 		"verify": "npm run typecheck && npm test && npm run lint && npm run e2e",
 		"lexicons": "node scripts/export-lexicons.ts",
-		"lexicons:publish": "npm run lexicons && goat lex publish"
+		"lexicons:publish": "npm run lexicons && goat lex publish",
+		"guardrails": "npm run kit-types && vitest run test/guardrails.test.ts && npm run lint",
+		"pretest": "npm run kit-types"
 	},
 	"devDependencies": {
 		"@atproto/lexicon": "^0.7.19",

@@ -38,6 +38,8 @@ async function main(): Promise<void> {
 		// lit.d.ts isn't reachable from kit.d.ts (the kit exports no Lit), so it is a second entry.
 		const files = await collectTypes(get);
 		for (const [p, text] of await collectTypes(get, "types/lit.d.ts")) files.set(p, text);
+		// The stylesheet too: test/guardrails.test.ts checks every var(--…) in src/ against the tokens it defines.
+		files.set("kit.css", await get("kit.css"));
 		rmSync(tmp, { recursive: true, force: true });
 		for (const [p, text] of files) {
 			mkdirSync(dirname(join(tmp, p)), { recursive: true });
