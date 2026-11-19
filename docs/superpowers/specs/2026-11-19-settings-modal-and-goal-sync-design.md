@@ -85,8 +85,9 @@ Two complaints about the keeb (touchtype) settings modal:
   so a `pushLayout` overlapping a pull can still lose one side's bookkeeping (worst case: a
   duplicate progress record, which the newest-wins pick already tolerates). And adopting a
   record that predates the curriculum switches (so names another layout but carries no
-  booleans) leaves the switches as this device had them; every record pushed since the
-  switches shipped carries them, so this is legacy-only.
+  booleans) leaves those switches at the values the targeted layout's own row stores — the
+  adopt awaits the row's load before writing, so no value from the layout being left leaks
+  in; every record pushed since the switches shipped carries them, so this is legacy-only.
 
 ### Modal
 

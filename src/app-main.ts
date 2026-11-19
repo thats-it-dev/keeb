@@ -72,10 +72,7 @@ export class AppMain extends LitElement {
 			this.#pick("g", geometryId);
 			this.#pick("k", keymapId);
 		},
-		select: (geometryId, keymapId) => {
-			this.geometryId = geometryId;
-			this.keymapId = keymapId;
-		},
+		select: (geometryId, keymapId) => { this.#selectLoad = true; const loading = this.#load({ g: geometryId, k: keymapId }); this.geometryId = geometryId; this.keymapId = keymapId; return loading; },
 		endSession: (): Promise<void> => this.#session.end(),
 		invalidate: () => {
 			this.did = this.#account.did;
@@ -105,6 +102,8 @@ export class AppMain extends LitElement {
 	#bound = false;
 	// Identifies the newest layout load, so an old IndexedDB answer cannot overwrite a newer choice.
 	#pending: symbol | undefined;
+	// Set when select() starts its own load, so the render it triggers does not start a second racing one.
+	#selectLoad = false;
 
 	override firstUpdated(): void {
 		// Stored boards and keymaps have to be registered before the saved selection is read, and the ids
@@ -143,7 +142,10 @@ export class AppMain extends LitElement {
 	}
 
 	override updated(changed: Map<string, unknown>): void {
-		if (changed.has("geometryId") || changed.has("keymapId")) void this.#load({ g: this.geometryId, k: this.keymapId });
+		if (changed.has("geometryId") || changed.has("keymapId")) {
+			if (this.#selectLoad) this.#selectLoad = false;
+			else void this.#load({ g: this.geometryId, k: this.keymapId });
+		}
 		if (changed.has("settingsOpen")) syncDialog(this.renderRoot, this.settingsOpen);
 		if (this.ready && !this.#bound) {
 			window.addEventListener("keydown", this.#onKey);
@@ -167,10 +169,8 @@ export class AppMain extends LitElement {
 		this.#session.seed(stored);
 		this.stats = stored;
 		this.targetCpm = this.settings.targetCpm;
-		// The switch is safe because ready was false for the whole await, which unmounts <tt-practice>:
-		// #type cannot run, so no keystroke can write another layout's stats under this key. The next render
-		// hands the child the new .resolved, and practice.ts restarts its engine from scratch on that.
-		// If you ever keep the pane mounted across a load, that guarantee goes away and this needs a restart.
+		// The switch is safe because ready was false for the whole await, which unmounts <tt-practice>: no
+		// keystroke can run to write another layout's stats here. If a load ever keeps the pane mounted, this needs a restart.
 		this.ready = true;
 	}
 

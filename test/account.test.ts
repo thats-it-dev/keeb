@@ -5,6 +5,7 @@ import { LAYOUT, PROGRESS, SESSION, SETTINGS } from "../src/atproto/lexicons.ts"
 import { Sync, emptyState, type SyncState, type SyncStore } from "../src/atproto/sync.ts";
 import { Account, type AccountHost } from "../src/app/account.ts";
 import type { Session } from "../src/atproto/auth.ts";
+import { DEFAULT_SETTINGS } from "../src/data/store.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 // syncNow caches pulled sessions into IndexedDB; there is none in a node test and this is not the
@@ -54,7 +55,8 @@ const memStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncS
 };
 
 /** A page wired like app-main's host: each write persists the whole live state, under the key of the
- *  layout on screen at the moment of the write — which is what makes write-before-select detectable. */
+ *  layout on screen at the moment of the write, and select reloads the fields from the new layout's row —
+ *  which is what makes a write aimed at a half-loaded layout detectable. */
 function fakeHost(start: { geometry: string; keymap: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean }) {
 	const log: string[] = [];
 	const rows: Record<string, { geometry: string; keymap: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean }> = { "go60+qwerty": { ...start }, "corne+workman": { geometry: "corne", keymap: "workman", targetCpm: 300, keyboardOrder: false, realWords: true } };
@@ -86,6 +88,14 @@ function fakeHost(start: { geometry: string; keymap: string; targetCpm: number; 
 			state.geometryId = g;
 			state.keymapId = k;
 			log.push("select");
+			// Like app-main, the row's load resolves after a storage trip: a write that skips awaiting
+			// select lands before these fields turn over, and lands the wrong layout's values on the new row.
+			return Promise.resolve().then(() => {
+				const row = rows[`${g}+${k}`];
+				state.targetCpm = row?.targetCpm ?? DEFAULT_SETTINGS.targetCpm;
+				state.keyboardOrder = row?.keyboardOrder ?? DEFAULT_SETTINGS.keyboardOrder;
+				state.realWords = row?.realWords ?? DEFAULT_SETTINGS.realWords;
+			});
 		},
 		endSession: async () => undefined,
 		invalidate: () => undefined,
@@ -156,6 +166,7 @@ describe("account settings sync", () => {
 		await account.syncNow();
 		expect(page.log).toEqual(["select", "writeGoal"]); // writeCurriculum is not called for absent fields
 		expect(page.rows["corne+workman"]!.targetCpm).toBe(240);
+		expect(page.rows["corne+workman"]).toMatchObject({ keyboardOrder: false, realWords: true }); // the row's own switches survive the adopt
 		expect(puts.filter((p) => p.collection === SETTINGS)).toEqual([]);
 	});
 });

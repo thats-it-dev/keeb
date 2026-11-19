@@ -49,5 +49,18 @@ test("toggles are kit switches, with the label left and the control right", asyn
 		// Justify, not merely order: the words start at the row's left edge, the switch ends at its right.
 		expect(Math.abs(l!.x - r!.x)).toBeLessThan(2);
 		expect(Math.abs(s!.x + s!.width - (r!.x + r!.width))).toBeLessThan(2);
+		expect(s!.width).toBeGreaterThanOrEqual(40); // the kit pill, not an empty button passing on position alone
+	}
+	// The same rule for the grid rows: every label sits on the panel's content edge, every control on the other.
+	const panel = page.locator("dialog .panel");
+	const pb = await panel.boundingBox();
+	const [padL, padR] = await panel.evaluate((el: HTMLElement) => [parseFloat(getComputedStyle(el).paddingLeft), parseFloat(getComputedStyle(el).paddingRight)]);
+	for (const t of await page.locator("dialog .panel .label").all()) {
+		const b = await t.boundingBox();
+		expect(Math.abs(b!.x - (pb!.x + padL))).toBeLessThan(2);
+	}
+	for (const c of await page.locator("dialog .panel label > select, dialog .panel label > input").all()) {
+		const b = await c.boundingBox();
+		expect(Math.abs(b!.x + b!.width - (pb!.x + pb!.width - padR))).toBeLessThan(2);
 	}
 });
