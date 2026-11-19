@@ -41,12 +41,13 @@ export const appStyles = [
 		/* Two columns: the label sits against the left edge, the control against the right. */
 		.panel { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; padding: 16px 14px; }
 		.panel label { display: contents; }
-		/* Checkbox rows are not label/control pairs: the box belongs beside its words, not in the label gutter. */
-		.panel label.full { display: flex; align-items: baseline; gap: 8px; justify-self: start; }
-		.panel label.full > .label { white-space: nowrap; }
 		.panel label > .label { justify-self: start; }
 		.panel label > select,
-		.panel label > input:not([type=checkbox]) { justify-self: end; width: 100%; max-width: 12rem; }
+		.panel label > input { justify-self: end; width: 100%; max-width: 12rem; }
+		/* The kit switch already sizes itself; its row spans both columns so a long label cannot widen the
+		 * label gutter and squeeze the input column — words hold the left edge, the switch the right. */
+		.panel label.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+		.panel label > .switch { justify-self: end; }
 		/* A file picker under its natural width renders as clipped gibberish ("No …sen"); it gets the
 		 * column, and a font small enough that "No file chosen" fits inside it. */
 		.panel label > input[type=file] { max-width: none; font-size: 0.75rem; }

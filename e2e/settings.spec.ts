@@ -36,3 +36,15 @@ test("settings is grouped into named sections", async ({ page }) => {
 		await expect(page.locator("dialog").getByRole("heading", { name: group, level: 3 })).toBeVisible();
 	}
 });
+
+test("toggles are kit switches, with the label left and the control right", async ({ page }) => {
+	await openSettings(page);
+	const switches = page.locator("dialog").getByRole("switch");
+	await expect(switches).toHaveCount(2);
+	for (const name of ["teach in keyboard order", "use real words"]) {
+		const sw = page.getByRole("switch", { name });
+		await expect(sw).toBeVisible();
+		const [s, l] = [await sw.boundingBox(), await page.locator("dialog .panel .label", { hasText: name }).first().boundingBox()];
+		expect(s!.x).toBeGreaterThan(l!.x + l!.width - 1); // the control sits past its words, against the right edge
+	}
+});
