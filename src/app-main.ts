@@ -9,19 +9,18 @@ import { dailyBar } from "./ui/daily-bar.ts";
 import { cpmToWpm, targetTimeMs, wpmToCpm, type StatMap } from "./stats/stats.ts";
 import { ladder } from "./lesson/ladder.ts";
 import { overview, routeRows } from "./stats/overview.ts";
-import { historySection } from "./stats/history-section.ts";
-import { insightPanel, type PanelCard } from "./stats/panel.ts";
-import { isPreviewHost, paneSessions } from "./stats/demo.ts";
+import { isPreviewHost } from "./stats/demo.ts";
+import { historyPane, paneCards } from "./ui/pane-sections.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { routeOf } from "./keyboard/routes.ts";
 import type { Geometry, Keymap } from "./keyboard/types.ts";
-import { iconSettings } from "./ui/icons.ts";
+import { iconKeyboard, iconSettings } from "./ui/icons.ts";
+import { savedKeyboardVisible, setKeyboardVisible } from "./app/keyboard-visibility.ts";
 import { countItems, insightCards } from "./ui/insight-cards.ts";
 import { appStyles } from "./ui/app-styles.ts";
 import { settingsDialog, syncDialog } from "./ui/settings-dialog.ts";
 import { progressSection } from "./stats/progress-section.ts";
 import { boardNotice, lastKey, readout, routeHint } from "./ui/practice-line.ts";
-import { describeRoute } from "./stats/format.ts";
 import { Account } from "./app/account.ts";
 import { importLayout, loadLayouts, removeBoard, removeMap, type LayoutChange } from "./app/boards.ts";
 import { rememberSelection, savedSelection } from "./app/selection.ts";
@@ -32,7 +31,7 @@ import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
 
 export class AppMain extends LitElement {
-	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, routeChar: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true } } as const;
+	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, routeChar: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true }, keyboardVisible: { state: true } } as const;
 	static styles = appStyles;
 
 	geometryId = savedSelection().g;
@@ -57,6 +56,8 @@ export class AppMain extends LitElement {
 	syncNote = "";
 	#tally = new DailyTally(() => this.requestUpdate());
 	dailyGoalMin = savedDailyGoalMin(); // this browser's slot, not per-layout settings: the minutes are device-wide
+	// This browser's slot, like the daily goal: the board's visibility is a display preference, not a curriculum one.
+	keyboardVisible = savedKeyboardVisible();
 	#account: Account = new Account({
 		read: () => ({ geometryId: this.geometryId, keymapId: this.keymapId, targetCpm: this.targetCpm, keyboardOrder: this.keyboardOrder, realWords: this.realWords, stats: this.stats, sessions: this.sessions, layouts: { boards: this.boards, maps: this.maps } }),
 		writeStats: (stats) => (this.stats = stats),
@@ -225,6 +226,11 @@ export class AppMain extends LitElement {
 		this.#saveSettings();
 	}
 
+	#toggleKeyboard(): void {
+		this.keyboardVisible = !this.keyboardVisible;
+		setKeyboardVisible(this.keyboardVisible);
+	}
+
 	// The two curriculum switches: they change which letters are in play, so the practice pane restarts here.
 	#curriculum(part: "keyboardOrder" | "realWords"): void {
 		if (part === "keyboardOrder") this.keyboardOrder = !this.keyboardOrder;
@@ -280,7 +286,7 @@ export class AppMain extends LitElement {
 	override render() {
 		const r = this.#resolved;
 		const geo = geometryById(this.geometryId);
-		const cards = this.#cards();
+		const cards = paneCards({ geometryId: this.geometryId, keymapId: this.keymapId, demo: this.demo, sessions: this.sessions, targetCpm: this.targetCpm, resolved: this.#resolved });
 		// Once per render: the readout, the progress rows and the ring on the board all have to agree about
 		// which letter the lesson is built around, and three calls to #overview() would be three chances to
 		// disagree about the stats it reads.
@@ -293,6 +299,7 @@ export class AppMain extends LitElement {
 				<div class="page">
 					<tk-header aside-label="Insights" aside-badge=${String(countItems(cards))}>
 						<h1 slot="title">${__APP_HEADING__}</h1>
+						<button slot="actions" class="x" aria-pressed=${String(!this.keyboardVisible)} aria-label=${this.keyboardVisible ? "Hide keyboard" : "Show keyboard"} @click=${() => this.#toggleKeyboard()}>${iconKeyboard}</button>
 						<button slot="actions" class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
 					</tk-header>
 					<main>
@@ -334,8 +341,10 @@ export class AppMain extends LitElement {
 							${this.ready
 								? html`<tt-practice .resolved=${r} .stats=${this.stats} .targetCpm=${this.targetCpm} .keyboardOrder=${this.keyboardOrder} .realWords=${this.realWords} @tt-line=${() => (this.routeChar = this.#practice?.pendingChar ?? "")}></tt-practice>`
 								: nothing}
-							<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .route=${routeOf(r, this.routeChar)}></tt-keyboard>
-							${routeHint(r, this.routeChar)}
+								${this.keyboardVisible
+									? html`<tt-keyboard .resolved=${r} .active=${this.lastId} .focusId=${o?.focusId ?? ""} .route=${routeOf(r, this.routeChar)}></tt-keyboard>
+									${routeHint(r, this.routeChar)}`
+									: nothing}
 							<div class="row">
 								<button class="btn" ?disabled=${!this.ready} @click=${() => this.#next()}>New line</button>
 								${lastKey(r, this.lastId)}
@@ -346,7 +355,7 @@ export class AppMain extends LitElement {
 				</div>
 				<section slot="aside" class="insights">
 					${o ? progressSection(o, targetTimeMs(this.targetCpm)) : nothing}
-					${this.#history()}
+					${historyPane({ geometryId: this.geometryId, keymapId: this.keymapId, demo: this.demo, sessions: this.sessions, targetCpm: this.targetCpm, onDemo: (on) => this.#demo(on) })}
 					${insightCards(cards)}
 				</section>
 			</tk-shell>
@@ -359,24 +368,6 @@ export class AppMain extends LitElement {
 		const r = this.#resolved;
 		const l = ladder(r, this.stats, this.targetCpm, { keyboardOrder: this.keyboardOrder });
 		return overview(this.stats, this.targetCpm, routeRows(r), { unlocked: l.unlocked, next: l.next, focus: l.focus });
-	}
-
-	#history() {
-		return historySection({
-			boardName: geometryById(this.geometryId).name,
-			key: layoutKey(this.geometryId, this.keymapId),
-			demo: this.demo,
-			sessions: this.sessions,
-			targetCpm: this.targetCpm,
-			onDemo: (on) => this.#demo(on),
-		});
-	}
-
-
-	// The cards live with the pane, not with the section they describe, so both have to pick the same rows the
-	// chart draws -- demo or real, this layout only.
-	#cards(): PanelCard[] {
-		return insightPanel(paneSessions(this.demo, layoutKey(this.geometryId, this.keymapId), this.sessions), this.targetCpm, (id) => describeRoute(id, (s) => this.#resolved.routes.find((x) => x.statId === s)?.char ?? s, (l) => this.#resolved.layerNames[l] ?? ""));
 	}
 
 	// Escape hides the docked column; the shell closes its own drawer on Escape, and the settings modal takes

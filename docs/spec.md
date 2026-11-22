@@ -324,7 +324,12 @@ The day belongs to keeb, not to the clone, so it is specified here rather than a
 4. The goal in minutes lives in a browser-wide localStorage slot, not in the per-layout settings —
    the tally it measures is device-wide — and never on the wire: `settingsRecord` keeps carrying
    exactly the fields it carried before. 0 hides the bar.
-5. The tally keeps 7 local calendar days and the bar reads only today, so a stale row cannot stack a
+5. The keyboard visibility is the same kind of slot: a browser-wide localStorage key
+   (`keeb:keyboardVisible`), never on the wire, never per-layout — it is a display preference, not
+   a curriculum one. It hides the board (focus ring, active key and route light on it) and the
+   layer hint line together; the readout, the line, the daily bar and the aside's progress rows
+   stay. The shipped default is visible, and any unrecognised stored value answers visible.
+6. The tally keeps 7 local calendar days and the bar reads only today, so a stale row cannot stack a
    second charge onto a session already counted. `chargeDaily` reads, folds and writes in one IndexedDB
    transaction, so a second tab's charge is added to, never overwritten by, this one's wholesale write.
 
