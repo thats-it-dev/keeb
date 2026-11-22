@@ -28,6 +28,7 @@ test("hides and shows the keyboard, and the choice survives a reload", async ({ 
 	await expect(showBtn(page)).toHaveAttribute("aria-pressed", "true");
 
 	// The line keeps listening while the board is hidden: the wanted key lands, the next span goes hit.
+	await expect.poll(() => wanted(page), { timeout: 5000 }).not.toBe("");
 	const before = await page.locator("tt-practice .line .hit").count();
 	const ch = await wanted(page);
 	await page.locator("tt-practice").press(ch === "" ? "Space" : keyName(ch));
@@ -36,6 +37,7 @@ test("hides and shows the keyboard, and the choice survives a reload", async ({ 
 	// And the rest of the screen stays on screen: the line, the daily bar and the aside's sections.
 	await expect(line(page)).toBeVisible();
 	await expect(page.locator(".daily")).toBeVisible();
+	await expect(page.locator(".read")).toBeVisible();
 	await openPane(page);
 	await expect(page.locator(".insights .stats")).toBeVisible();
 
