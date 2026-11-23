@@ -69,6 +69,20 @@ test("hides and shows the keyboard, and the choice survives a reload", async ({ 
 	await expect(closedEye(page, "Show keyboard")).toHaveCount(1);
 });
 
+test("the .x icon buttons do not repaint a background on hover", async ({ page }) => {
+	await page.goto("/");
+	await expect(line(page)).toBeVisible();
+	const buttons = page.locator("tk-header .x");
+	await expect(buttons).toHaveCount(2);
+	for (let i = 0; i < 2; i += 1) {
+		const b = buttons.nth(i);
+		const base = await b.evaluate((el) => getComputedStyle(el).backgroundColor);
+		await b.hover();
+		// Color still shifts muted → primary; the background must not.
+		expect(await b.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(base);
+	}
+});
+
 // A layered board puts a hint line under the board; the hint is half of what hides, so it gets its
 // own proof. The layer fixture and the unlock/type pattern come from layers.spec.ts.
 test("the layer hint hides with the board", async ({ page }) => {
