@@ -14,7 +14,7 @@ import { historyPane, paneCards } from "./ui/pane-sections.ts";
 import { resolve, type Resolved } from "./keyboard/resolve.ts";
 import { routeOf } from "./keyboard/routes.ts";
 import type { Geometry, Keymap } from "./keyboard/types.ts";
-import { iconKeyboard, iconSettings } from "./ui/icons.ts";
+import { iconEye, iconEyeOff, iconSettings } from "./ui/icons.ts";
 import { savedKeyboardVisible, setKeyboardVisible } from "./app/keyboard-visibility.ts";
 import { countItems, insightCards } from "./ui/insight-cards.ts";
 import { appStyles } from "./ui/app-styles.ts";
@@ -299,7 +299,7 @@ export class AppMain extends LitElement {
 				<div class="page">
 					<tk-header aside-label="Insights" aside-badge=${String(countItems(cards))}>
 						<h1 slot="title">${__APP_HEADING__}</h1>
-						<button slot="actions" class="x" aria-pressed=${String(!this.keyboardVisible)} aria-label=${this.keyboardVisible ? "Hide keyboard" : "Show keyboard"} @click=${() => this.#toggleKeyboard()}>${iconKeyboard}</button>
+						<button slot="actions" class="x" aria-pressed=${String(!this.keyboardVisible)} aria-label=${this.keyboardVisible ? "Hide keyboard" : "Show keyboard"} @click=${() => this.#toggleKeyboard()}>${this.keyboardVisible ? iconEye : iconEyeOff}</button>
 						<button slot="actions" class="x" aria-label="Settings" aria-haspopup="dialog" .ariaExpanded=${this.settingsOpen ? "true" : "false"} @click=${() => (this.settingsOpen = true)}>${iconSettings}</button>
 					</tk-header>
 					<main>
