@@ -18,6 +18,15 @@ export const iconX = frame(svg`
 	<path d="m6 6 12 12" />
 `);
 
+export const iconEye = frame(svg`
+	<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+	<circle cx="12" cy="12" r="3" />
+`);
+
+export const iconEyeClosed = frame(svg`
+	<path d="m15 18l-.722-3.25M2 8a10.645 10.645 0 0 0 20 0m-2 7l-1.726-2.05M4 15l1.726-2.05M9 18l.722-3.25" />
+`);
+
 export const iconTrash = frame(svg`	<path d="M10 11v6" />
 	<path d="M14 11v6" />
 	<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />

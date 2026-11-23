@@ -37,7 +37,7 @@ export const appStyles = [
 		* but it lives in their component styles, not in sharedStyles, so it is declared here too.
 		* (.btn.ghost is NOT borderless — it keeps border-color: var(--border-color).) */
 		.x { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; background: none; border-radius: var(--radius); color: var(--text-muted); }
-		.x:hover { color: var(--text-primary); background: var(--code-bg); }
+		.x:hover { color: var(--text-primary); }
 		/* Two columns: the label sits against the left edge, the control against the right. */
 		.panel { display: grid; grid-template-columns: auto 1fr; gap: 14px 16px; align-items: center; padding: 16px 14px; }
 		.panel label { display: contents; }
