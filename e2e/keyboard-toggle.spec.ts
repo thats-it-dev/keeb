@@ -13,6 +13,9 @@ const hint = (page: Page) => page.locator(".hint");
 const line = (page: Page) => page.locator("tt-practice .line");
 const hideBtn = (page: Page) => page.getByRole("button", { name: "Hide keyboard" });
 const showBtn = (page: Page) => page.getByRole("button", { name: "Show keyboard" });
+// The open and closed eye differ by the eye-off slash; asserting on the slash path is what ties
+// the button's icon to the component's state.
+const slash = (page: Page, name: string) => page.locator(`button[aria-label="${name}"] svg path[d="m2 2 20 20"]`);
 
 test("hides and shows the keyboard, and the choice survives a reload", async ({ page }) => {
 	await page.goto("/");
@@ -21,11 +24,15 @@ test("hides and shows the keyboard, and the choice survives a reload", async ({ 
 	// The label says what the button does, and the state is announced, not just coloured.
 	await expect(hideBtn(page)).toBeVisible();
 	await expect(hideBtn(page)).toHaveAttribute("aria-pressed", "false");
+	// Open eye while the keyboard is visible.
+	await expect(slash(page, "Hide keyboard")).toHaveCount(0);
 
 	await hideBtn(page).click();
 	await expect(board(page)).toHaveCount(0);
 	await expect(showBtn(page)).toBeVisible();
 	await expect(showBtn(page)).toHaveAttribute("aria-pressed", "true");
+	// Closed eye while it is hidden.
+	await expect(slash(page, "Show keyboard")).toHaveCount(1);
 
 	// The line keeps listening while the board is hidden: the wanted key lands, the next span goes hit.
 	await expect.poll(() => wanted(page), { timeout: 5000 }).not.toBe("");
@@ -49,6 +56,7 @@ test("hides and shows the keyboard, and the choice survives a reload", async ({ 
 
 	await showBtn(page).click();
 	await expect(board(page)).toBeVisible(); // back
+	await expect(slash(page, "Hide keyboard")).toHaveCount(0);
 
 	await page.reload();
 	await expect(line(page)).toBeVisible();
@@ -57,6 +65,7 @@ test("hides and shows the keyboard, and the choice survives a reload", async ({ 
 	// The plan's third leg: hidden again in-session, not just re-remembered after a reload.
 	await hideBtn(page).click();
 	await expect(board(page)).toHaveCount(0);
+	await expect(slash(page, "Show keyboard")).toHaveCount(1);
 });
 
 // A layered board puts a hint line under the board; the hint is half of what hides, so it gets its
