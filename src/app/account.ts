@@ -181,8 +181,7 @@ export class Account {
 				}
 			} catch (err) {
 				// The adopt is a convenience, not the point: a failure here must not strand the fold, which
-				// merges the account's progress into whatever layout is on screen. The device keeps its own
-				// board and the fold still runs.
+				// merges the account's progress into the layout on screen. The device keeps what it had.
 				notes.push(`adopt failed: ${(err as Error).message}`);
 			}
 			// Fold the progress record under whatever layout is on screen now — adopted on a fresh login,

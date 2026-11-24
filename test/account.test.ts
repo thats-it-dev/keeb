@@ -256,4 +256,29 @@ describe("fresh login", () => {
 		expect(page.state.stats.b?.samples).toBe(5);
 		expect(page.rows["go60+qwerty"]).toMatchObject({ targetCpm: 200 }); // the local goal is untouched
 	});
+
+	it("keeps the fold alive when the adopt fails", async () => {
+		const stamp = at();
+		const { session } = fakePds({
+			[SETTINGS]: [{ uri: `${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, keyboardOrder: true, realWords: false, updatedAt: stamp } }],
+			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/5555`, value: { $type: PROGRESS, layout: "corne+workman", stats: [{ keyId: "a", ttMs16: 3200, bestMs16: 2800, samples: 40, errors: 1 }], updatedAt: stamp } }],
+		});
+		const store = memStore();
+		foldKeys.length = 0;
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false });
+		const account = new Account(page.host, new Sync(session, store));
+		page.attach(account);
+		// A select that rejects: the row load fails and the adopt dies part-way, after the ids moved.
+		// The fold must still merge the account's progress into the layout on screen.
+		page.host.select = (g, k) => {
+			page.state.geometryId = g;
+			page.state.keymapId = k;
+			return Promise.reject(new Error("row load failed"));
+		};
+		await account.syncNow(true);
+		expect(account.note).toContain("adopt failed"); // the failure is reported, not swallowed
+		expect(page.log).not.toContain("writeGoal"); // the failed adopt never writes
+		expect(foldKeys).toEqual(["corne+workman"]); // the fold still runs under the layout on screen
+		expect(page.state.stats.a?.samples).toBe(40); // the record's numbers, merged in
+	});
 });
