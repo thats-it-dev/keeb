@@ -118,32 +118,14 @@ test("the route lights the key, its layer colour, and the ring on the way there"
 	await expect(page.locator(".hint")).toHaveText(new RegExp(`hold ${route!.layer === 1 ? "Sym" : route!.layer === 2 ? "NavNum" : "(Fn|layer \\d)"} · ${hold}, press ${press}`));
 });
 
-test("the focus ring lands on the key even when the focus is a layer route", async ({ page }) => {
+test("the focus never lands on a layer route", async ({ page }) => {
 	await importLayers(page);
 	await unlockEveryLetter(page);
 	await page.getByRole("button", { name: "New line" }).click();
-	// Read the focused character off the rendered metric (its <b> value: the label row can decorate it
-	// with the layer name), then look up its route.
-	const value = ((await page.locator(".read .metric", { hasText: "focus" }).locator("b").first().textContent()) ?? "").trim();
-	const ch = value.split(" · ")[0]!; // the route label decorates: "7 · Sym"
-	const route = await routeFor(page, ch);
-	expect(route, `no route for focus char ${JSON.stringify(ch)}`).toBeTruthy();
-	expect(route!.layer, `focus should be a layer character here, got ${JSON.stringify(ch)} on layer ${route!.layer}`).toBeGreaterThan(0);
-	await expect(key(page, route!.keyId).locator("rect.ring")).toHaveCount(1);
-	await expect(page.locator("tt-keyboard g rect.ring")).toHaveCount(1);
-	// The ring sits inside its own key's face, not out across the gutter (§14.4).
-	const nest = await page.evaluate((id) => {
-		const kb = document.querySelector("app-main")!.shadowRoot!.querySelector("tt-keyboard")!;
-		const root = ((kb as unknown as { renderRoot?: ShadowRoot }).renderRoot ?? kb) as unknown as Element;
-		const bb = (sel: string) => {
-			const el = root.querySelector(sel);
-			if (!el) return null;
-			const b = (el as SVGGraphicsElement).getBBox();
-			return { x: b.x, w: b.width };
-		};
-		return { face: bb(`g[data-id="${id}"] > rect:not([class])`), ring: bb(`g[data-id="${id}"] rect.ring`) };
-	}, route!.keyId);
-	expect(nest.ring && nest.face && nest.ring.x >= nest.face.x && nest.ring.x + nest.ring.w <= nest.face.x + nest.face.w).toBe(true);
+	// Every letter is at goal: no letter is under goal, so the ladder clears the focus rather than
+	// handing the lesson to a layer token — §5: the focus is always a letter.
+	await expect(page.locator(".read .metric", { hasText: "focus" })).toHaveCount(0);
+	await expect(page.locator("tt-keyboard g rect.ring")).toHaveCount(0);
 });
 
 test("the thumbs wear their layer: a symbol on the face, the layer colour on the outline", async ({ page }) => {

@@ -211,8 +211,23 @@ describe("the layered ladder", () => {
 		expect(l.next).toBe(order[lrLetterRoutes.length + 1]);
 	});
 
-	it("can focus a layer route", () => {
+	it("never focuses a layer token", () => {
+		// All letters at goal, so the first layer token unlocks (nothing else can open it). No letter is
+		// under goal, so the lesson must not be built around a one-character word: the focus is cleared.
 		const stats = atGoal(lrLetterRoutes.map((x) => x.statId));
-		expect(ladder(lr, stats, TARGET).focus).toBe(teachingOrder(lr, false)[lrLetterRoutes.length]);
+		const l = ladder(lr, stats, TARGET);
+		expect(l.unlocked).toContain(teachingOrder(lr, false)[lrLetterRoutes.length]); // the token is in play
+		expect(l.focus).toBeUndefined();
+	});
+
+	it("puts the focus on the letter, not the token, when both are unlocked", () => {
+		// One letter goes slow while every other letter is at goal: the weak letter is the one to fix,
+		// and a token can only unlock through the whole alphabet being at goal, so it stays unbuilt.
+		const weak = lr.routes.find((x) => /^[a-z]$/.test(x.char))!.statId;
+		const stats = atGoal(lrLetterRoutes.map((x) => x.statId));
+		stats[weak] = { ttMs16: SLOW_MS16, bestMs16: SLOW_MS16, samples: 40, errors: 0 };
+		const l = ladder(lr, stats, TARGET);
+		expect(l.focus).toBe(weak);
+		expect(/^[a-z]$/.test(lr.byStat.get(l.focus!)!.char)).toBe(true);
 	});
 });
