@@ -2,6 +2,7 @@ import { LitElement, html, nothing } from "https://kit.thatsit.app/lit.js";
 import { allGeometries, geometryById } from "./data/geometries.ts";
 import { allKeymaps, keymapById } from "./data/keymaps.ts";
 import { layoutKey, loadHistory, loadSettings, loadStats, saveSettings, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { copyDiagnostics } from "./app/diagnostics.ts";
 import { OrphanControl } from "./app/orphan-control.ts";
 import { type SessionRow } from "./atproto/records.ts";
 import { dailyGoal } from "./stats/daily.ts";
@@ -30,7 +31,6 @@ import { SessionRecorder } from "./app/session.ts";
 import "./keyboard/view.ts";
 import "./lesson/practice.ts";
 import type { TtPractice } from "./lesson/practice.ts";
-
 export class AppMain extends LitElement {
 	static properties = { geometryId: { state: true }, keymapId: { state: true }, ready: { state: true }, lastId: { state: true }, routeChar: { state: true }, nowCpm: { state: true }, targetCpm: { state: true }, settingsOpen: { state: true }, sessions: { state: true }, demo: { state: true }, boards: { state: true }, maps: { state: true }, importProblems: { state: true }, did: { state: true }, syncNote: { state: true }, keyboardOrder: { state: true }, realWords: { state: true }, dailyGoalMin: { state: true }, keyboardVisible: { state: true } } as const;
 	static styles = appStyles;
@@ -107,7 +107,6 @@ export class AppMain extends LitElement {
 	#pending: symbol | undefined;
 	// Set when select() starts its own load, so the render it triggers does not start a second racing one.
 	#selectLoad = false;
-
 	override firstUpdated(): void {
 		// Stored boards and keymaps have to be registered before the saved selection is read, and the ids
 		// re-assigned afterwards: the field initializers called savedSelection() against an empty registry, so
@@ -335,6 +334,7 @@ export class AppMain extends LitElement {
 							onSignOut: () => void this.#account.signOut(),
 							onSync: () => void this.#account.syncNow(),
 							onPublish: () => void this.#account.publish(geometryById(this.geometryId), keymapById(this.keymapId), r.keys.map((key) => ({ id: key.id, char: key.char }))),
+							onCopyDiagnostics: () => void copyDiagnostics().then((note) => { this.syncNote = note; this.requestUpdate(); }),
 							onRemoveBoard: (id) => void this.#removeBoard(id),
 							onRemoveMap: (id) => void this.#removeMap(id),
 								orphans: this.#orphans.orphans,

@@ -64,3 +64,20 @@ test("toggles are kit switches, with the label left and the control right", asyn
 		expect(Math.abs(b!.x + b!.width - (pb!.x + pb!.width - padR))).toBeLessThan(2);
 	}
 });
+
+test("copy diagnostics puts a JSON snapshot on the clipboard", async ({ page }) => {
+	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+	await openSettings(page);
+	// Placement: the button lives inside the account group — below its heading, above the next group's.
+	const button = page.getByRole("button", { name: "Copy diagnostics" });
+	const accountHeading = page.getByRole("heading", { name: "account", level: 3 });
+	const layoutHeading = page.getByRole("heading", { name: "layout files", level: 3 });
+	const [b, account, layout] = [await button.boundingBox(), await accountHeading.boundingBox(), await layoutHeading.boundingBox()];
+	expect(b!.y).toBeGreaterThan(account!.y);
+	expect(b!.y).toBeLessThan(layout!.y);
+	await button.click();
+	await expect(page.getByText("diagnostics copied to the clipboard")).toBeVisible();
+	const clip = await page.evaluate(() => navigator.clipboard.readText());
+	const parsed = JSON.parse(clip) as Record<string, unknown>;
+	expect(Object.keys(parsed)).toEqual(["generatedAt", "stats", "settings", "history", "layouts", "sync"]);
+});

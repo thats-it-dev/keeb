@@ -38,6 +38,8 @@ export type SettingsProps = {
 	onSignOut: () => void;
 	onSync: () => void;
 	onPublish: () => void;
+	/** Copy a JSON snapshot of this browser's local storage to the clipboard. Offline-safe. */
+	onCopyDiagnostics: () => void;
 	onRemoveBoard: (id: string) => void;
 	onRemoveMap: (id: string) => void;
 	/** Stats rows whose layout was deleted. Each is offered a target board+keymap pair the numbers can be
@@ -97,6 +99,7 @@ export function settingsDialog(p: SettingsProps) {
 								/>
 								<button class="btn" @click=${p.onSignIn}>Sign in</button>`}
 				</div>
+				<div class="full"><button class="btn ghost" @click=${p.onCopyDiagnostics}>Copy diagnostics</button></div>
 				${p.syncNote ? html`<p class="full warn">${p.syncNote}</p>` : nothing}
 				<h3 class="group">layout files</h3>
 				<label><span class="label">layout file</span><input type="file" accept=".json,application/json" @change=${p.onUpload} /></label>
