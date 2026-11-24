@@ -141,6 +141,53 @@ export async function saveSettings(key: string, s: Settings): Promise<void> {
 	await put(SETTINGS, key, s);
 }
 
+/** Every stats row this browser holds, laid out as `{ key, stats }`. Keys whose layout no longer exists
+ *  are the orphans the repair flow offers to remap. */
+export async function loadStatsAll(): Promise<{ key: string; stats: StatMap }[]> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const r = db.transaction(STATS).objectStore(STATS).getAll();
+		r.onsuccess = () => res(((r.result as { layout: string; value: StatMap }[]) ?? []).map((x) => ({ key: x.layout, stats: x.value })));
+		r.onerror = () => rej(r.error);
+	});
+}
+
+/** Every settings row this browser holds. Keys whose layout no longer exists are the settings-only
+ *  orphans the repair flow offers to carry over. */
+export async function loadSettingsAll(): Promise<{ key: string; settings: Settings }[]> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const r = db.transaction(SETTINGS).objectStore(SETTINGS).getAll();
+		r.onsuccess = () => res(((r.result as { layout: string; value: Settings }[]) ?? []).map((x) => ({ key: x.layout, settings: x.value })));
+		r.onerror = () => rej(r.error);
+	});
+}
+
+/** The settings row as stored, with nothing filled in — for repair, which must know whether a layout
+ *  ever wrote one before it decides to carry the orphan's over. */
+export async function loadSettingsRaw(key: string): Promise<Settings | undefined> {
+	return get<Settings>(SETTINGS, key);
+}
+
+/**
+ * The one write path for orphan repair, and the one piece of the fold that must not half-happen: a merged
+ * row that lands while the orphan's is deleted would book the orphan's strokes twice on the next
+ * orphan check. One transaction over STATS and SETTINGS; the caller computes the merge, this only writes.
+ */
+export async function mergeAndDelete(targetKey: string, orphanKey: string, mergedStats: StatMap, carriedSettings: Settings | undefined): Promise<void> {
+	const db = await open();
+	return new Promise((res, rej) => {
+		const tx = db.transaction([STATS, SETTINGS], "readwrite");
+		// An empty merge writes no row: a settings-only orphan must not invent an empty stats record.
+		if (Object.keys(mergedStats).length) tx.objectStore(STATS).put({ layout: targetKey, value: mergedStats });
+		tx.objectStore(STATS).delete(orphanKey);
+		tx.objectStore(SETTINGS).delete(orphanKey);
+		if (carriedSettings) tx.objectStore(SETTINGS).put({ layout: targetKey, value: carriedSettings });
+		tx.oncomplete = () => res();
+		tx.onerror = () => rej(tx.error);
+	});
+}
+
 // Imported boards survive a reload, and the picker is built from them before the first lesson starts.
 export async function loadBoards(): Promise<Geometry[]> {
 	const db = await open();
