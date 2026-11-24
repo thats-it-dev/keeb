@@ -409,3 +409,33 @@ learner typed away. The settings dialog offers a repair for it, in the same layo
 3. The merge is local. The PDS record for the deleted layout and the sync bookkeeping
    (`progressSeen` / `progressRkeys`) are never re-pointed, never deleted — the remote records stay
    exactly as they are, so a re-import or a sync that finds them behaves the same way it did before.
+
+## 16. Diagnostics export (not from keybr)
+
+The settings dialog's account group carries a **Copy diagnostics** button. It builds a JSON snapshot of
+what this browser holds and puts it on the clipboard, with no typed text anywhere in it — no letter or
+word the learner typed is carried in the snapshot, and no layout name is carried either — so a learner
+can paste it into a bug report without leaking what they typed. Every entry is a key, a count or a
+stamp, except each layouts row, which also carries one of two fixed kind labels (`geometry` /
+`keymap`). The snapshot has exactly six fields:
+
+1. `generatedAt` — the copy time, in ms since the epoch.
+2. `stats` — one row per stats key in the store, with its letter-row count, total samples and total
+   errors, and `lastUpdated: null`. A stats row carries no timestamp today, so that field is honestly
+   null rather than invented.
+3. `settings` — one row per settings key, `lastUpdated: null` for the same reason.
+4. `history` — one row per layout the history store holds sessions for, with session count, total
+   chars and ms, and `lastUpdated` from the newest session's `atMs` (0 for a session whose rkey does
+   not parse).
+5. `layouts` — every geometry and keymap the app can select (shipped and imported), with key counts.
+   Names are deliberately absent: layout ids (`go60`, `qwerty`, …) are the keys. One caveat: an
+   imported layout's id is derived from its filename — `import:<slug>`, hyphens for anything that is
+   not a word character — so the slug may carry the words of the file that was uploaded (a file
+   named `hymnal-page.json` surfaces as `import:hymnal-page`). That is the id, nothing beyond it,
+   and the whole point of the field being there.
+6. `sync` — the bookkeeping row: `lastPull`, `settingsLocalAt`, outbox length, `progressSeen` as
+   letter-row counts per layout, and the raw `progressRkeys` / `layoutRkeys` maps.
+
+The button is offline-safe: it reads IndexedDB only and works signed out. A failure (a blocked
+clipboard, a store that rejects) is reported as a line in the dialog, never as an exception escaping
+the render path.
