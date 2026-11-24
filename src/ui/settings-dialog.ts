@@ -77,7 +77,7 @@ export function settingsDialog(p: SettingsProps) {
 						? html`<span class="label">${p.did}</span>
 								<button class="btn ghost" @click=${p.onSync}>Sync now</button>
 								<button class="btn ghost" @click=${p.onPublish}>Publish this layout</button>
-								<button class="x" aria-label="Sign out" @click=${p.onSignOut}>${iconX}</button>`
+								<button class="btn ghost" @click=${p.onSignOut}>Sign out</button>`
 						: html`<input
 									aria-label="atproto handle"
 									placeholder="you.bsky.social"
