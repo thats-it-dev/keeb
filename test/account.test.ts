@@ -9,10 +9,20 @@ import { DEFAULT_SETTINGS } from "../src/data/store.ts";
 import type { StatMap } from "../src/stats/stats.ts";
 
 // syncNow caches pulled sessions into IndexedDB; there is none in a node test and this is not the
-// behavior under review. Everything else store.ts does here is pure object work.
+// behavior under review. Everything else store.ts does here is pure object work. applyRemoteProgress
+// is mocked too: it merges under an IndexedDB row, which is store.ts's own contract, and the fold key
+// is what this file needs to see.
+const foldKeys = vi.hoisted(() => [] as string[]);
 vi.mock("../src/data/store.ts", async (importOriginal) => {
 	const real = await importOriginal<typeof import("../src/data/store.ts")>();
-	return { ...real, saveHistory: async () => undefined };
+	return {
+		...real,
+		saveHistory: async () => undefined,
+		applyRemoteProgress: async (key: string, remote: StatMap) => {
+			foldKeys.push(key);
+			return remote;
+		},
+	};
 });
 
 const DID = "did:plc:example1234567890abcdefgh";
@@ -59,6 +69,7 @@ const memStore = (initial: SyncState = emptyState()): SyncStore & { state: SyncS
  *  which is what makes a write aimed at a half-loaded layout detectable. */
 function fakeHost(start: { geometry: string; keymap: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean }) {
 	const log: string[] = [];
+	const statsWrites: StatMap[] = [];
 	const rows: Record<string, { geometry: string; keymap: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean }> = { "go60+qwerty": { ...start }, "corne+workman": { geometry: "corne", keymap: "workman", targetCpm: 300, keyboardOrder: false, realWords: true } };
 	let account: Account;
 	const state = { geometryId: start.geometry, keymapId: start.keymap, targetCpm: start.targetCpm, keyboardOrder: start.keyboardOrder, realWords: start.realWords, stats: {} as StatMap, sessions: [] };
@@ -68,7 +79,10 @@ function fakeHost(start: { geometry: string; keymap: string; targetCpm: number; 
 	};
 	const h: AccountHost = {
 		read: () => ({ ...state, layouts: { boards: [], maps: [] } }),
-		writeStats: () => undefined,
+		writeStats: (stats: StatMap) => {
+			state.stats = stats;
+			statsWrites.push(stats);
+		},
 		writeSessions: () => undefined,
 		writeLayouts: () => undefined,
 		writeGoal: (cpm) => {
@@ -100,7 +114,7 @@ function fakeHost(start: { geometry: string; keymap: string; targetCpm: number; 
 		endSession: async () => undefined,
 		invalidate: () => undefined,
 	};
-	return { host: h, log, rows, attach: (a: Account) => (account = a), state };
+	return { host: h, log, rows, statsWrites, attach: (a: Account) => (account = a), state };
 }
 
 const at = () => Math.round(Date.now() / 1000);
@@ -168,5 +182,70 @@ describe("account settings sync", () => {
 		expect(page.rows["corne+workman"]!.targetCpm).toBe(240);
 		expect(page.rows["corne+workman"]).toMatchObject({ keyboardOrder: false, realWords: true }); // the row's own switches survive the adopt
 		expect(puts.filter((p) => p.collection === SETTINGS)).toEqual([]);
+	});
+});
+
+describe("fresh login", () => {
+	it("adopts the record and folds progress under the adopted layout", async () => {
+		const stamp = at();
+		const { session, puts } = fakePds({
+			[SETTINGS]: [{ uri: `${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, keyboardOrder: true, realWords: false, updatedAt: stamp } }],
+			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/5555`, value: { $type: PROGRESS, layout: "corne+workman", stats: [{ keyId: "a", ttMs16: 3200, bestMs16: 2800, samples: 40, errors: 1 }], updatedAt: stamp } }],
+		});
+		const store = memStore();
+		foldKeys.length = 0;
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false });
+		const account = new Account(page.host, new Sync(session, store));
+		page.attach(account);
+		await account.syncNow(true); // the shape a fresh login passes
+		// The fold runs under the LAYOUT ADOPTED BY THIS SYNC, not the one the device opened on.
+		expect(foldKeys).toEqual(["corne+workman"]);
+		expect(page.statsWrites).toHaveLength(1);
+		expect(page.statsWrites[0]).toEqual({ a: { ttMs16: 3200, bestMs16: 2800, samples: 40, errors: 1 } });
+		expect(page.log.slice(0, 3)).toEqual(["select", "writeGoal", "writeCurriculum"]);
+		expect(page.rows["corne+workman"]).toMatchObject({ targetCpm: 240, keyboardOrder: true });
+		// No echo: the record this sync just applied is not PUT back.
+		expect(puts.filter((p) => p.collection === SETTINGS)).toEqual([]);
+	});
+
+	it("a plain boot leaves the layout alone but still folds progress under the current one", async () => {
+		const stamp = at();
+		const { session } = fakePds({
+			[PROGRESS]: [{ uri: `at://${DID}/${PROGRESS}/5555`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "b", ttMs16: 12, bestMs16: 12, samples: 1, errors: 0 }], updatedAt: stamp } }],
+		});
+		const store = memStore();
+		foldKeys.length = 0;
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false });
+		const account = new Account(page.host, new Sync(session, store));
+		page.attach(account);
+		await account.syncNow(false); // what boot passes for a stored session
+		expect(foldKeys).toEqual(["go60+qwerty"]);
+		expect(page.statsWrites[0]).toMatchObject({ b: expect.objectContaining({ samples: 1 }) });
+		expect(page.log).toContain("reload"); // the merged stats reload onto the live page
+		expect(page.log).not.toContain("select"); // no layout adopted on a plain boot
+	});
+
+	it("never strands the device's own typed progress: a device with local stats keeps its layout", async () => {
+		const stamp = at();
+		const { session } = fakePds({
+			[SETTINGS]: [{ uri: `${DID}/${SETTINGS}/self`, value: { $type: SETTINGS, geometry: "corne", keymap: "workman", targetCpm: 240, keyboardOrder: true, realWords: false, updatedAt: stamp } }],
+			[PROGRESS]: [
+				{ uri: `at://${DID}/${PROGRESS}/5555`, value: { $type: PROGRESS, layout: "corne+workman", stats: [{ keyId: "a", ttMs16: 3200, bestMs16: 2800, samples: 40, errors: 1 }], updatedAt: stamp } },
+				{ uri: `at://${DID}/${PROGRESS}/4444`, value: { $type: PROGRESS, layout: "go60+qwerty", stats: [{ keyId: "b", ttMs16: 100, bestMs16: 100, samples: 5, errors: 0 }], updatedAt: stamp } },
+			],
+		});
+		const store = memStore();
+		foldKeys.length = 0;
+		const page = fakeHost({ geometry: "go60", keymap: "qwerty", targetCpm: 200, keyboardOrder: false, realWords: false });
+		const account = new Account(page.host, new Sync(session, store));
+		page.attach(account);
+		// The device typed on go60+qwerty before signing in. Those numbers live in the page's own
+		// state; an adopt onto the account's layout would throw them away behind a board the device
+		// may never select again.
+		page.state.stats = { a: { ttMs16: 3500, bestMs16: 2900, samples: 25, errors: 2 } };
+		await account.syncNow(true); // the shape a fresh login passes
+		expect(page.log).not.toContain("select"); // the adopt keeps the device on its own layout
+		expect(foldKeys).toEqual(["go60+qwerty"]); // the fold runs under the layout that is on screen
+		expect(page.rows["go60+qwerty"]).toMatchObject({ targetCpm: 200 }); // the local goal is untouched
 	});
 });

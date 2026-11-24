@@ -81,8 +81,10 @@ export class Auth {
 	/**
 	 * Whoever this browser says is signed in. Finishes a redirect that is still in flight, then falls
 	 * back to restoring the stored account. Undefined means not signed in, which is the normal case.
+	 * `fresh` is true exactly when this call exchanged a sign-in code, which is what lets the page
+	 * adopt right after a login instead of applying a saved cookie's sync.
 	 */
-	async session(): Promise<Session | undefined> {
+	async session(): Promise<{ session?: Session; fresh: boolean }> {
 		const params = this.#params();
 		if (params?.has("code") && params.has("state")) {
 			const client = await this.#client();
@@ -90,17 +92,17 @@ export class Auth {
 			localStorage.setItem(DID_KEY, session.did);
 			// The code is single-use: leaving it in the address bar means a refresh throws an oauth error.
 			history.replaceState(null, "", location.pathname + location.hash);
-			return asSession(session);
+			return { session: asSession(session), fresh: true };
 		}
 		const did = localStorage.getItem(DID_KEY);
-		if (!did) return undefined; // nothing stored: the OAuth chunk is never fetched
+		if (!did) return { fresh: false }; // nothing stored: the OAuth chunk is never fetched
 		try {
 			const client = await this.#client();
-			return asSession(await client.restore(did));
+			return { session: asSession(await client.restore(did)), fresh: false };
 		} catch {
 			// A session the PDS no longer recognises. Forget it so the UI stops offering to sync.
 			localStorage.removeItem(DID_KEY);
-			return undefined;
+			return { fresh: false };
 		}
 	}
 
