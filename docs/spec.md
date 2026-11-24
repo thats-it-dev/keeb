@@ -253,9 +253,9 @@ The record's rules on a device that signs in and on a device that reloads differ
 - a **fresh login** (the OAuth redirect callback) adopts immediately — layout, goal, switches and
   progress under the adopted layout — because that is the moment the learner wants the account to be on
   screen. The adopt happens before the progress fold, so the record merges under the layout it selects.
-  One exception: a device that carries unsynced local progress for the layout it opened on does not
-  adopt — an adopt onto the record's layout would strand those numbers behind a board the device may
-  never select again. The device keeps its own layout and progress, and the record still folds into it.
+  One exception: a device that carries local stats for the layout it opened on does not adopt — an
+  adopt onto the record's layout would strand those numbers behind a board the device may never select
+  again. The device keeps its own layout and progress, and the record still folds into it.
 - a **plain reload** never adopts settings, so a reload cannot yank the board mid-typing; progress still
   folds under the layout on screen.
 

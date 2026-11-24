@@ -6,13 +6,15 @@ import { Sync, emptyState, type SyncState, type SyncStore } from "../src/atproto
 import { Account, type AccountHost } from "../src/app/account.ts";
 import type { Session } from "../src/atproto/auth.ts";
 import { DEFAULT_SETTINGS } from "../src/data/store.ts";
-import type { StatMap } from "../src/stats/stats.ts";
+import { mergeAll, type StatMap } from "../src/stats/stats.ts";
 
 // syncNow caches pulled sessions into IndexedDB; there is none in a node test and this is not the
 // behavior under review. Everything else store.ts does here is pure object work. applyRemoteProgress
 // is mocked too: it merges under an IndexedDB row, which is store.ts's own contract, and the fold key
-// is what this file needs to see.
+// — and the local stats a write returns — are what this file needs to see. The mock merges the page's
+// own state, which is the honest shape of the real contract for an unseen fold (growth == remote).
 const foldKeys = vi.hoisted(() => [] as string[]);
+const foldState = vi.hoisted(() => ({ getStats: undefined as (() => StatMap) | undefined }));
 vi.mock("../src/data/store.ts", async (importOriginal) => {
 	const real = await importOriginal<typeof import("../src/data/store.ts")>();
 	return {
@@ -20,7 +22,7 @@ vi.mock("../src/data/store.ts", async (importOriginal) => {
 		saveHistory: async () => undefined,
 		applyRemoteProgress: async (key: string, remote: StatMap) => {
 			foldKeys.push(key);
-			return remote;
+			return mergeAll(foldState.getStats?.() ?? {}, remote);
 		},
 	};
 });
@@ -73,6 +75,8 @@ function fakeHost(start: { geometry: string; keymap: string; targetCpm: number; 
 	const rows: Record<string, { geometry: string; keymap: string; targetCpm: number; keyboardOrder: boolean; realWords: boolean }> = { "go60+qwerty": { ...start }, "corne+workman": { geometry: "corne", keymap: "workman", targetCpm: 300, keyboardOrder: false, realWords: true } };
 	let account: Account;
 	const state = { geometryId: start.geometry, keymapId: start.keymap, targetCpm: start.targetCpm, keyboardOrder: start.keyboardOrder, realWords: start.realWords, stats: {} as StatMap, sessions: [] };
+	// The mocked fold reads the page's own stats — exactly what the real IndexedDB-backed merge would see.
+	foldState.getStats = () => state.stats;
 	const persist = () => {
 		rows[`${state.geometryId}+${state.keymapId}`] = { geometry: state.geometryId, keymap: state.keymapId, targetCpm: state.targetCpm, keyboardOrder: state.keyboardOrder, realWords: state.realWords };
 		void account.settingsChanged(); // what app-main's #saveSettings does after writing the row
@@ -246,6 +250,10 @@ describe("fresh login", () => {
 		await account.syncNow(true); // the shape a fresh login passes
 		expect(page.log).not.toContain("select"); // the adopt keeps the device on its own layout
 		expect(foldKeys).toEqual(["go60+qwerty"]); // the fold runs under the layout that is on screen
+		// The device's own typed numbers survive the fold: the local sample count is still there, the
+		// record's growth is folded in beside it.
+		expect(page.state.stats.a?.samples).toBe(25);
+		expect(page.state.stats.b?.samples).toBe(5);
 		expect(page.rows["go60+qwerty"]).toMatchObject({ targetCpm: 200 }); // the local goal is untouched
 	});
 });

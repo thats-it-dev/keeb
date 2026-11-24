@@ -146,7 +146,7 @@ export class Account {
 			// adopt when the record is genuinely newer than this device's last edit — otherwise the stale
 			// record clobbers a fresh goal and the clobbered value is pushed straight back, which is how a
 			// changed goal never synced.
-			if (adapt && settingsAt > settingsLocalAt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) {
+			if (adapt && settingsAt > settingsLocalAt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) try {
 				const now = h.read();
 				// An id this browser cannot resolve is skipped, not adopted: the account may name a board whose
 				// file never arrived, and selecting it would render a page with no keys on it.
@@ -179,6 +179,11 @@ export class Account {
 						this.#adopting -= 1;
 					}
 				}
+			} catch (err) {
+				// The adopt is a convenience, not the point: a failure here must not strand the fold, which
+				// merges the account's progress into whatever layout is on screen. The device keeps its own
+				// board and the fold still runs.
+				notes.push(`adopt failed: ${(err as Error).message}`);
 			}
 			// Fold the progress record under whatever layout is on screen now — adopted on a fresh login,
 			// or the plain local one otherwise.
