@@ -1,4 +1,5 @@
 import { html, nothing } from "https://kit.thatsit.app/lit.js";
+import { signedInAccountControls } from "./account-group.ts";
 import { iconTrash, iconX } from "./icons.ts";
 import type { Geometry, Keymap } from "../keyboard/types.ts";
 
@@ -75,9 +76,7 @@ export function settingsDialog(p: SettingsProps) {
 				<div class="full sync">
 					${p.did
 						? html`<span class="label">${p.did}</span>
-								<button class="btn ghost" @click=${p.onSync}>Sync now</button>
-								<button class="btn ghost" @click=${p.onPublish}>Publish this layout</button>
-								<button class="x" aria-label="Sign out" @click=${p.onSignOut}>${iconX}</button>`
+								${signedInAccountControls(p).map((c) => html`<button class="btn ghost" @click=${c.onClick}>${c.label}</button>`)}`
 						: html`<input
 									aria-label="atproto handle"
 									placeholder="you.bsky.social"

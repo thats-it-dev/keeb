@@ -63,11 +63,14 @@ export class Account {
 	// Restore a session if this browser has one, and finish a sign-in redirect if one is in flight.
 	async boot(): Promise<void> {
 		try {
-			const s = await auth.session();
+			const { session: s, fresh } = await auth.session();
 			if (!s) return;
 			this.did = s.did;
 			this.#sync = new Sync(s, syncStore);
-			await this.syncNow(false);
+			// A fresh login adopts right away: the point of the flow is that the learner opens this device
+			// already on the account's layout, goal, switches and progress. A plain boot stays adapt=false,
+			// which is what keeps a reload from yanking the board mid-typing.
+			await this.syncNow(fresh);
 		} catch (err) {
 			this.note = (err as Error).message;
 		}
@@ -119,7 +122,6 @@ export class Account {
 		const h = this.host;
 		this.note = "";
 		const read = h.read();
-		const key = layoutKey(read.geometryId, read.keymapId);
 		const notes: string[] = [];
 		// Which side has the settings edit. Both start at zero so a pull that throws leaves the push path
 		// exactly as it was — an unreachable PDS must not strand a queued local change.
@@ -138,46 +140,63 @@ export class Account {
 			if (adopted.boards.length !== read.layouts.boards.length || adopted.maps.length !== read.layouts.maps.length) h.writeLayouts(adopted);
 			await saveHistory(sessions);
 			h.writeSessions(sessions);
+			// Adopt first, not after the fold: the record may name the layout whose stats this device
+			// should read, so the fold has to run under the adopted key. On a plain boot (adapt=false) the
+			// layout is left alone, which is what keeps a reload from yanking the board mid-typing. And only
+			// adopt when the record is genuinely newer than this device's last edit — otherwise the stale
+			// record clobbers a fresh goal and the clobbered value is pushed straight back, which is how a
+			// changed goal never synced.
+			if (adapt && settingsAt > settingsLocalAt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) try {
+				const now = h.read();
+				// An id this browser cannot resolve is skipped, not adopted: the account may name a board whose
+				// file never arrived, and selecting it would render a page with no keys on it.
+				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : now.geometryId;
+				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : now.keymapId;
+				// The one thing the adopt must never do is strand the device's own typed progress. A device
+				// with local stats for the layout it opened on keeps that layout — the numbers and the board
+				// both belong to this device, and the adopt would leave them behind a board this device may
+				// never select again. The fold still runs, under this layout.
+				const leaving = g !== now.geometryId || k !== now.keymapId;
+				const localProgress = Object.keys(now.stats).length > 0;
+				if (!(leaving && localProgress)) {
+					this.#adopting += 1;
+					try {
+						// Select first, and await the load of its row: the writes below persist the whole live
+						// state, so until the new layout's own values are on screen they would carry the switches
+						// of the layout being left into the row being adopted into.
+						if (g !== now.geometryId || k !== now.keymapId) await h.select(g, k);
+						if (settings.targetCpm) h.writeGoal(settings.targetCpm);
+						// Only switch values the record actually carries: a record predating the switches has no
+						// opinion about them, and calling writeCurriculum would persist this device's other-layout
+						// values into the newly selected layout's row.
+						if (typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean") h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
+						if (g === now.geometryId && k === now.keymapId) h.reload();
+						adoptedSettings = true;
+						// This device now stands where the record stands; the trailing push is skipped even when it
+						// did, because it would read a page mid-reload and push the mix the record is being applied to.
+						await sync.stampSettings(settingsAt);
+					} finally {
+						this.#adopting -= 1;
+					}
+				}
+			} catch (err) {
+				// The adopt is a convenience, not the point: a failure here must not strand the fold, which
+				// merges the account's progress into the layout on screen. The device keeps what it had.
+				notes.push(`adopt failed: ${(err as Error).message}`);
+			}
+			// Fold the progress record under whatever layout is on screen now — adopted on a fresh login,
+			// or the plain local one otherwise.
+			const foldRead = h.read();
+			const key = layoutKey(foldRead.geometryId, foldRead.keymapId);
 			const remote = progress[key];
 			if (remote) {
 				// Only what the record has learned since the last fold counts. It carries this browser's own
 				// pushed numbers, so folding it in whole added our strokes to our strokes — once per sync. The
 				// memory of what was already folded lives in the sync row, which store.ts reads and writes in
 				// the same transaction as the stats.
-				const before = JSON.stringify(read.stats);
+				const before = JSON.stringify(h.read().stats);
 				h.writeStats(await applyRemoteProgress(key, remote));
 				if (JSON.stringify(h.read().stats) !== before) h.reload();
-			}
-			// Adopting a board mid-typing would yank it out from under the learner, so settings only cross over
-			// on a quiet page: when they press Sync (boot deliberately passes adapt=false). And only when the
-			// record is genuinely newer than this device's last edit — otherwise the stale record clobbers a
-			// fresh goal and the clobbered value is pushed straight back, which is how a changed goal never
-			// synced.
-			if (adapt && settingsAt > settingsLocalAt && (settings.geometry || settings.keymap || settings.targetCpm || typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean")) {
-				const now = h.read();
-				// An id this browser cannot resolve is skipped, not adopted: the account may name a board whose
-				// file never arrived, and selecting it would render a page with no keys on it.
-				const g = settings.geometry && allGeometries().some((x) => x.id === settings.geometry) ? settings.geometry : now.geometryId;
-				const k = settings.keymap && allKeymaps().some((x) => x.id === settings.keymap) ? settings.keymap : now.keymapId;
-				this.#adopting += 1;
-				try {
-					// Select first, and await the load of its row: the writes below persist the whole live
-					// state, so until the new layout's own values are on screen they would carry the switches
-					// of the layout being left into the row being adopted into.
-					if (g !== now.geometryId || k !== now.keymapId) await h.select(g, k);
-					if (settings.targetCpm) h.writeGoal(settings.targetCpm);
-					// Only switch values the record actually carries: a record predating the switches has no
-					// opinion about them, and calling writeCurriculum would persist this device's other-layout
-					// values into the newly selected layout's row.
-					if (typeof settings.keyboardOrder === "boolean" || typeof settings.realWords === "boolean") h.writeCurriculum({ keyboardOrder: settings.keyboardOrder, realWords: settings.realWords });
-					if (g === now.geometryId && k === now.keymapId) h.reload();
-					adoptedSettings = true;
-					// This device now stands where the record stands; the trailing push is skipped even when it
-					// did, because it would read a page mid-reload and push the mix the record is being applied to.
-					await sync.stampSettings(settingsAt);
-				} finally {
-					this.#adopting -= 1;
-				}
 			}
 		} catch (err) {
 			// A failed read must not cancel the writes below. The reason this device has anything queued is

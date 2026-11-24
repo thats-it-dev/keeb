@@ -67,10 +67,15 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number, options: 
 	}
 
 	const unlocked = keys.filter((k) => k.included);
-	// The weakest of what you have. A letter that has never been timed sits at the bottom of that list,
-	// which is right: it is the one the lesson exists to teach. Ties go to the slower of the two today, so a
+	// The weakest of what you have, and only a letter: spec §5 makes the focused key always a letter the
+	// learner already has, because the line is built around it as a hard constraint. A layer token is
+	// struck as its own one-character word, so it is never the focus — that is what keeps a finished
+	// alphabet from being drilled through a junk line of tokens. Ties go to the slower of the two today, so a
 	// key that is both slow and unreliable comes before one that is merely having a bad week.
-	const focus = [...unlocked].sort((a, b) => a.best - b.best || a.confidence - b.confidence).find((k) => k.best < 1);
+	const focus = [...unlocked]
+		.filter((k) => /^[a-z]$/.test(k.char))
+		.sort((a, b) => a.best - b.best || a.confidence - b.confidence)
+		.find((k) => k.best < 1);
 
 	return {
 		order: keys.map((k) => k.id),
