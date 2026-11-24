@@ -2,6 +2,7 @@ import { LitElement, html, nothing } from "https://kit.thatsit.app/lit.js";
 import { allGeometries, geometryById } from "./data/geometries.ts";
 import { allKeymaps, keymapById } from "./data/keymaps.ts";
 import { layoutKey, loadHistory, loadSettings, loadStats, saveSettings, DEFAULT_SETTINGS, type Settings } from "./data/store.ts";
+import { OrphanControl } from "./app/orphan-control.ts";
 import { type SessionRow } from "./atproto/records.ts";
 import { dailyGoal } from "./stats/daily.ts";
 import { DailyTally, savedDailyGoalMin, setDailyGoalMin } from "./app/daily.ts";
@@ -50,8 +51,8 @@ export class AppMain extends LitElement {
 	boards: Geometry[] = [];
 	maps: Keymap[] = [];
 	importProblems: string[] = [];
-	// Signed-in account, and the one line the sync layer is allowed to say out loud. The account owns the
-	// truth; these two fields are the render-visible copy it pushes through invalidate().
+	#orphans = new OrphanControl(() => this.requestUpdate());
+	// Signed-in account; the one line the sync layer is allowed to say out loud. The account owns the truth.
 	did = "";
 	syncNote = "";
 	#tally = new DailyTally(() => this.requestUpdate());
@@ -65,6 +66,7 @@ export class AppMain extends LitElement {
 		writeLayouts: ({ boards, maps }) => {
 			this.boards = boards;
 			this.maps = maps;
+			void this.#orphans.refresh();
 		},
 		writeGoal: (cpm) => { this.targetCpm = cpm; this.#saveSettings(); },
 		writeCurriculum: (c) => { this.keyboardOrder = c.keyboardOrder ?? this.keyboardOrder; this.realWords = c.realWords ?? this.realWords; this.#saveSettings(); },
@@ -113,6 +115,7 @@ export class AppMain extends LitElement {
 		void loadLayouts().then((layouts) => {
 			this.boards = layouts.boards;
 			this.maps = layouts.maps;
+			void this.#orphans.refresh();
 			const sel = savedSelection();
 			const moved = sel.g !== this.geometryId || sel.k !== this.keymapId;
 			this.geometryId = sel.g;
@@ -154,7 +157,6 @@ export class AppMain extends LitElement {
 			this.#bound = true;
 		}
 	}
-
 	async #load(sel: { g: string; k: string }): Promise<void> {
 		this.#cache = undefined;
 		const key = layoutKey(sel.g, sel.k);
@@ -258,22 +260,24 @@ export class AppMain extends LitElement {
 		const next = await removeMap(id, { boards: this.boards, maps: this.maps }, this.keymapId);
 		this.maps = next.maps;
 		this.keymapId = next.keymapId;
+		void this.#orphans.refresh();
 	}
 
 	async #removeBoard(id: string): Promise<void> {
 		const next = await removeBoard(id, { boards: this.boards, maps: this.maps }, this.geometryId);
 		this.boards = next.boards;
 		this.geometryId = next.geometryId;
+		void this.#orphans.refresh();
 	}
 
-	// One place where an imported or shared layout reaches the screen: the lists, the selection, and the
-	// problems the parser found, all from the same result object.
+	// One place where an imported or shared layout reaches the screen.
 	#applyLayout(change: LayoutChange): void {
 		if (change.problems) this.importProblems = change.problems;
 		if (change.boards) this.boards = change.boards;
 		if (change.maps) this.maps = change.maps;
 		if (change.geometryId) this.geometryId = change.geometryId;
 		if (change.keymapId) this.keymapId = change.keymapId;
+		void this.#orphans.refresh();
 	}
 
 	#next(): void {
@@ -326,14 +330,19 @@ export class AppMain extends LitElement {
 							onCurriculum: (part) => this.#curriculum(part),
 							onUpload: (e) => void this.#upload(e),
 							onHandle: (v) => (this.#account.handle = v),
-							// Signing in, syncing and publishing are the account's business; see app/account.ts. Each leaves
-							// the note the learner reads on this.#account.note.
+							// The account owns the three account actions; each leaves the learner's note on it.
 							onSignIn: () => void this.#account.signIn(),
 							onSignOut: () => void this.#account.signOut(),
 							onSync: () => void this.#account.syncNow(),
 							onPublish: () => void this.#account.publish(geometryById(this.geometryId), keymapById(this.keymapId), r.keys.map((key) => ({ id: key.id, char: key.char }))),
 							onRemoveBoard: (id) => void this.#removeBoard(id),
 							onRemoveMap: (id) => void this.#removeMap(id),
+								orphans: this.#orphans.orphans,
+								orphanTargets: this.#orphans.targets,
+								onPickOrphanTarget: (key, part, value) => this.#orphans.pickTarget(key, part, value, { g: this.geometryId, k: this.keymapId }),
+								busy: this.#orphans.anyFolding,
+								error: this.#orphans.error,
+								onRemapOrphan: (key) => this.#orphans.remapFor(key, this.geometryId, this.keymapId, () => this.#load({ g: this.geometryId, k: this.keymapId })),
 						})}
 						<div class="col">
 							${o ? readout({ nowWpm: cpmToWpm(this.nowCpm), avgWpm: o.avgWpm, goalWpm: cpmToWpm(this.targetCpm), focusLabel: o.focusLabel, acc: this.#session.sessionAccuracy() ?? undefined }) : html`<div class="read"><span class="label">loading your progress…</span></div>`}

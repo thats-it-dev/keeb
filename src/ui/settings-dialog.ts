@@ -1,6 +1,7 @@
 import { html, nothing } from "https://kit.thatsit.app/lit.js";
 import { signedInAccountControls } from "./account-group.ts";
 import { iconTrash, iconX } from "./icons.ts";
+import type { OrphanRef } from "../app/repair.ts";
 import type { Geometry, Keymap } from "../keyboard/types.ts";
 
 export type SettingsProps = {
@@ -39,6 +40,17 @@ export type SettingsProps = {
 	onPublish: () => void;
 	onRemoveBoard: (id: string) => void;
 	onRemoveMap: (id: string) => void;
+	/** Stats rows whose layout was deleted. Each is offered a target board+keymap pair the numbers can be
+	 *  folded into. */
+	orphans: OrphanRef[];
+	/** The target the learner picked per orphan (the current selection as the default). */
+	orphanTargets: Record<string, { g: string; k: string }>;
+	onPickOrphanTarget: (orphanKey: string, part: "g" | "k", value: string) => void;
+	/** True while any fold is in flight; every row's button is disabled meanwhile. */
+	busy: boolean;
+	error: string | undefined;
+	/** Fold the orphan into the target the learner picked. Re-renders the lists afterwards. */
+	onRemapOrphan: (orphanKey: string) => void;
 };
 
 /**
@@ -90,6 +102,23 @@ export function settingsDialog(p: SettingsProps) {
 				<label><span class="label">layout file</span><input type="file" accept=".json,application/json" @change=${p.onUpload} /></label>
 				${p.boards.length ? html`<div class="full">${p.boards.map((b) => boardRow(b, `${b.keys.length} keys`, p.onRemoveBoard))}</div>` : nothing}
 				${p.maps.length ? html`<div class="full">${p.maps.map((m) => boardRow(m, "characters", p.onRemoveMap))}</div>` : nothing}
+				${p.error ? html`<p class="full warn">${p.error}</p>` : nothing}
+				${p.orphans.length ? html`<div class="full">
+					<div class="label">orphaned progress — fold into a surviving layout</div>
+					${p.orphans.map((o) => {
+						const target = p.orphanTargets[o.key] ?? { g: p.geometryId, k: p.keymapId };
+						return html`<div class="row">
+							<span class="label">${o.key}</span>
+							<select aria-label=${`Remap ${o.key} — board`} .value=${target.g} @change=${(e: Event) => p.onPickOrphanTarget(o.key, "g", (e.target as HTMLSelectElement).value)}>
+								${p.geometries.map((g) => html`<option value=${g.id}>${g.name}</option>`)}
+							</select>
+							<select aria-label=${`Remap ${o.key} — keymap`} .value=${target.k} @change=${(e: Event) => p.onPickOrphanTarget(o.key, "k", (e.target as HTMLSelectElement).value)}>
+								${p.keymaps.map((k) => html`<option value=${k.id}>${k.name}</option>`)}
+							</select>
+							<button class="btn" ?disabled=${p.busy} @click=${() => p.onRemapOrphan(o.key)}>Remap</button>
+						</div>`;
+					})}
+				</div>` : nothing}
 				${p.problems.length ? html`<ul class="full problems">${p.problems.map((x) => html`<li>${x}</li>`)}</ul>` : nothing}
 			</div>
 		</dialog>

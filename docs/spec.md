@@ -384,3 +384,28 @@ A MoErgo keycap export can carry more than one layer. What keeb does with the ex
    face is inset 4 units from its cell, so neighbours never touch, and the focus and way-there rings sit
    8 units in -- inside the face, not across the channel. A space is the space bar on every
    layer: layer `SPACE` bindings route nowhere and draw nothing.
+
+## 15. Orphaned layout data (not from keybr)
+
+Deleting a layout file deletes the layout row — never the numbers. A stats or settings row whose
+`geometry+keymap` pair no longer resolves is orphaned: the app cannot show it, but it is not data the
+learner typed away. The settings dialog offers a repair for it, in the same layout-files group:
+
+1. On every layout mutation (import, remove, adopt) and at boot, the page scans the stats and settings
+   stores and lists every key whose geometry or keymap no longer exists (shipped or imported). Each
+   orphan row shows the raw key and a board and a keymap selector — defaulting to the current
+   selection, and the learner's pick is kept across renders. A pick that points at a board or keymap
+   which no longer exists falls back to the current selection. Folds are serialized: while any fold is
+   in flight, every row's button is disabled and a fold that is already running makes the next call a
+   no-op, so two folds can never race on the same target. A fold failure keeps the row and the pick,
+   and says so in the dialog.
+2. Folding one rewrites its stats into the chosen board+keymap pair: the target's own numbers and the
+   orphan's both survive a merge (`mergeAll`), so nothing that was ever typed is lost, and the orphan
+   rows are deleted afterwards. The merge, the settings carry and the orphan deletes happen in one
+   transaction, so a failure cannot split a fold across two states. An empty merge writes no stats
+   row. The orphan's settings row is carried over only when the target has no settings row of its own —
+   a live settings row is never overwritten by a deleted layout's. The carried row is rewritten to name
+   the target.
+3. The merge is local. The PDS record for the deleted layout and the sync bookkeeping
+   (`progressSeen` / `progressRkeys`) are never re-pointed, never deleted — the remote records stay
+   exactly as they are, so a re-import or a sync that finds them behaves the same way it did before.

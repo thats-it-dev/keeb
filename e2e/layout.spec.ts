@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./csp.ts";
+import { keyName } from "./keys.ts";
 
 const keycapJson = fileURLToPath(new URL("../test/fixtures/go60-keycap.json", import.meta.url));
 
@@ -117,4 +118,83 @@ test("removing an imported board leaves the shipped ones", async ({ page }) => {
 	await page.getByLabel("Remove go60 info").click();
 	await expect.poll(() => options(page).then((o) => o.length)).toBe(4);
 	expect(await boardCount(page)).toBe(60); // back to the shipped Go60, which has the same shape
+});
+
+// The stats row for one layout, read out of the store: the after-state, not the dialog's say-so.
+const statsFor = (page: Page, key: string) =>
+	page.evaluate(
+		(layoutKey) =>
+			new Promise<number>((res, rej) => {
+				const open = indexedDB.open("keeb");
+				open.onsuccess = () => {
+					const r = open.result.transaction("stats").objectStore("stats").getAll();
+					r.onsuccess = () => {
+						const rows = (r.result ?? []) as { layout: string; value?: Record<string, unknown> }[];
+						open.result.close();
+						const row = rows.find((row) => row.layout === layoutKey);
+						res(row?.value ? Object.keys(row.value).length : 0);
+					};
+					r.onerror = () => rej(r.error);
+				};
+				open.onerror = () => rej(open.error);
+			}),
+		key,
+	);
+
+test("orphaned progress can be folded into the surviving layout", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	await openSettings(page);
+	await upload(page, infoJson);
+	await page.getByLabel("Close settings").click();
+	await expect(page.locator("tt-practice .line")).toBeVisible();
+	// Type a few characters on the imported board so it has stats. The cursor comes from the engine,
+	// not the text, because the line re-renders as the lesson advances.
+	const line = page.locator("tt-practice .line");
+	for (let i = 0; i < 4; i++) {
+		const text = (await line.getAttribute("data-text")) ?? "";
+		// cursor is a reactive property practice.ts deliberately exposes for tests/callers; there is no
+		// other way to read where the line is without asserting on an animation frame.
+		const cursor = await page.evaluate(() => (document.querySelector("app-main")!.shadowRoot!.querySelector("tt-practice") as unknown as { cursor: number }).cursor);
+		const ch = [...text][cursor];
+		if (!ch) break;
+		await page.locator("tt-practice").press(keyName(ch));
+	}
+	await expect.poll(() => statsFor(page, "import:go60-info+qwerty")).toBeGreaterThan(0);
+
+	await openSettings(page);
+	await page.getByLabel("Remove go60 info").click();
+	// The board is gone, but its stats row survives — and the dialog says so.
+	await expect(page.locator("dialog .full", { hasText: "orphaned progress" })).toBeVisible();
+	// Remap with the default target: the shipped Go60, which is now selected.
+	await page.getByRole("button", { name: "Remap" }).click();
+	await expect(page.locator("dialog .full", { hasText: "orphaned progress" })).toHaveCount(0);
+	// The folded numbers land on the target, and the orphan row is gone.
+	await expect.poll(() => statsFor(page, "go60+qwerty")).toBeGreaterThan(0);
+	await expect.poll(() => statsFor(page, "import:go60-info+qwerty")).toBe(0);
+});
+
+test("an orphan left by an earlier session is offered at boot", async ({ page }) => {
+	await page.goto("/");
+	await ready(page);
+	// Seed an orphan row straight into the store, as a dead layout's numbers would look.
+	await page.evaluate(
+		() =>
+			new Promise<void>((res, rej) => {
+				const open = indexedDB.open("keeb");
+				open.onsuccess = () => {
+					const tx = open.result.transaction("stats", "readwrite");
+					tx.objectStore("stats").put({ layout: "import:deleted-board+qwerty", value: { a: { ttMs16: 50, samples: 3, errors: 0 } } });
+					tx.oncomplete = () => res();
+					tx.onerror = () => rej(tx.error);
+				};
+				open.onerror = () => rej(open.error);
+			}),
+	);
+	await page.reload({ waitUntil: "networkidle" });
+	await ready(page);
+	await openSettings(page);
+	// The boot scan found it: the row is offered with the raw key, and the Remap button is live.
+	await expect(page.locator("dialog .row", { hasText: "import:deleted-board+qwerty" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Remap" })).toBeEnabled();
 });
