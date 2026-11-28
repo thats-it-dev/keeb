@@ -231,3 +231,37 @@ describe("the layered ladder", () => {
 		expect(/^[a-z]$/.test(lr.byStat.get(l.focus!)!.char)).toBe(true);
 	});
 });
+
+describe("the layered ladder in keyboard order", () => {
+	const layerCharOf = (id: string) => lr.byStat.get(id)!.char;
+	const isLetter = (id: string) => /^[a-z]$/.test(layerCharOf(id));
+
+	it("puts every symbol route after every letter route", () => {
+		const order = teachingOrder(lr, true);
+		const letterIds = order.filter(isLetter);
+		expect(letterIds.length).toBeGreaterThan(0);
+		const lastLetter = Math.max(...letterIds.map((id) => order.indexOf(id)));
+		for (const x of lrLayerRoutes) expect(order.indexOf(x.statId), x.char).toBeGreaterThan(lastLetter);
+	});
+
+	it("hands a fresh learner six letters, not symbols", () => {
+		const l = ladder(lr, {}, TARGET, { keyboardOrder: true });
+		expect(l.unlocked.length).toBe(START_SIZE);
+		for (const id of l.unlocked) expect(isLetter(id), layerCharOf(id)).toBe(true);
+	});
+
+	it("opens the first symbol only after every letter route is included", () => {
+		const order = teachingOrder(lr, true);
+		const letterIds = order.filter(isLetter);
+		const stats = atGoal(letterIds);
+		const l = ladder(lr, stats, TARGET, { keyboardOrder: true });
+		// All letters at goal: the whole alphabet is in play, then exactly one symbol at the tail of the order.
+		expect(l.unlocked).toEqual(order.slice(0, letterIds.length + 1));
+		expect(layerCharOf(l.unlocked[l.unlocked.length - 1]!)).toBe(SYMBOL_ORDER[0]); // the comma-ish first symbol
+		// One letter short of the goal: no symbol opens at all.
+		const weak = letterIds[0]!;
+		const blocked = { ...atGoal(letterIds), [weak]: { ttMs16: SLOW_MS16, bestMs16: SLOW_MS16, samples: 40, errors: 0 } };
+		const l2 = ladder(lr, blocked, TARGET, { keyboardOrder: true });
+		for (const id of l2.unlocked) expect(isLetter(id), layerCharOf(id)).toBe(true);
+	});
+});
