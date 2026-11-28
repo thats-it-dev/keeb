@@ -88,15 +88,17 @@ export function ladder(r: Resolved, stats: StatMap, targetCpm: number, options: 
 
 /** The typable characters of this layout, in the order the lesson hands them out, as stat ids.
  *
- * `keyboardOrder` is a cost ranking, not a finger path: home row, then upper row, then the rest — and
- * inside a row, most frequent letter first. That is the same weighting keybr gives its keyboard layout,
- * and it keeps the two orders honest about the thing they have in common, which is that both start with
- * letters that make words possible. Letters come from the taught keys; layer characters join after the
- * alphabet is dealt, because a layer is a poor fit for a brand-new typist. Within that band the order is
- * measured, not alphabetical: `SYMBOL_ORDER` (scripts/make-symbols.ts) ranks every character a sample of
- * written English could see, and what it could not see keeps the old code-point order at the very tail.
- * (Routes are always single characters — `resolve.ts` refuses multi-character bindings — so there is no
- * token band to rank.)
+ * Both modes keep the same bands: every taught base letter (and any letter route on a layer) first, then
+ * every layer character — a layer is a poor fit for a brand-new typist, so nothing in it opens until the
+ * alphabet is dealt. Letters come from the taught keys. In `keyboardOrder` the letters are a cost ranking,
+ * not a finger path: home row, then upper row, then the rest — and inside a row, most frequent letter
+ * first. That is the same weighting keybr gives its keyboard layout, and it keeps the two orders honest
+ * about the thing they have in common, which is that both start with letters that make words possible.
+ * The default sorts the same letters by corpus frequency, ties by code point. The one band below the
+ * alphabet is measured, not alphabetical, in both modes: `SYMBOL_ORDER` (scripts/make-symbols.ts) ranks
+ * every character a sample of written English could see, and what it could not see keeps the code-point
+ * order at the very tail. (Routes are always single characters — `resolve.ts` refuses multi-character
+ * bindings — so there is no token band to rank.)
  */
 export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[] {
 	const routes = r.routes.filter((x) => x.layer > 0 || (/^[a-z]$/.test(x.char) && r.byId.get(x.keyId)!.taught));
@@ -113,8 +115,15 @@ export function teachingOrder(r: Resolved, keyboardOrder: boolean): string[] {
 		const role = roleOf(r.geometry, r.byId.get(x.keyId)!.row);
 		return role === "home" ? 1 : role === "upper" ? 2 : r.byId.get(x.keyId)!.taught ? 3 : 4;
 	};
-	const byFrequency = (a: (typeof routes)[number], b: (typeof routes)[number]) =>
-		rankOf(a.char) - rankOf(b.char) || (a.char < b.char ? -1 : 1);
-	const sorted = [...routes].sort((a, b) => (keyboardOrder ? cost(a) - cost(b) || byFrequency(a, b) : byFrequency(a, b)));
-	return sorted.map((x) => x.statId);
+	const letters = routes.filter((x) => /^[a-z]$/.test(x.char));
+	const symbols = routes.filter((x) => !/^[a-z]$/.test(x.char));
+	const sortedLetters = [...letters].sort((a, b) =>
+		keyboardOrder
+			? cost(a) - cost(b) || rankOf(a.char) - rankOf(b.char) || (a.char < b.char ? -1 : 1)
+			: rankOf(a.char) - rankOf(b.char) || (a.char < b.char ? -1 : 1),
+	);
+	const sortedSymbols = [...symbols].sort(
+		(a, b) => rankOf(a.char) - rankOf(b.char) || (a.char < b.char ? -1 : 1),
+	);
+	return [...sortedLetters, ...sortedSymbols].map((x) => x.statId);
 }
